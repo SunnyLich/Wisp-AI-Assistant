@@ -375,17 +375,55 @@ def brain_auth_status() -> dict[str, Any]:
     from core.auth import copilot_auth
     from core.auth import github as github_auth
 
-    chatgpt_tokens = chatgpt_auth.get_tokens()
-    chatgpt_account = ""
-    if isinstance(chatgpt_tokens, dict):
-        chatgpt_account = str(chatgpt_tokens.get("account_id") or "")
+    def oauth_status(name: str, label: str, loader: Callable[[], Any]) -> dict[str, Any]:
+        try:
+            tokens = loader()
+        except Exception as exc:  # noqa: BLE001 - status must remain available
+            return {
+                "name": name,
+                "label": label,
+                "configured": False,
+                "message": f"Status unavailable: {type(exc).__name__}: {exc}",
+            }
+        if not tokens:
+            return {"name": name, "label": label, "configured": False, "message": "Not logged in"}
+        if not isinstance(tokens, dict) or not str(
+            tokens.get("access") or tokens.get("access_token") or ""
+        ).strip():
+            return {
+                "name": name,
+                "label": label,
+                "configured": False,
+                "message": "Stored token is invalid. Sign in again.",
+            }
+        if name == "chatgpt" and tokens.get("expires") is not None:
+            try:
+                expired = float(tokens["expires"]) <= time.time() * 1000
+            except (TypeError, ValueError):
+                expired = True
+            if expired:
+                return {
+                    "name": name,
+                    "label": label,
+                    "configured": False,
+                    "message": "Stored token has expired. Sign in again.",
+                }
+        account = ""
+        if name == "chatgpt":
+            account = str(tokens.get("account_id") or "")
+        else:
+            user = tokens.get("user")
+            if isinstance(user, dict):
+                account = str(user.get("login") or "")
+        return {
+            "name": name,
+            "label": label,
+            "configured": True,
+            "message": "Logged in" + (f" as {account}" if account else ""),
+        }
 
-    github_tokens = github_auth.get_tokens()
-    github_login = ""
-    if isinstance(github_tokens, dict):
-        user = github_tokens.get("user")
-        if isinstance(user, dict):
-            github_login = str(user.get("login") or "")
+    chatgpt_status = oauth_status("chatgpt", "ChatGPT", chatgpt_auth.get_tokens)
+    github_status = oauth_status("github", "GitHub", github_auth.get_tokens)
 
     try:
         copilot_configured, copilot_message = copilot_auth.token_status()
@@ -395,22 +433,8 @@ def brain_auth_status() -> dict[str, Any]:
 
     return {
         "providers": [
-            {
-                "name": "chatgpt",
-                "label": "ChatGPT",
-                "configured": bool(chatgpt_tokens),
-                "message": "Logged in" + (f" as {chatgpt_account}" if chatgpt_account else "")
-                if chatgpt_tokens
-                else "Not logged in",
-            },
-            {
-                "name": "github",
-                "label": "GitHub",
-                "configured": bool(github_tokens),
-                "message": "Logged in" + (f" as {github_login}" if github_login else "")
-                if github_tokens
-                else "Not logged in",
-            },
+            chatgpt_status,
+            github_status,
             {
                 "name": "copilot",
                 "label": "GitHub Copilot",
@@ -488,8 +512,11 @@ def brain_auth_chatgpt_clear() -> dict[str, Any]:
     """Handle brain auth chatgpt clear for runtime brain wisp brain handlers."""
     from core.auth import chatgpt as chatgpt_auth
 
-    chatgpt_auth.clear_tokens()
-    return {"ok": True, "name": "chatgpt"}
+    return _clear_auth_credential(
+        "chatgpt",
+        chatgpt_auth.clear_tokens,
+        chatgpt_auth.get_tokens,
+    )
 
 
 @handler("brain.auth.github.clear")
@@ -497,8 +524,42 @@ def brain_auth_github_clear() -> dict[str, Any]:
     """Handle brain auth github clear for runtime brain wisp brain handlers."""
     from core.auth import github as github_auth
 
-    github_auth.clear_tokens()
-    return {"ok": True, "name": "github"}
+    return _clear_auth_credential(
+        "github",
+        github_auth.clear_tokens,
+        github_auth.get_tokens,
+    )
+
+
+def _clear_auth_credential(
+    name: str,
+    clear: Callable[[], Any],
+    read_remaining: Callable[[], Any],
+) -> dict[str, Any]:
+    """Clear one local credential and verify it did not remain stored."""
+    try:
+        clear()
+    except Exception as exc:  # noqa: BLE001 - reported to Settings in-band
+        return {
+            "ok": False,
+            "name": name,
+            "message": f"Could not clear local credential: {type(exc).__name__}: {exc}",
+        }
+    try:
+        remaining = read_remaining()
+    except Exception as exc:  # noqa: BLE001 - an unreadable store is not success
+        return {
+            "ok": False,
+            "name": name,
+            "message": f"Could not verify credential removal: {type(exc).__name__}: {exc}",
+        }
+    if remaining:
+        return {
+            "ok": False,
+            "name": name,
+            "message": "Local credential still exists after sign-out.",
+        }
+    return {"ok": True, "name": name}
 
 
 @handler("brain.auth.github.device_login", streaming=True)
@@ -542,7 +603,12 @@ def brain_auth_github_device_login(
         ctx.emit("auth.error", result)
         done.set()
 
-    github_auth.start_device_login(on_code, on_success, on_error)
+    github_auth.start_device_login(
+        on_code,
+        on_success,
+        on_error,
+        is_cancelled=lambda: ctx.cancelled,
+    )
     deadline = time.time() + max(1, int(timeout_seconds or 900))
     while not done.wait(0.25):
         if ctx.cancelled:
@@ -578,8 +644,22 @@ def brain_auth_copilot_clear() -> dict[str, Any]:
     """Handle brain auth copilot clear for runtime brain wisp brain handlers."""
     from core.auth import copilot_auth
 
-    copilot_auth.clear_token()
-    configured, message = copilot_auth.token_status()
+    result = _clear_auth_credential(
+        "copilot",
+        copilot_auth.clear_token,
+        copilot_auth.get_token,
+    )
+    if not result["ok"]:
+        return {**result, "configured": False}
+    try:
+        configured, message = copilot_auth.token_status()
+    except Exception as exc:  # noqa: BLE001 - verification must not crash Settings
+        return {
+            "ok": False,
+            "name": "copilot",
+            "configured": False,
+            "message": f"Could not verify credential removal: {type(exc).__name__}: {exc}",
+        }
     return {"ok": True, "configured": configured, "message": message}
 
 

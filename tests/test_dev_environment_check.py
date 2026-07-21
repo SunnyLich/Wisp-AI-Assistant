@@ -34,6 +34,59 @@ def write_minimal_dependency_locks(root: Path) -> None:
 
 
 class DevEnvironmentCheckTests(unittest.TestCase):
+    def test_install_runtime_integrity_failure_matrix_is_classified(self) -> None:
+        """The reusable launch preflight classifies missing/corrupt app and runtime state."""
+        cases = (
+            ("missing installation", "missing_pyproject", "pyproject.toml is missing"),
+            ("corrupt installation", "corrupt_pyproject", "requires-python"),
+            ("missing runtime", "missing_runtime", "missing virtual environment interpreter"),
+            ("corrupt runtime", "corrupt_runtime", "missing runtime modules"),
+        )
+        for label, fault, expected in cases:
+            with self.subTest(failure=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                Path(root, ".python-version").write_text("3.12.13\n", encoding="utf-8")
+                Path(root, "pyproject.toml").write_text(
+                    '[project]\nrequires-python = ">=3.12,<3.13"\n',
+                    encoding="utf-8",
+                )
+                write_minimal_dependency_inputs(root)
+                write_minimal_dependency_locks(root)
+                python = check_dev_environment.venv_python(root)
+                python.parent.mkdir(parents=True)
+                python.touch()
+
+                if fault == "missing_pyproject":
+                    Path(root, "pyproject.toml").unlink()
+                elif fault == "corrupt_pyproject":
+                    Path(root, "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+                elif fault == "missing_runtime":
+                    python.unlink()
+
+                runtime_problem = (
+                    "missing runtime modules: PySide6"
+                    if fault == "corrupt_runtime"
+                    else None
+                )
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout), mock.patch.object(
+                    check_dev_environment,
+                    "interpreter_version",
+                    return_value=(3, 12, 13),
+                ), mock.patch.object(
+                    check_dev_environment,
+                    "runtime_module_problem",
+                    return_value=runtime_problem,
+                ), mock.patch.object(
+                    check_dev_environment,
+                    "dev_module_problem",
+                    return_value=None,
+                ):
+                    exit_code = check_dev_environment.main(["--root", str(root)])
+
+                self.assertEqual(exit_code, 1)
+                self.assertIn(expected, stdout.getvalue())
+
     def test_requirement_import_name_parses_pinned_requirement(self) -> None:
         self.assertEqual(check_dev_environment.requirement_import_name("pytest>=8.0.0"), "pytest")
         self.assertEqual(check_dev_environment.requirement_import_name("some-package[extra]>=1 ; python_version>'3'"), "some_package")

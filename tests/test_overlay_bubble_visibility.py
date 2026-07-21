@@ -107,7 +107,6 @@ def test_harness_controls_report_only_their_changed_keys(monkeypatch):
 
 
 def test_bubble_chunk_restores_hidden_icon(monkeypatch):
-    """Verify bubble chunk restores hidden icon behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -239,6 +238,70 @@ def test_wayland_icon_uses_compositor_move_and_press_menu(monkeypatch):
         right_press = MouseEvent(QEvent.Type.MouseButtonPress, Qt.MouseButton.RightButton, QPoint(25, 30))
         assert overlay.eventFilter(overlay._icon_label, right_press) is True
         assert menu_positions == [QPoint(25, 30)]
+    finally:
+        overlay._bubble.clear()
+        overlay._icon_label.close()
+        overlay.close()
+        app.processEvents()
+
+
+def test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking(monkeypatch):
+    """Tray actions survive absent native support/menu callbacks/UI consumers."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import time
+
+    from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+
+    from ui.overlay import IconOverlay, OverlaySignals
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setenv("WISP_MACOS_PY_UI_HOST", "1")
+    monkeypatch.setattr(IconOverlay, "_pin_overlay_windows", lambda self: None)
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: False))
+    monkeypatch.setattr(QSystemTrayIcon, "show", lambda _self: None)
+    quit_calls: list[bool] = []
+    monkeypatch.setattr(QApplication, "quit", lambda: quit_calls.append(True))
+    signals = OverlaySignals()
+    dispatched: list[str] = []
+    signals.show_last_chat.connect(lambda: dispatched.append("chat"))
+    signals.show_memory_viewer.connect(lambda: dispatched.append("memory"))
+    signals.show_settings.connect(lambda: dispatched.append("settings"))
+    overlay = IconOverlay(signals)
+
+    def action(label: str):
+        return next(item for item in overlay._tray_menu.actions() if item.text() == label)
+
+    try:
+        assert overlay._tray is not None
+        assert overlay._tray_menu is not None
+        action("Last chat").trigger()
+        action("Memory").trigger()
+        action("Settings").trigger()
+        action("Quit").trigger()
+        assert dispatched == ["chat", "memory", "settings"]
+        assert quit_calls == [True]
+
+        # Rebuilding replaces a missing/destroyed native tray/menu pair and
+        # recreates every action callback.
+        old_menu = overlay._tray_menu
+        old_menu.deleteLater()
+        overlay._build_tray()
+        app.processEvents()
+        assert overlay._tray_menu is not old_menu
+        assert {item.text() for item in overlay._tray_menu.actions()} >= {
+            "Last chat", "Memory", "Settings", "Quit"
+        }
+
+        # With no UI target/callback connected, emitting an action is still an
+        # immediate, in-band operation rather than a worker-response wait.
+        signals.show_last_chat.disconnect()
+        signals.show_memory_viewer.disconnect()
+        signals.show_settings.disconnect()
+        started = time.perf_counter()
+        action("Last chat").trigger()
+        action("Memory").trigger()
+        action("Settings").trigger()
+        assert time.perf_counter() - started < 0.25
     finally:
         overlay._bubble.clear()
         overlay._icon_label.close()

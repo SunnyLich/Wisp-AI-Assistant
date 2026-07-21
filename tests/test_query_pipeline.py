@@ -16,15 +16,12 @@ from core.query_pipeline import (
 def _build(**kwargs):
     # Default the document reader to one that echoes a marker so tests never
     # touch the real llm client.
-    """Verify build behavior."""
     reader = kwargs.pop("read_document_file", lambda p: f"DOC<{p}>")
     return build_context(ContextInputs(intent_prompt="ask", **kwargs), read_document_file=reader)
 
 
 class BuildContextTests(unittest.TestCase):
-    """Test case for build context tests behavior."""
     def test_user_message_is_the_intent_prompt(self):
-        """Verify user message is the intent prompt behavior."""
         out = _build()
         self.assertEqual(out.user_message, "ask")
         self.assertEqual(out.ambient_ctx, "")
@@ -46,22 +43,18 @@ class BuildContextTests(unittest.TestCase):
         self.assertEqual(out.ambient_ctx, "AMB\n\n[Selection]\nsel")
 
     def test_ambient_text_alone_when_no_other_context(self):
-        """Verify ambient text alone when no other context behavior."""
         out = _build(ambient_text="AMB")
         self.assertEqual(out.ambient_ctx, "AMB")
 
     def test_clipboard_appended_after_buffered_items(self):
-        """Verify clipboard appended after buffered items behavior."""
         out = _build(buffered_items=["buf"], clipboard_text="clip")
         self.assertEqual(out.ambient_ctx, "[Buffered context]\nbuf\n\n[Clipboard]\nclip")
 
     def test_clipboard_none_is_ignored(self):
-        """Verify clipboard none is ignored behavior."""
         out = _build(buffered_items=["buf"], clipboard_text=None)
         self.assertEqual(out.ambient_ctx, "[Buffered context]\nbuf")
 
     def test_dropped_image_becomes_vision_input_when_none_present(self):
-        """Verify dropped image becomes vision input when none present behavior."""
         out = _build(drop_items=[("shot.png", "BASE64", "image")])
         self.assertEqual(out.screenshot_b64, "BASE64")
         self.assertEqual(out.ambient_ctx, "")
@@ -84,7 +77,6 @@ class BuildContextTests(unittest.TestCase):
         self.assertTrue(out.ambient_ctx.endswith("[captured context truncated at safety limit]"))
 
     def test_dropped_document_is_read_and_labelled(self):
-        """Verify dropped document is read and labelled behavior."""
         out = _build(drop_items=[("notes.txt", "/tmp/notes.txt", "document_path")])
         self.assertEqual(
             out.ambient_ctx,
@@ -94,7 +86,6 @@ class BuildContextTests(unittest.TestCase):
         )
 
     def test_dropped_document_empty_read_is_skipped(self):
-        """Verify dropped document empty read is skipped behavior."""
         out = _build(
             drop_items=[("empty.txt", "/tmp/empty.txt", "document_path")],
             read_document_file=lambda p: "",
@@ -102,7 +93,6 @@ class BuildContextTests(unittest.TestCase):
         self.assertEqual(out.ambient_ctx, "")
 
     def test_active_document_appended_when_no_screenshot(self):
-        """Verify active document appended when no screenshot behavior."""
         out = _build(selected="sel", active_document_text="ACTIVE")
         self.assertEqual(out.ambient_ctx, "[Selection]\nsel\n\n[Active document]\nACTIVE")
 
@@ -117,7 +107,6 @@ class BuildContextTests(unittest.TestCase):
         )
 
     def test_priority_note_added_when_browser_and_document_context_exist(self):
-        """Verify priority note added when browser and document context exist behavior."""
         out = _build(
             ambient_text="[Browser/Web]\nWEB",
             active_document_text="ACTIVE",
@@ -133,7 +122,6 @@ class BuildContextTests(unittest.TestCase):
         )
 
     def test_priority_note_omitted_for_single_context(self):
-        """Verify priority note omitted for single context behavior."""
         out = _build(
             active_document_text="ACTIVE",
             priority_context="Active document",
@@ -143,12 +131,10 @@ class BuildContextTests(unittest.TestCase):
     def test_active_document_kept_when_screenshot_present(self):
         # A screenshot shows pixels, not document text — enabling documents must
         # still inject them even on vision queries.
-        """Verify active document kept when screenshot present behavior."""
         out = _build(screenshot_b64="SHOT", active_document_text="ACTIVE")
         self.assertEqual(out.ambient_ctx, "[Active document]\nACTIVE")
 
     def test_active_document_kept_when_dropped_image_promotes_to_screenshot(self):
-        """Verify active document kept when dropped image promotes to screenshot behavior."""
         out = _build(
             drop_items=[("shot.png", "BASE64", "image")],
             active_document_text="ACTIVE",
@@ -157,7 +143,6 @@ class BuildContextTests(unittest.TestCase):
         self.assertEqual(out.ambient_ctx, "[Active document]\nACTIVE")
 
     def test_full_precedence_order(self):
-        """Verify full precedence order behavior."""
         out = _build(
             buffered_items=["buf"],
             drop_items=[("d.txt", "/p", "document_path"), ("x", "raw", "text")],
@@ -183,9 +168,8 @@ class BuildContextTests(unittest.TestCase):
 
     @pytest.mark.workflow
     def test_privacy_mode_redacts_sensitive_text_by_default(self):
-        """Verify privacy mode redacts sensitive text by default behavior."""
         out = _build(
-            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",  # secret-scan: allow
             clipboard_text="Bearer abcdefghijklmnopqrstuvwxyz1234567890",
             active_document_text="password=supersecret",
         )
@@ -200,7 +184,7 @@ class BuildContextTests(unittest.TestCase):
     def test_privacy_mode_reports_detected_and_censored_items(self):
         """Verify privacy mode records safe redaction report metadata."""
         out = _build(
-            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",  # secret-scan: allow
             clipboard_text="Bearer abcdefghijklmnopqrstuvwxyz1234567890",
             active_document_text="password=supersecret",
         )
@@ -220,11 +204,11 @@ class BuildContextTests(unittest.TestCase):
     @pytest.mark.workflow
     def test_privacy_mode_redacts_common_provider_tokens(self):
         """Verify provider-specific token formats are censored."""
-        github = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcd"
-        slack = "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwxyz"
-        stripe = "sk_live_abcdefghijklmnopqrstuvwxyz123456"
+        github = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcd"  # secret-scan: allow
+        slack = "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwxyz"  # secret-scan: allow
+        stripe = "sk_live_abcdefghijklmnopqrstuvwxyz123456"  # secret-scan: allow
         google = "AIza" + ("A" * 35)
-        npm = "npm_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ123456"
+        npm = "npm_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ123456"  # secret-scan: allow
         jwt = (
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
             "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
@@ -235,7 +219,7 @@ class BuildContextTests(unittest.TestCase):
             selected="\n".join(
                 [
                     github,
-                    "AKIAIOSFODNN7EXAMPLE",
+                    "AKIAIOSFODNN7EXAMPLE",  # secret-scan: allow
                     slack,
                     stripe,
                     google,
@@ -248,7 +232,7 @@ class BuildContextTests(unittest.TestCase):
 
         self.assertGreaterEqual(out.ambient_ctx.count("[API_KEY]"), 6)
         self.assertGreaterEqual(out.ambient_ctx.count("[BEARER_TOKEN]"), 2)
-        for raw in (github, slack, stripe, google, npm, jwt, discord, "AKIAIOSFODNN7EXAMPLE"):
+        for raw in (github, slack, stripe, google, npm, jwt, discord, "AKIAIOSFODNN7EXAMPLE"):  # secret-scan: allow
             self.assertNotIn(raw, out.ambient_ctx)
             self.assertNotIn(raw, repr(out.privacy_report))
         self.assertGreaterEqual(out.privacy_report["categories"]["api_key"], 6)
@@ -275,31 +259,26 @@ class BuildContextTests(unittest.TestCase):
 
     @pytest.mark.workflow
     def test_privacy_mode_can_be_disabled_for_context_building(self):
-        """Verify privacy mode can be disabled for context building behavior."""
         out = _build(
-            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            selected="api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",  # secret-scan: allow
             trust_privacy_mode=False,
         )
 
-        self.assertIn("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", out.ambient_ctx)
+        self.assertIn("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890", out.ambient_ctx)  # secret-scan: allow
         self.assertEqual(out.privacy_report["count"], 0)
 
 
 class GenerationCounterTests(unittest.TestCase):
-    """Test case for generation counter tests behavior."""
     def test_starts_at_zero(self):
-        """Verify starts at zero behavior."""
         self.assertEqual(GenerationCounter().current, 0)
 
     def test_next_increments_and_returns(self):
-        """Verify next increments and returns behavior."""
         c = GenerationCounter()
         self.assertEqual(c.next(), 1)
         self.assertEqual(c.next(), 2)
         self.assertEqual(c.current, 2)
 
     def test_is_current_only_for_latest(self):
-        """Verify is current only for latest behavior."""
         c = GenerationCounter()
         first = c.next()
         second = c.next()
@@ -307,13 +286,11 @@ class GenerationCounterTests(unittest.TestCase):
         self.assertTrue(c.is_current(second))
 
     def test_concurrent_next_yields_unique_ids(self):
-        """Verify concurrent next yields unique ids behavior."""
         c = GenerationCounter()
         seen: list[int] = []
         lock = threading.Lock()
 
         def worker():
-            """Verify worker behavior."""
             gid = c.next()
             with lock:
                 seen.append(gid)

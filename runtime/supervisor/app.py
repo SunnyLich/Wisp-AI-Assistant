@@ -21,6 +21,7 @@ from runtime.bootstrap import (
 )
 from runtime.supervisor.flows import FlowController
 from runtime.supervisor.ipc import WispSupervisor
+from runtime.supervisor.runtime_log import RuntimeEventLog, RuntimeLogHandler
 
 RUNTIME_LOG_RETENTION_DAYS = 7
 _RUNTIME_LOG_DIR_PREFIXES = ("wisp_runtime_", "wisp_crash_")
@@ -194,6 +195,12 @@ def main() -> int:
     _prune_runtime_logs()
     log_dir = _prepare_run_log_dir() if log_mode == "debug" else None
     _configure_logging(log_dir)
+    # Every log surface funnels into one runtime event log so the Runtime
+    # Status window can show all of it: supervisor logging (via the handler
+    # below), worker stderr (via on_stderr_line), bubble notices, installer
+    # statuses, and setup-check results (via FlowController).
+    runtime_log = RuntimeEventLog()
+    logging.getLogger().addHandler(RuntimeLogHandler(runtime_log))
     if log_dir is not None:
         logging.info("Wisp runtime logs: %s", log_dir)
     else:
@@ -210,6 +217,9 @@ def main() -> int:
         return 2
     _resume_staged_optional_installs()
     supervisor = WispSupervisor()
+    for worker_name, worker in supervisor.workers.items():
+        if hasattr(worker, "on_stderr_line"):
+            worker.on_stderr_line(runtime_log.stderr_sink(worker_name))
     flows: FlowController | None = None
     stop = threading.Event()
     ui_quit_requested = threading.Event()
@@ -273,6 +283,7 @@ def main() -> int:
             ui=supervisor.workers["ui"],
             brain=supervisor.workers["brain"],
             audio=supervisor.workers["audio"],
+            runtime_log=runtime_log,
         )
         flows.start()
         try:
@@ -291,6 +302,7 @@ def main() -> int:
             flow_stop = getattr(flows, "stop", None)
             if callable(flow_stop):
                 flow_stop()
+        runtime_log.close()
         supervisor.shutdown()
     if abrupt_reason and log_mode != "debug":
         crash_dir = _write_abrupt_log(abrupt_reason, supervisor)

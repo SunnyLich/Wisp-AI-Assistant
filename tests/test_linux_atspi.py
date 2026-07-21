@@ -115,6 +115,33 @@ def test_get_browser_tab_url_off_linux_is_noop(monkeypatch):
     assert linux_atspi.get_browser_tab_url(pid=123) == ""
 
 
+def test_linux_platform_fallback_failure_matrix_is_in_band(monkeypatch):
+    """Missing services and session permissions leave Linux context safely empty."""
+    monkeypatch.setattr(linux_atspi, "_IS_LINUX", True)
+    faults = (
+        ModuleNotFoundError("AT-SPI accessibility service is absent"),
+        ConnectionError("Linux display service is absent"),
+        PermissionError("sandbox permission denies D-Bus access"),
+        PermissionError("desktop-session permission denies access"),
+    )
+    for fault in faults:
+        linux_atspi._a11y_conn = None
+        linux_atspi._unavailable_until = 0.0
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                linux_atspi,
+                "_open_session_connection",
+                lambda fault=fault: (_ for _ in ()).throw(fault),
+            )
+            assert linux_atspi._open_a11y_connection() is None
+
+    linux_atspi._a11y_conn = None
+    linux_atspi._unavailable_until = 0.0
+    monkeypatch.setattr(linux_atspi, "_open_a11y_connection", lambda: object())
+    monkeypatch.setattr(linux_atspi, "_get_children", lambda *_args: [])
+    assert linux_atspi.get_selected_text() == ""
+
+
 def test_selected_text_for_node_reads_all_live_ranges(monkeypatch):
     """AT-SPI text selections are resolved from ranges without clipboard use."""
     def fake_call(_conn, _dest, _path, iface, method, signature=None, body=()):

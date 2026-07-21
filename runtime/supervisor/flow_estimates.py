@@ -109,9 +109,11 @@ def screen_token_label(context: dict[str, Any]) -> str:
 
 def file_b64(path: str | Path | None) -> str | None:
     """Return a file's base64 content, or None when no readable path exists."""
-    if not path:
-        return None
-    p = Path(path)
-    if not p.exists():
-        return None
-    return base64.b64encode(p.read_bytes()).decode("ascii")
+    from core.attachment_source import IMAGE_SUFFIXES, read_attachment_source
+
+    data, _error = read_attachment_source(
+        path,
+        max_bytes=10 * 1024 * 1024,
+        allowed_suffixes=IMAGE_SUFFIXES,
+    )
+    return base64.b64encode(data).decode("ascii") if data else None

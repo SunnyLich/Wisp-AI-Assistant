@@ -15,7 +15,6 @@ from core.stt_postprocess import clean_transcript, looks_like_repeated_token_noi
 
 
 class STTMacOSSafetyTests(unittest.TestCase):
-    """Test case for s t t mac o s safety tests behavior."""
     def _default_chunk_config(self):
         """Patch configurable STT chunk timing to default values."""
         return mock.patch.multiple(
@@ -27,7 +26,6 @@ class STTMacOSSafetyTests(unittest.TestCase):
         )
 
     def test_stt_prewarm_skips_model_load_in_safe_mode(self):
-        """Verify stt prewarm skips model load in safe mode behavior."""
         with mock.patch.object(stt.macos_safety.sys, "platform", "darwin"), \
              mock.patch.dict(stt.macos_safety.os.environ, {}, clear=True), \
              mock.patch.object(stt.macos_helper, "is_enabled", return_value=False), \
@@ -35,7 +33,6 @@ class STTMacOSSafetyTests(unittest.TestCase):
             stt.prewarm()
 
     def test_recording_skips_sounddevice_in_safe_mode(self):
-        """Verify recording skips sounddevice in safe mode behavior."""
         with mock.patch.object(stt.macos_safety.sys, "platform", "darwin"), \
              mock.patch.dict(stt.macos_safety.os.environ, {}, clear=True), \
              mock.patch.object(stt.macos_helper, "is_enabled", return_value=False), \
@@ -45,42 +42,34 @@ class STTMacOSSafetyTests(unittest.TestCase):
         self.assertEqual(stt.stop_and_transcribe(), "")
 
     def test_repeated_token_noise_is_discarded(self):
-        """Verify repeated token noise is discarded behavior."""
         noisy = " ".join(["Cont"] * 20)
 
         self.assertTrue(looks_like_repeated_token_noise(noisy))
         self.assertEqual(clean_transcript(noisy), "")
 
     def test_normal_repetition_is_kept(self):
-        """Verify normal repetition is kept behavior."""
         text = "yes yes yes I can hear you now"
 
         self.assertFalse(looks_like_repeated_token_noise(text))
         self.assertEqual(clean_transcript(text), text)
 
     def test_helper_record_start_replaces_existing_stream_and_stop_cleans_up(self):
-        """Verify helper record start replaces existing stream and stop cleans up behavior."""
         streams = []
 
         class FakeStream:
-            """Test case for fake stream behavior."""
             def __init__(self, **_kwargs):
-                """Initialize the fake stream instance."""
                 self.started = False
                 self.stopped = False
                 self.closed = False
                 streams.append(self)
 
             def start(self):
-                """Verify start behavior."""
                 self.started = True
 
             def stop(self):
-                """Verify stop behavior."""
                 self.stopped = True
 
             def close(self):
-                """Verify close behavior."""
                 self.closed = True
 
         fake_sounddevice = types.SimpleNamespace(InputStream=FakeStream)

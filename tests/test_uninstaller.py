@@ -214,6 +214,7 @@ def test_keychain_cleanup_removes_consolidated_oauth_and_legacy_accounts(monkeyp
 
     accounts = {account for _service, account in deleted}
     assert {"__wisp_secrets__", "chatgpt-oauth", "github-oauth", "github-copilot-token"} <= accounts
+    assert {"chatgpt-oauth-chunk-0", "chatgpt-oauth-chunk-31"} <= accounts
     assert {name.lower() for name in secret_store.API_KEY_NAMES} <= accounts
 
 
@@ -280,3 +281,96 @@ def test_uninstall_confirmation_is_yes_no_without_typed_phrase(monkeypatch, tmp_
     assert uninstall_dialog.run_uninstall_dialog() is True
     assert launches == [plan]
     app.processEvents()
+
+
+def test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free(monkeypatch, tmp_path):
+    """Every pre-launch uninstall failure keeps Wisp alive and removes its helper."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from core import updater
+    from ui import uninstall_dialog
+
+    app = QApplication.instance() or QApplication([])
+    helper_parent = tmp_path / "helpers"
+    helper_parent.mkdir()
+    plans = (
+        uninstaller.UninstallPlan(
+            platform="win32",
+            source_checkout=False,
+            app_root=tmp_path / "missing-release" / "Wisp",
+            user_data_root=tmp_path / "missing-release-data" / "Wisp",
+            targets=(tmp_path / "missing-release" / "Wisp",),
+        ),
+        uninstaller.UninstallPlan(
+            platform="linux",
+            source_checkout=True,
+            app_root=tmp_path / "missing-source" / "Wisp",
+            user_data_root=tmp_path / "missing-source-data" / "wisp",
+            targets=(tmp_path / "missing-source" / "Wisp",),
+        ),
+    )
+    failures = (
+        PermissionError("target is locked"),
+        PermissionError("required elevation is denied"),
+        PermissionError("storage access is denied"),
+        OSError("another process is using the files"),
+        OSError("cleanup only partly completes"),
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(uninstaller.tempfile, "gettempdir", lambda: str(helper_parent))
+    monkeypatch.setattr(uninstaller, "remove_wisp_keychain_entries", lambda: [])
+    monkeypatch.setattr(updater, "wisp_wait_pid", lambda _pid=None: 123)
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, message: warnings.append(message))
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: None)
+    monkeypatch.setattr(QTimer, "singleShot", lambda *_args: None)
+
+    for plan in plans:
+        monkeypatch.setattr(uninstall_dialog.uninstaller, "build_uninstall_plan", lambda p=plan: p)
+        for failure in failures:
+            monkeypatch.setattr(
+                updater,
+                "launch_detached_helper",
+                lambda *_args, error=failure, **_kwargs: (_ for _ in ()).throw(error),
+            )
+            before = set(helper_parent.iterdir())
+            assert uninstall_dialog.run_uninstall_dialog() is False
+            assert set(helper_parent.iterdir()) == before
+            assert str(failure) in warnings[-1]
+
+    # Cancelling at the confirmation boundary must never create a helper.
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.StandardButton.No)
+    before = set(helper_parent.iterdir())
+    assert uninstall_dialog.run_uninstall_dialog() is False
+    assert set(helper_parent.iterdir()) == before
+    app.processEvents()
+
+
+def test_uninstall_renderers_retry_missing_locked_and_partial_targets(tmp_path):
+    """Both detached removers encode missing-target, retry, logging, and self-cleanup."""
+    targets = (tmp_path / "missing", tmp_path / "locked", tmp_path / "partial")
+    for platform in ("win32", "linux"):
+        plan = uninstaller.UninstallPlan(
+            platform=platform,
+            source_checkout=platform != "win32",
+            app_root=targets[0],
+            user_data_root=tmp_path / "data" / "wisp",
+            targets=targets,
+        )
+        log = tmp_path / f"{platform}-failures.log"
+        if platform == "win32":
+            script = uninstaller.render_windows_uninstall_script(plan, wait_pid=123, log_path=log)
+            assert "for ($attempt = 0; $attempt -lt 30; $attempt++)" in script
+            assert "Test-Path -LiteralPath" in script
+            assert "Could not remove:" in script
+            assert "Remove-Item -LiteralPath $PSCommandPath" in script
+        else:
+            script = uninstaller.render_posix_uninstall_script(plan, wait_pid=123, log_path=log)
+            assert "[ -e \"$target\" ] || [ -L \"$target\" ]" in script
+            assert "if ! rm -rf -- \"$target\"" in script
+            assert "Could not remove:" in script
+            assert "rm -f -- \"$0\"" in script
+        for target in targets:
+            assert str(target) in script

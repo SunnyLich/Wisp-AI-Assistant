@@ -1416,14 +1416,17 @@ def capture_fullscreen(path: str = "") -> dict[str, Any]:
             }
         except Exception as exc:  # noqa: BLE001 - surface capture failure to caller
             return {"ok": False, "path": path, "error": f"{type(exc).__name__}: {exc}"}
-    from core.platform import macos_native
+    try:
+        from core.platform import macos_native
 
-    ok = macos_native.capture_screen_to_file(path)
-    return {
-        "ok": ok,
-        "path": path,
-        "size": os.path.getsize(path) if os.path.exists(path) else 0,
-    }
+        ok = macos_native.capture_screen_to_file(path)
+        return {
+            "ok": ok,
+            "path": path,
+            "size": os.path.getsize(path) if os.path.exists(path) else 0,
+        }
+    except Exception as exc:  # noqa: BLE001 - surface capture failure to caller
+        return {"ok": False, "path": path, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _normalize_region(region: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1448,14 +1451,21 @@ def capture_region(path: str = "", region: dict[str, Any] | None = None) -> dict
         import tempfile
 
         path = str(Path(tempfile.gettempdir()) / f"wisp-region-{int(time.time() * 1000)}.png")
+    normalized = _normalize_region(region)
+    if normalized is None:
+        return {
+            "ok": False,
+            "path": path,
+            "region": region,
+            "error": "ValueError: selected capture region is empty or invalid",
+        }
     if not IS_MAC:
         try:
             from core.capture import get_screen_snippet
 
-            normalized = _normalize_region(region)
             img = get_screen_snippet(normalized)
             img.save(path, format="PNG")
-            return {"ok": True, "path": path, "region": normalized or region}
+            return {"ok": True, "path": path, "region": normalized}
         except Exception as exc:  # noqa: BLE001 - surface capture failure to caller
             return {
                 "ok": False,
@@ -1463,11 +1473,18 @@ def capture_region(path: str = "", region: dict[str, Any] | None = None) -> dict
                 "region": region,
                 "error": f"{type(exc).__name__}: {exc}",
             }
-    from core.platform import macos_native
+    try:
+        from core.platform import macos_native
 
-    normalized = _normalize_region(region)
-    ok = macos_native.capture_screen_to_file(path, region=normalized)
-    return {"ok": ok, "path": path, "region": normalized or region}
+        ok = macos_native.capture_screen_to_file(path, region=normalized)
+        return {"ok": ok, "path": path, "region": normalized}
+    except Exception as exc:  # noqa: BLE001 - surface capture failure to caller
+        return {
+            "ok": False,
+            "path": path,
+            "region": normalized,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def _plog(event: str) -> None:

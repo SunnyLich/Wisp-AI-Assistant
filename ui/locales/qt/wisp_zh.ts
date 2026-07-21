@@ -5527,6 +5527,9 @@ Continue?</translation>
     <message><source>will retry when first used</source><translation>首次使用时将重试</translation></message>
     <message><source>failed - {message}</source><translation>失败 — {message}</translation></message>
     <message><source>stopped</source><translation>已停止</translation></message>
+    <message><source>Copy all</source><translation>复制全部</translation></message>
+    <message><source>Log directory</source><translation>日志目录</translation></message>
+    <message><source>running</source><translation>运行中</translation></message>
     <message><source>waiting to start</source><translation>等待开始</translation></message>
     <message><source>not completed</source><translation>未完成</translation></message>
     <message><source>unknown error</source><translation>未知错误</translation></message>
@@ -5717,5 +5720,16 @@ Shared uv/pip caches and unrelated Hugging Face models will not be removed.</sou
     <message><source>ChatGPT started {action}</source><translation>ChatGPT 已开始 {action}</translation></message>
     <message><source>ChatGPT {action}: {status}</source><translation>ChatGPT {action}：{status}</translation></message>
     <message><source>ChatGPT login</source><translation>ChatGPT 登录</translation></message>
+    <message><source>Crash report</source><translation>崩溃报告</translation></message>
+    <message><source>Create a redacted diagnostic bundle to attach to a bug report. Wisp includes bounded log tails and system details, but does not collect chat, memory, settings, environment, or keychain files. Review the archive before sharing because logs can still contain user-provided text.</source><translation>创建经过脱敏的诊断包，以附加到错误报告中。Wisp 会包含长度受限的日志末尾和系统详细信息，但不会收集聊天、记忆、设置、环境或钥匙串文件。分享前请检查压缩包，因为日志中仍可能包含用户提供的文本。</translation></message>
+    <message><source>No crash report created yet.</source><translation>尚未创建崩溃报告。</translation></message>
+    <message><source>Create crash report…</source><translation>创建崩溃报告…</translation></message>
+    <message><source>Creating crash report…</source><translation>正在创建崩溃报告…</translation></message>
+    <message><source>Crash report created: {name}</source><translation>已创建崩溃报告：{name}</translation></message>
+    <message><source>Crash report created</source><translation>已创建崩溃报告</translation></message>
+    <message><source>The redacted report was saved here:</source><translation>脱敏报告已保存到：</translation></message>
+    <message><source>Review the ZIP before attaching it to a bug report.</source><translation>将 ZIP 附加到错误报告前，请先检查其内容。</translation></message>
+    <message><source>Crash report could not be created.</source><translation>无法创建崩溃报告。</translation></message>
+    <message><source>Crash report failed</source><translation>崩溃报告创建失败</translation></message>
   </context>
 </TS>

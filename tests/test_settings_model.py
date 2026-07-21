@@ -41,7 +41,6 @@ def _restore_config_globals(snapshot: dict[str, object]) -> None:
 
 @pytest.mark.usefixtures("isolated_default_profile")
 def test_get_settings_returns_typed_snapshot():
-    """Verify get settings returns typed snapshot behavior."""
     previous_config = _snapshot_config_globals()
     try:
         with patch("config.load_dotenv"), patch.dict(
@@ -206,7 +205,6 @@ def test_default_profile_preserves_legacy_second_caller_defaults():
 
 
 def test_trust_privacy_mode_can_be_disabled():
-    """Verify trust privacy mode can be disabled behavior."""
     previous_config = _snapshot_config_globals()
     try:
         with patch("config.load_dotenv"), patch.dict(
@@ -226,7 +224,6 @@ def test_trust_privacy_mode_can_be_disabled():
 
 
 def test_trust_privacy_mode_defaults_on():
-    """Verify trust privacy mode defaults on behavior."""
     previous_config = _snapshot_config_globals()
     try:
         with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=True):

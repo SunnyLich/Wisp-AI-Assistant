@@ -12,7 +12,6 @@ import config
 
 
 class ConfigEnvTests(unittest.TestCase):
-    """Test case for config env tests behavior."""
     def test_reload_parses_chat_harness_and_conversation_owner(self):
         """The two top-level conversation selectors load independently."""
         previous = {
@@ -159,7 +158,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_reload_parses_icon_size_and_bool_aliases(self):
-        """Verify reload parses icon size and bool aliases behavior."""
         previous = {
             "ICON_SIZE": config.ICON_SIZE,
             "BUBBLE_FONT_SIZE": config.BUBBLE_FONT_SIZE,
@@ -340,7 +338,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_assistant_language_is_appended_to_system_prompt(self):
-        """Verify assistant language is appended to system prompt behavior."""
         previous = {
             "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
             "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
@@ -645,7 +642,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_app_language_loads_from_env(self):
-        """Verify app language loads from env behavior."""
         previous = {"APP_LANGUAGE": config.APP_LANGUAGE}
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -681,7 +677,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_local_file_access_settings_load_from_env(self):
-        """Verify local file access settings load from env behavior."""
         previous = {
             "TOOL_FILE_ROOTS": list(getattr(config, "TOOL_FILE_ROOTS", [])),
             "TOOL_FILE_MODE": getattr(config, "TOOL_FILE_MODE", "never"),
@@ -861,7 +856,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_assistant_language_can_match_user(self):
-        """Verify assistant language can match user behavior."""
         previous = {
             "ASSISTANT_LANGUAGE": config.ASSISTANT_LANGUAGE,
             "SYSTEM_PROMPT_UTILITY": config.SYSTEM_PROMPT_UTILITY,
@@ -883,7 +877,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_reload_refreshes_secret_cache(self):
-        """Verify reload refreshes secret cache behavior."""
         with patch("config.load_dotenv"), patch.object(config.secret_store, "refresh_cache") as refresh:
             config.reload()
 
@@ -926,7 +919,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_caller_context_modes_load_from_new_env_keys(self):
-        """Verify caller context modes load from new env keys behavior."""
         previous_rows = list(config.CALLER_ROWS)
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -954,7 +946,6 @@ class ConfigEnvTests(unittest.TestCase):
             config.CALLER_ROWS[:] = previous_rows
 
     def test_caller_context_modes_migrate_legacy_tool_keys(self):
-        """Verify caller context modes migrate legacy tool keys behavior."""
         previous_rows = list(config.CALLER_ROWS)
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -1106,7 +1097,6 @@ class ConfigEnvTests(unittest.TestCase):
                 setattr(config, name, value)
 
     def test_voice_caller_defaults_mirror_general_caller(self):
-        """Verify voice caller defaults mirror general caller behavior."""
         previous = dict(config.VOICE_CALLER)
         try:
             with patch("config.load_dotenv"), patch.dict(os.environ, {}, clear=False):
@@ -1210,7 +1200,6 @@ class ConfigEnvTests(unittest.TestCase):
             config.VOICE_CALLER.update(previous_voice)
 
     def test_voice_caller_loads_env_overrides_and_tools(self):
-        """Verify voice caller loads env overrides and tools behavior."""
         previous = dict(config.VOICE_CALLER)
         try:
             with patch("config.load_dotenv"), patch.dict(
@@ -1275,7 +1264,6 @@ class ConfigEnvTests(unittest.TestCase):
             config.SNIP_CALLER.update(previous)
 
     def test_caller_tool_overrides_load_from_env(self):
-        """Verify caller tool overrides load from env behavior."""
         previous_rows = list(config.CALLER_ROWS)
         try:
             with patch("config.load_dotenv"), patch.dict(

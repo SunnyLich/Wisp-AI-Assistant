@@ -5527,6 +5527,9 @@ Continue?</translation>
     <message><source>will retry when first used</source><translation>réessaiera lors de la première utilisation</translation></message>
     <message><source>failed - {message}</source><translation>échec — {message}</translation></message>
     <message><source>stopped</source><translation>arrêté</translation></message>
+    <message><source>Copy all</source><translation>Tout copier</translation></message>
+    <message><source>Log directory</source><translation>Dossier des journaux</translation></message>
+    <message><source>running</source><translation>en cours d'exécution</translation></message>
     <message><source>waiting to start</source><translation>en attente de démarrage</translation></message>
     <message><source>not completed</source><translation>non terminé</translation></message>
     <message><source>unknown error</source><translation>erreur inconnue</translation></message>
@@ -5717,5 +5720,16 @@ Les caches partagés uv/pip et les modèles Hugging Face sans rapport ne seront 
     <message><source>ChatGPT started {action}</source><translation>ChatGPT a démarré {action}</translation></message>
     <message><source>ChatGPT {action}: {status}</source><translation>ChatGPT {action} : {status}</translation></message>
     <message><source>ChatGPT login</source><translation>Connexion à ChatGPT</translation></message>
+    <message><source>Crash report</source><translation>Rapport d’incident</translation></message>
+    <message><source>Create a redacted diagnostic bundle to attach to a bug report. Wisp includes bounded log tails and system details, but does not collect chat, memory, settings, environment, or keychain files. Review the archive before sharing because logs can still contain user-provided text.</source><translation>Créez un paquet de diagnostic expurgé à joindre à un rapport d’incident. Wisp inclut des fins de journaux limitées et des informations système, mais ne collecte pas les discussions, la mémoire, les réglages, les fichiers d’environnement ni les fichiers du trousseau. Vérifiez l’archive avant de la partager, car les journaux peuvent encore contenir du texte fourni par l’utilisateur.</translation></message>
+    <message><source>No crash report created yet.</source><translation>Aucun rapport d’incident n’a encore été créé.</translation></message>
+    <message><source>Create crash report…</source><translation>Créer un rapport d’incident…</translation></message>
+    <message><source>Creating crash report…</source><translation>Création du rapport d’incident…</translation></message>
+    <message><source>Crash report created: {name}</source><translation>Rapport d’incident créé : {name}</translation></message>
+    <message><source>Crash report created</source><translation>Rapport d’incident créé</translation></message>
+    <message><source>The redacted report was saved here:</source><translation>Le rapport expurgé a été enregistré ici :</translation></message>
+    <message><source>Review the ZIP before attaching it to a bug report.</source><translation>Vérifiez le fichier ZIP avant de le joindre à un rapport d’incident.</translation></message>
+    <message><source>Crash report could not be created.</source><translation>Le rapport d’incident n’a pas pu être créé.</translation></message>
+    <message><source>Crash report failed</source><translation>Échec du rapport d’incident</translation></message>
   </context>
 </TS>

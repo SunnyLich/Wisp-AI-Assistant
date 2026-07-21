@@ -1,25 +1,25 @@
 """Tests for test github auth."""
 
+import json
 import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 import config
 from core.auth import github as github_auth
 
 
 class GithubAuthTests(unittest.TestCase):
-    """Test case for github auth tests behavior."""
     def test_configured_client_id_prefers_user_override(self):
-        """Verify configured client id prefers user override behavior."""
         with patch.object(config, "GITHUB_CLIENT_ID", "custom"), patch.object(
             config, "GITHUB_DEFAULT_CLIENT_ID", "default"
         ), patch.object(github_auth, "_BUNDLED_CLIENT_ID", "bundled"):
             self.assertEqual(github_auth.configured_client_id(), "custom")
 
     def test_configured_client_id_falls_back_to_bundled(self):
-        """Verify configured client id falls back to bundled behavior."""
         with patch.object(config, "GITHUB_CLIENT_ID", ""), patch.object(
             config, "GITHUB_DEFAULT_CLIENT_ID", ""
         ), patch.object(github_auth, "_BUNDLED_CLIENT_ID", "bundled"):
@@ -113,8 +113,96 @@ def test_github_device_flow_pending_then_persists_validated_user(monkeypatch):
     assert saved[0]["user"] == {"login": "octo-user", "id": 42, "name": "Octo"}
 
 
-def test_github_token_file_fallback_and_logout_clear(tmp_path, monkeypatch):
-    """GitHub fallback persistence is readable and logout clears every copy."""
+def test_github_device_flow_failure_matrix_is_in_band(monkeypatch):
+    """Device OAuth reports expiry, provider/network faults, and rejected scopes."""
+    monkeypatch.setattr(github_auth, "configured_client_id", lambda: "client-id")
+    monkeypatch.setattr(github_auth.time, "sleep", lambda _seconds: None)
+
+    cases = (
+        (ConnectionError("provider service is unavailable"), "provider service is unavailable"),
+        (OSError("network access is unavailable"), "network access is unavailable"),
+        ({"error": "invalid_scope", "error_description": "requested scopes are rejected"}, "requested scopes are rejected"),
+        (
+            {
+                "verification_uri": "https://github.com/login/device",
+                "user_code": "EXPIRED",
+                "device_code": "expired-device",
+                "expires_in": 0,
+                "interval": 1,
+            },
+            "expired",
+        ),
+    )
+    for response, expected in cases:
+        finished = threading.Event()
+        errors = []
+
+        def post_form(_url, _params, response=response):
+            if isinstance(response, BaseException):
+                raise response
+            return response
+
+        monkeypatch.setattr(github_auth, "_post_form", post_form)
+        github_auth.start_device_login(
+            lambda _url, _code: None,
+            lambda _tokens: finished.set(),
+            lambda error: (errors.append(error), finished.set()),
+        )
+        assert finished.wait(5)
+        assert expected in errors[-1].lower()
+
+
+def test_github_device_flow_cancellation_and_manual_browser_fallback(monkeypatch):
+    """The copyable device code survives browser failure, while cancellation stops polling."""
+    device = {
+        "verification_uri": "https://github.com/login/device",
+        "user_code": "COPY-ME",
+        "device_code": "device-secret",
+        "expires_in": 900,
+        "interval": 1,
+    }
+    codes = []
+    cancelled = {"value": False}
+    polled = []
+    stopped = threading.Event()
+    monkeypatch.setattr(github_auth, "configured_client_id", lambda: "client-id")
+
+    def post_form(url, _params):
+        if url == github_auth._DEVICE_CODE_URL:
+            return device
+        polled.append(url)
+        return {"access_token": "must-not-be-stored"}
+
+    def on_code(url, code):
+        codes.append((url, code))
+        cancelled["value"] = True
+
+    def is_cancelled():
+        if cancelled["value"]:
+            stopped.set()
+        return cancelled["value"]
+
+    monkeypatch.setattr(github_auth, "_post_form", post_form)
+    monkeypatch.setattr(github_auth.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        github_auth,
+        "save_tokens",
+        lambda _tokens: pytest.fail("cancelled device flow stored a token"),
+    )
+
+    github_auth.start_device_login(
+        on_code,
+        lambda _tokens: pytest.fail("cancelled device flow completed"),
+        lambda _error: pytest.fail("cancellation should stop silently"),
+        is_cancelled=is_cancelled,
+    )
+    assert stopped.wait(5)
+    assert codes == [("https://github.com/login/device", "COPY-ME")]
+    assert polled == []
+
+
+def test_github_token_storage_fails_closed_when_keyring_is_unavailable(tmp_path, monkeypatch):
+    """GitHub OAuth tokens are never written to a plaintext fallback file."""
     token_file = tmp_path / "private" / "github.json"
     tokens = {"access": "github-contract-token", "user": {"login": "octo-user"}, "saved_at": 1}
     monkeypatch.setattr(github_auth, "_TOKEN_FILE", token_file)
@@ -122,11 +210,23 @@ def test_github_token_file_fallback_and_logout_clear(tmp_path, monkeypatch):
     monkeypatch.setattr(github_auth, "_keyring_set", lambda _value: False)
     monkeypatch.setattr(github_auth, "_keyring_delete", lambda: None)
 
-    github_auth.save_tokens(tokens)
+    with pytest.raises(github_auth.OAuthTokenStorageError, match="not stored"):
+        github_auth.save_tokens(tokens)
+    assert not token_file.exists()
+
+
+def test_github_legacy_plaintext_tokens_migrate_and_are_removed(tmp_path, monkeypatch):
+    token_file = tmp_path / "private" / "github.json"
+    token_file.parent.mkdir(parents=True)
+    tokens = {"access": "github-contract-token", "user": {"login": "octo-user"}, "saved_at": 1}
+    token_file.write_text(json.dumps(tokens), encoding="utf-8")
+    stored: list[str] = []
+    monkeypatch.setattr(github_auth, "_TOKEN_FILE", token_file)
+    monkeypatch.setattr(github_auth, "_keyring_get", lambda: stored[-1] if stored else None)
+    monkeypatch.setattr(github_auth, "_keyring_set", lambda value: stored.append(value) or True)
+
     assert github_auth.get_tokens() == tokens
     assert github_auth.get_user_login() == "octo-user"
-    github_auth.clear_tokens()
-    assert github_auth.get_tokens() is None
     assert not token_file.exists()
 
 

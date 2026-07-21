@@ -19,8 +19,8 @@ def _categories(text: str) -> set[str]:
 def test_builtin_detector_covers_structured_private_data_and_tokens():
     text = (
         "Email alex@example.com, SSN 123-45-6789, card 4111 1111 1111 1111, "
-        "IBAN GB82 WEST 1234 5698 7654 32, AWS AKIAIOSFODNN7EXAMPLE, "
-        "GitHub ghp_abcdefghijklmnopqrstuvwxyz1234567890AB, passport: X12345678, "
+        "IBAN GB82 WEST 1234 5698 7654 32, AWS AKIAIOSFODNN7EXAMPLE, "  # secret-scan: allow
+        "GitHub ghp_abcdefghijklmnopqrstuvwxyz1234567890AB, passport: X12345678, "  # secret-scan: allow
         "and driver's license number: D1234567."
     )
 
@@ -33,7 +33,7 @@ def test_builtin_detector_covers_structured_private_data_and_tokens():
         "123-45-6789",
         "4111 1111 1111 1111",
         "GB82 WEST 1234 5698 7654 32",
-        "AKIAIOSFODNN7EXAMPLE",
+        "AKIAIOSFODNN7EXAMPLE",  # secret-scan: allow
     ):
         assert secret not in redacted
 
@@ -184,6 +184,60 @@ def test_ai_detector_failure_is_fail_closed(monkeypatch):
     monkeypatch.setattr("core.privacy_model.detect_with_model", unavailable)
     with pytest.raises(RuntimeError, match="model unavailable"):
         PrivacySession("ai").scrub_fields({"prompt": "hello"}, ai_enabled=True)
+
+
+def test_privacy_failure_matrix_is_fail_closed(monkeypatch):
+    """Exercise all shared privacy failure causes without allowing a cloud send."""
+    for failure in (
+        FileNotFoundError("selected privacy filter unavailable"),
+        ImportError("selected privacy runtime unavailable"),
+        OSError("privacy model assets missing"),
+        TimeoutError("private-information detection timed out"),
+    ):
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                "core.privacy_model.detect_with_model",
+                lambda *_args, failure=failure, **_kwargs: (_ for _ in ()).throw(failure),
+            )
+            with pytest.raises(type(failure), match=str(failure)):
+                PrivacySession(f"failure-{type(failure).__name__}").scrub_fields(
+                    {"prompt": "send this"},
+                    ai_enabled=True,
+                )
+
+    calls = 0
+
+    def misclassifying_detector(text: str, *, source: str = "", include_custom: bool = True):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return []
+        return [SensitiveEntity("secret", 0, len(text), text, "[SECRET]", source)]
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr("core.privacy_gateway.detect_sensitive_entities", misclassifying_detector)
+        with pytest.raises(PrivacyLeakDetected):
+            PrivacySession("misclassified").scrub_fields({"prompt": "unsafe"})
+
+    with pytest.raises(PrivacyReviewCanceled):
+        PrivacySession("cancelled").scrub_fields(
+            {"prompt": "alex@example.com"},
+            review=lambda _payload: "cancel",
+        )
+
+    import config
+
+    monkeypatch.setattr(
+        config,
+        "PRIVACY_CUSTOM_PATTERNS",
+        '[{"name":"broken","pattern":"["}]',
+        raising=False,
+    )
+    scrubbed, report = PrivacySession("invalid-config").scrub_fields(
+        {"prompt": "alex@example.com"}
+    )
+    assert scrubbed["prompt"] == "[EMAIL_1]"
+    assert report["categories"] == {"email": 1}
 
 
 def test_cloud_bound_tool_results_use_the_same_session(monkeypatch):

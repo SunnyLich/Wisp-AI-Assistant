@@ -152,7 +152,14 @@ class ToolRegistry:
             return f"Unknown tool: {name!r}"
         if not spec.executor:
             return f"Tool {name!r} is model-side only and cannot be executed locally."
-        return spec.executor(inputs or {})
+        if not isinstance(inputs, dict):
+            return f"Invalid inputs for tool {name!r}: expected an object."
+        required = tuple(spec.input_schema.get("required") or ())
+        missing = [field for field in required if field not in inputs]
+        if missing:
+            fields = ", ".join(repr(field) for field in missing)
+            return f"Invalid inputs for tool {name!r}: missing required field(s) {fields}."
+        return spec.executor(inputs)
 
     def refresh(self) -> None:
         """Drop the cached script tools so they reload on next access."""

@@ -99,7 +99,7 @@ def test_extract_useful_page_context_clips_and_redacts_final_output():
       <body>
         <main>
           <h1>Token notes</h1>
-          <p>api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890</p>
+          <p>api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890</p>  <!-- secret-scan: allow -->
           <p>This long paragraph should force clipping when the context budget is small.</p>
         </main>
       </body>

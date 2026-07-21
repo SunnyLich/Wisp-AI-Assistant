@@ -1,4 +1,4 @@
-"""Tests for macos py test app logging."""
+"""Tests for supervisor app startup dispatch and runtime log modes."""
 
 import os
 from pathlib import Path
@@ -35,7 +35,6 @@ def test_optional_install_startup_maintenance_resumes_before_cleanup(monkeypatch
 
 
 def test_dispatch_module_mode_runs_requested_worker_module(monkeypatch):
-    """Verify dispatch module mode runs requested worker module behavior."""
     calls = []
     monkeypatch.setattr(supervisor_app.sys, "argv", ["Wisp.exe", "-m", "runtime.workers.audio_host", "--flag"])
     monkeypatch.setattr(supervisor_app.runpy, "run_module", lambda *args, **kwargs: calls.append((args, kwargs)))
@@ -88,7 +87,6 @@ def test_runtime_log_mode_explicit_crash_overrides_frozen_default(monkeypatch):
 
 
 def test_prepare_run_log_dir_sets_env_and_latest_pointer(tmp_path, monkeypatch):
-    """Verify prepare run log dir sets env and latest pointer behavior."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
     monkeypatch.setattr(supervisor_app, "repo_root", lambda: tmp_path)
 
@@ -114,7 +112,6 @@ def test_prepare_crash_log_dir_does_not_enable_worker_logs(tmp_path, monkeypatch
 
 
 def test_prepare_run_log_dir_respects_existing_env(tmp_path, monkeypatch):
-    """Verify prepare run log dir respects existing env behavior."""
     configured = tmp_path / "custom-logs"
     monkeypatch.setenv("WISP_RUN_LOG_DIR", str(configured))
 
@@ -168,15 +165,12 @@ def test_prepare_run_log_dir_prunes_expired_runtime_logs(tmp_path, monkeypatch):
 
 
 def test_main_exits_when_single_instance_lock_is_held(tmp_path, monkeypatch):
-    """Verify main exits when single instance lock is held behavior."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
     monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
     monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: False)
 
     class ShouldNotStart:
-        """Test case for should not start behavior."""
         def __init__(self):
-            """Initialize the should not start instance."""
             raise AssertionError("workers should not start for duplicate instance")
 
     monkeypatch.setattr(supervisor_app, "WispSupervisor", ShouldNotStart)
@@ -185,34 +179,26 @@ def test_main_exits_when_single_instance_lock_is_held(tmp_path, monkeypatch):
 
 
 def test_main_exits_when_ui_worker_exits(tmp_path, monkeypatch):
-    """Verify main exits when ui worker exits behavior."""
     monkeypatch.delenv("WISP_RUN_LOG_DIR", raising=False)
     monkeypatch.delenv("WISP_RUNTIME_LOG_MODE", raising=False)
     monkeypatch.setattr(supervisor_app.single_instance, "acquire", lambda: True)
     instances = []
 
     class FakeWorker:
-        """Test case for fake worker behavior."""
         def __init__(self):
-            """Initialize the fake worker instance."""
             self.exit_handlers = []
 
         def on_exit(self, handler):
-            """Verify on exit behavior."""
             self.exit_handlers.append(handler)
 
         def on_event(self, _event, _handler):
-            """Verify on event behavior."""
             pass
 
         def call(self, _method, _params=None, *, timeout=30.0, wait=True):
-            """Verify call behavior."""
             return {"started": True}
 
     class FakeSupervisor:
-        """Test case for fake supervisor behavior."""
         def __init__(self):
-            """Initialize the fake supervisor instance."""
             self.workers = {
                 "native": FakeWorker(),
                 "ui": FakeWorker(),
@@ -223,26 +209,20 @@ def test_main_exits_when_ui_worker_exits(tmp_path, monkeypatch):
             instances.append(self)
 
         def start_all(self):
-            """Verify start all behavior."""
             return {}
 
         def shutdown(self):
-            """Verify shutdown behavior."""
             self.shutdown_called = True
 
     class FakeFlowController:
-        """Test case for fake flow controller behavior."""
-        def __init__(self, *, native, ui, brain, audio):
-            """Initialize the fake flow controller instance."""
+        def __init__(self, *, native, ui, brain, audio, **_kwargs):
             self.ui = ui
 
         def start(self):
-            """Verify start behavior."""
             for handler in list(self.ui.exit_handlers):
                 handler(0)
 
         def start_hotkeys(self):
-            """Verify start hotkeys behavior."""
             return {"started": True}
 
     monkeypatch.setattr(supervisor_app, "WispSupervisor", FakeSupervisor)
@@ -310,7 +290,7 @@ def test_main_shuts_down_after_nonzero_ui_exit(tmp_path, monkeypatch):
 
     class FakeFlowController:
         """Fake flow controller that simulates a UI crash."""
-        def __init__(self, *, native, ui, brain, audio):
+        def __init__(self, *, native, ui, brain, audio, **_kwargs):
             """Initialize fake flow controller."""
             self.ui = ui
 
@@ -385,7 +365,7 @@ def test_main_restarts_audio_worker_after_unexpected_exit(tmp_path, monkeypatch)
 
     class FakeFlowController:
         """Fake flow controller that simulates audio exit, then normal UI exit."""
-        def __init__(self, *, native, ui, brain, audio):
+        def __init__(self, *, native, ui, brain, audio, **_kwargs):
             self.ui = ui
             self.audio = audio
 
@@ -463,7 +443,7 @@ def test_main_does_not_restart_ui_after_user_quit_event(tmp_path, monkeypatch):
 
     class FakeFlowController:
         """Fake flow controller that simulates user quit with a nonzero UI exit."""
-        def __init__(self, *, native, ui, brain, audio):
+        def __init__(self, *, native, ui, brain, audio, **_kwargs):
             """Initialize fake flow controller."""
             self.ui = ui
 
@@ -537,7 +517,7 @@ def test_main_writes_crash_log_when_ui_worker_exits_nonzero(tmp_path, monkeypatc
 
     class FakeFlowController:
         """Fake flow controller that simulates a UI crash."""
-        def __init__(self, *, native, ui, brain, audio):
+        def __init__(self, *, native, ui, brain, audio, **_kwargs):
             """Initialize fake flow controller."""
             self.ui = ui
 

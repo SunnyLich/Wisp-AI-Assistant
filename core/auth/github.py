@@ -1,8 +1,7 @@
 """
 core/github_auth.py - GitHub OAuth device authentication.
 
-Tokens are stored in the OS keychain via keyring, with the same local fallback
-pattern used by chatgpt_auth.py.
+Tokens are stored only in the OS keychain via keyring.
 """
 from __future__ import annotations
 
@@ -26,6 +25,10 @@ _TOKEN_FILE = pathlib.Path(__file__).parent.parent / "private" / ".github_tokens
 # Public OAuth app client ID for this desktop app. GitHub device flow does not
 # require a client secret, so this is safe to bundle once the OAuth app exists.
 _BUNDLED_CLIENT_ID = "Ov23lir59v9aESWj9PYV"
+
+
+class OAuthTokenStorageError(RuntimeError):
+    """Raised when reusable OAuth tokens cannot be stored securely."""
 
 
 def configured_client_id() -> str:
@@ -77,10 +80,18 @@ def get_tokens() -> dict | None:
     """Return tokens."""
     raw = _keyring_get()
     if not raw and _TOKEN_FILE.exists():
+        # Migrate the plaintext fallback used by older Wisp versions. Always
+        # remove the file afterwards so keychain failure cannot preserve a
+        # reusable OAuth credential on disk.
         try:
-            raw = _TOKEN_FILE.read_text(encoding="utf-8")
-        except Exception:
-            pass
+            legacy_raw = _TOKEN_FILE.read_text(encoding="utf-8")
+            if legacy_raw and _keyring_set(legacy_raw) and _keyring_get() == legacy_raw:
+                raw = legacy_raw
+        finally:
+            try:
+                _TOKEN_FILE.unlink(missing_ok=True)
+            except Exception:
+                pass
     if raw:
         try:
             return json.loads(raw)
@@ -90,15 +101,14 @@ def get_tokens() -> dict | None:
 
 
 def save_tokens(tokens: dict) -> None:
-    """Save tokens."""
+    """Save tokens in the OS keychain, or fail without storing them."""
     serialized = json.dumps(tokens)
-    if not _keyring_set(serialized):
-        print(
-            "[github_auth] Warning: keyring unavailable - "
-            f"OAuth tokens stored in plaintext file: {_TOKEN_FILE}"
+    if not _keyring_set(serialized) or _keyring_get() != serialized:
+        raise OAuthTokenStorageError(
+            "GitHub sign-in succeeded, but its OAuth token could not be saved "
+            "to the OS keychain. The token was not stored. Check your system "
+            "keychain and try signing in again."
         )
-        _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TOKEN_FILE.write_text(serialized, encoding="utf-8")
 
 
 def clear_tokens() -> None:
@@ -224,6 +234,8 @@ def start_device_login(
     on_code: Callable[[str, str], None],
     on_success: Callable[[dict], None],
     on_error: Callable[[str], None],
+    *,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> None:
     """
     Start GitHub OAuth device flow in a background daemon thread.
@@ -234,6 +246,9 @@ def start_device_login(
 
     def _run() -> None:
         """Drive the GitHub device OAuth flow on the background thread."""
+        cancelled = is_cancelled or (lambda: False)
+        if cancelled():
+            return
         client_id = configured_client_id()
         if not client_id:
             on_error(
@@ -264,10 +279,16 @@ def start_device_login(
         expires_at = time.time() + int(device.get("expires_in", 900))
         interval = max(int(device.get("interval", 5)), 1)
 
+        if cancelled():
+            return
         on_code(verification_uri, user_code)
 
         while time.time() < expires_at:
+            if cancelled():
+                return
             time.sleep(interval)
+            if cancelled():
+                return
             try:
                 data = _post_form(
                     _ACCESS_TOKEN_URL,
@@ -285,6 +306,8 @@ def start_device_login(
             if not error:
                 try:
                     tokens = _tokens_from_raw(data)
+                    if cancelled():
+                        return
                     save_tokens(tokens)
                     on_success(tokens)
                 except Exception as exc:

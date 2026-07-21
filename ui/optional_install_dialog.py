@@ -418,16 +418,25 @@ class OptionalInstallDialog(QDialog):
             process.kill()
 
     def _copy_log(self) -> None:
-        clipboard = QApplication.clipboard()
-        if clipboard is not None:
+        try:
+            clipboard = QApplication.clipboard()
+            if clipboard is None:
+                raise RuntimeError("clipboard unavailable")
             clipboard.setText(self.log_text())
+        except Exception as exc:  # noqa: BLE001 - clipboard backends can fail natively
+            self._status.setText(f"{t('Copy log')}: {type(exc).__name__}")
 
     def _open_log_folder(self) -> None:
         if self._log_path is None:
             return
         folder = self._log_path.parent
-        folder.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+            if not opened:
+                self._status.setText(f"{t('Open log folder')}: unavailable")
+        except Exception as exc:  # noqa: BLE001 - desktop/path backends are external
+            self._status.setText(f"{t('Open log folder')}: {type(exc).__name__}")
 
     def closeEvent(self, event) -> None:  # noqa: N802
         process = self._process

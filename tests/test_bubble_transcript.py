@@ -1,5 +1,6 @@
 """Tests for test bubble transcript."""
 
+import base64
 import os
 import sys
 
@@ -7,8 +8,47 @@ import pytest
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_generated_image_is_scaled_into_the_speech_bubble(tmp_path):
+    """Large generated images become bounded thumbnails instead of disappearing."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    image_path = tmp_path / "large-generated.png"
+    source = QImage(1600, 1200, QImage.Format.Format_ARGB32)
+    source.fill(Qt.GlobalColor.magenta)
+    assert source.save(str(image_path), "PNG")
+    encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    bubble = SpeechBubble()
+
+    try:
+        base_height = bubble.height()
+        bubble.show_progress("Image generated.")
+
+        assert bubble.show_image(encoded) is True
+        thumbnail = bubble._image_label.pixmap()
+        assert thumbnail is not None and not thumbnail.isNull()
+        assert thumbnail.width() <= bubble._text_w
+        assert thumbnail.height() <= 300
+        assert bubble.height() > base_height
+        assert bubble._image_label.isVisible()
+        assert bubble._full_text == ""
+        assert bubble._can_open_chat_from_click() is True
+
+        bubble.clear()
+        assert bubble._image_label.isHidden()
+        assert bubble.height() == base_height
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_transcript_preview_is_replaced_by_first_reply_chunk():
-    """Verify transcript preview is replaced by first reply chunk behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -33,6 +73,101 @@ def test_transcript_preview_is_replaced_by_first_reply_chunk():
         assert "Heard:" not in bubble._full_text
     finally:
         config.APP_LANGUAGE = old_language
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_timed_reveal_invalid_config_and_finish_reset_are_safe(monkeypatch):
+    """Invalid WPM and speech completion cannot strand the fallback reveal timer."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import config
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    monkeypatch.setattr(config, "BUBBLE_REVEAL_WPM", "not-a-number", raising=False)
+    bubble = SpeechBubble()
+
+    try:
+        bubble.append_chunk("one two")
+        assert bubble._current_reveal_wpm() == 170
+        assert bubble._reveal_timer.interval() >= 1
+
+        bubble._revealed_count = len(bubble._pending_words)
+        bubble.finish()
+
+        assert bubble._reveal_timer.isActive() is False
+        assert bubble._reveal_mode is False
+        assert bubble._timestamp_mode is False
+        assert bubble._finishing is False
+    finally:
+        bubble.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained(monkeypatch):
+    """Consumer, speech, timer, stale-state, and invalid-render faults stay in Qt."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QApplication
+
+    from ui.bubble import SpeechBubble
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    bubble = SpeechBubble()
+
+    def fail(*_args):
+        raise RuntimeError("runtime callback failed")
+
+    try:
+        bubble.set_anchor_callback(fail)
+        bubble.set_hide_callback(fail)
+        bubble.set_highlight_callback(fail)
+        bubble.set_speed_callback(fail)
+        bubble.set_click_callback(fail)
+        bubble.set_companion_callback(fail)
+        bubble.set_stop_callback(fail)
+
+        bubble.show()
+        app.processEvents()
+        bubble._emit_highlight()
+        bubble._set_speed_boost(True)
+        bubble.append_chunk("reply remains usable")
+        bubble._text_view_clicked()
+        bubble._invoke_runtime_callback("stop", bubble._stop_callback)
+        bubble._system_move_active = True
+        bubble.move(bubble.pos() + QPoint(1, 1))
+        app.processEvents()
+        bubble.hide()
+        app.processEvents()
+
+        for wrapper, target_name in (
+            (bubble._on_dot_timer, "_tick_dots"),
+            (bubble._on_hide_timer, "hide"),
+            (bubble._on_reveal_timer, "_reveal_next_word"),
+            (bubble._on_scroll_snap_timer, "_snap_scroll_to_highlight"),
+        ):
+            with monkeypatch.context() as scoped:
+                scoped.setattr(bubble, target_name, fail)
+                wrapper()
+
+        # Invalid IPC render payloads are ignored rather than reaching string
+        # methods inside a Qt callback.
+        bubble.append_chunk({"invalid": "chunk"})
+        bubble.show_transcript({"invalid": "transcript"})
+        bubble.show_labeled_text({"bad": "label"}, {"bad": "body"})
+        bubble.show_progress(["bad", "progress"])
+
+        # A later valid operation proves the surface remains usable.
+        bubble.set_anchor_callback(None)
+        bubble.set_hide_callback(None)
+        bubble.show_notice("still alive", timeout_ms=0)
+        assert "still alive" in bubble._full_text
+    finally:
+        bubble.clear()
         bubble.deleteLater()
         app.processEvents()
 

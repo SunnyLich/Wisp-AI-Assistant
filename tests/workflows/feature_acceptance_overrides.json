@@ -1,0 +1,510 @@
+{
+  "schema_version": 1,
+  "overrides": [
+    {
+      "function_id": "F005",
+      "acceptance_status": "component_only",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_first_run_wizard_profile_is_active_in_runtime_and_visible_in_settings"],
+      "audit_note": "The wizard itself is exercised, but Settings does not open it through the real Settings action.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F016",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "WispSupervisor.start_all",
+      "test_node_ids": ["tests/runtime/test_supervisor_ipc.py::test_wisp_supervisor_starts_real_app_worker_process_set"],
+      "success_assertions": ["UI, native, brain, and audio workers start, answer ping, and remain isolated."],
+      "audit_note": "Uses the real supervisor and four real worker subprocesses.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F030",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "WispSupervisor.shutdown",
+      "test_node_ids": ["tests/runtime/test_supervisor_ipc.py::test_wisp_supervisor_starts_real_app_worker_process_set"],
+      "success_assertions": ["Every worker process has exited after normal app shutdown."],
+      "audit_note": "Normal shutdown is real; partial-failure shutdown remains secondary resilience evidence.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F049",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "native.hotkey event -> ui.intent.chosen event -> FlowController query stream",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_query_flow_streams_reply_and_adds_chat_conversation_with_context"],
+      "success_assertions": ["Streaming chunks reach the reply UI and the completed answer is added to chat."],
+      "audit_note": "External provider and workers are deterministic fakes; the production flow controller and event path are real.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F052",
+      "acceptance_status": "component_only",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_stream_cancel_stops_query_and_returns_partial_result", "tests/runtime/test_supervisor_ipc.py::test_brain_worker_cancel_stops_active_stream_over_ipc"],
+      "audit_note": "Brain cancellation works, but no user Stop/Cancel control currently drives this full chain in the acceptance test.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F420",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Onboarding profile fields/buttons and Settings Save changes button",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_switch_save_reopen_and_edit_only_the_selected_custom_profile"],
+      "success_assertions": ["Two profiles persist independently and the selected profile reloads with its edited model."],
+      "audit_note": "Uses visible Qt controls and a real isolated settings file.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F421",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings profile menu Rename profile action",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_rename_and_delete_profiles_leave_a_truthful_selector"],
+      "success_assertions": ["The renamed profile label is visible and persisted."],
+      "audit_note": "Uses the real menu action; only the modal text response is supplied by the test.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F422",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings profile menu Delete profile action",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_rename_and_delete_profiles_leave_a_truthful_selector"],
+      "success_assertions": ["Deleting inactive and final profiles updates disk, active selection, and the visible profile label."],
+      "audit_note": "Uses the real menu action; only the confirmation response is supplied by the test.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F424",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Run profile setup button -> OnboardingWizard",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_profile_setup_button_opens_real_wizard_and_dirty_settings_block_it", "tests/test_profile_user_workflows.py::test_repeating_setup_with_the_same_name_keeps_both_profiles_selectable"],
+      "success_assertions": ["Clean Settings opens the visible guided wizard; dirty Settings blocks it until pending changes are resolved."],
+      "audit_note": "The Settings entry and both clean/dirty branches are real; existing profile workflows cover completed wizard persistence.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I014"]
+    },
+    {
+      "function_id": "F425",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "SettingsDialog Save changes button click",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens"],
+      "success_assertions": ["Changed values are serialized, the callback identifies them, and a fresh dialog reloads them."],
+      "audit_note": "Uses a real Qt button and real settings serializer against isolated disk state.",
+      "dependency_status": "pending",
+      "interaction_ids": ["I001", "I003", "I011", "I013", "I014"]
+    },
+    {
+      "function_id": "F456",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Application/worker runtime log initialization",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow", "tests/runtime/test_supervisor_ipc.py::test_worker_stderr_log_file_is_created_in_run_log_dir"],
+      "success_assertions": ["Runtime and worker stderr log files are created and contain emitted diagnostic text."],
+      "audit_note": "Automatic operational feature; its real entry is lifecycle/log initialization rather than a button.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F458",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Worker exit event and query failure event -> FlowController recovery",
+      "test_node_ids": ["tests/runtime/test_supervisor_ipc.py::test_brain_worker_death_mid_stream_fails_request_and_recovers", "tests/runtime/test_flows.py::test_query_failure_reports_notice_and_returns_idle"],
+      "success_assertions": ["A dead brain worker is replaced and a failed query returns the UI to idle with a recovery notice."],
+      "audit_note": "Automatic runtime behavior is exercised through real worker death and production flow events.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F417",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings navigation QListWidget mouse clicks",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_navigation_search_and_cancel_are_real_user_workflows"],
+      "success_assertions": ["Every visible navigation row selects the corresponding real Settings page."],
+      "audit_note": "All eight current pages are selected through Qt mouse input.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I002", "I012", "I015"]
+    },
+    {
+      "function_id": "F418",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings search QLineEdit keyboard input",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_navigation_search_and_cancel_are_real_user_workflows"],
+      "success_assertions": ["A matching query leaves only the owning page, a no-match query leaves none, and clear restores every page."],
+      "audit_note": "Uses real keyboard events and visible page state.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I002"]
+    },
+    {
+      "function_id": "F426",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Cancel button mouse click",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_navigation_search_and_cancel_are_real_user_workflows"],
+      "success_assertions": ["Cancel closes Settings and both clean and dirty cancellation leave the real settings file unchanged after reopen."],
+      "audit_note": "Covers clean and unsaved-change states.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I003"]
+    },
+    {
+      "function_id": "F429",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Theme combo selection -> Settings Save changes button",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_every_theme_mode_saves_applies_and_reopens"],
+      "success_assertions": ["System, Light, and Dark each persist, invoke theme application, and reload selected."],
+      "audit_note": "Parameterized over every supported Theme mode.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I004", "I009"]
+    },
+    {
+      "function_id": "F040",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IntentOverlay custom shortcut, prompt editor keyboard input, and Enter",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events"],
+      "success_assertions": ["The exact typed prompt is emitted once through the production intent_chosen signal."],
+      "audit_note": "Uses Qt keyboard events; downstream streaming is separately accepted by F049.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F043",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Escape key on the visible IntentOverlay",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events"],
+      "success_assertions": ["Escape emits cancellation exactly once."],
+      "audit_note": "Uses a real Qt key event.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F044",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IntentOverlay production QTimer timeout",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events"],
+      "success_assertions": ["A positive configured timeout cancels an abandoned picker."],
+      "audit_note": "Waits on the real Qt timer and cancellation signal.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I005"]
+    },
+    {
+      "function_id": "F045",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IntentOverlay with configured timeout zero",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events"],
+      "success_assertions": ["The picker remains visible past the positive-timeout window and still accepts manual Escape cancellation."],
+      "audit_note": "Exercises the persistent and manual-close states.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I005"]
+    },
+    {
+      "function_id": "F116",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Full-screen mode click on the visible SnipOverlay",
+      "test_node_ids": ["tests/test_snip_overlay.py::test_toolbar_full_screen_mode_captures_virtual_desktop"],
+      "success_assertions": ["The production overlay emits the complete virtual-desktop region and no cancellation."],
+      "audit_note": "Uses a real Qt mouse event.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F121",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Escape key on the visible SnipOverlay",
+      "test_node_ids": ["tests/test_snip_overlay.py::test_show_focuses_for_capture_and_escape_still_cancels"],
+      "success_assertions": ["The focused capture overlay emits cancellation once."],
+      "audit_note": "Uses a real Qt key event after the deferred focus sequence.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F031",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "caller hotkey -> selection request -> native await-selection boundary -> restored Intent picker",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_intent_selection_capture_restores_picker_with_selected_text"],
+      "success_assertions": ["The newly selected text returns to the pending picker with an enabled token-estimated Selection chip and the draft preserved."],
+      "audit_note": "The external OS selection adapter is fake; the Wisp flow and event transitions are real.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F058",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "default config -> hotkey registration spec -> native hotkey event -> read-aloud flow",
+      "test_node_ids": ["tests/test_config_env.py::ConfigEnvTests::test_read_selection_aloud_hotkey_loads_from_env", "tests/runtime/test_hotkey_tap_matching.py::test_specs_from_config", "tests/runtime/test_flows.py::test_read_selection_aloud_native_hotkey_routes_to_tts"],
+      "success_assertions": ["F7 is the default, the action is registered, and its native event synthesizes the selected text."],
+      "audit_note": "The OS hook and audio device are external deterministic boundaries.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F272",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "TTS speak-replies setting -> completed reply flow and manual read-aloud flow",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_configured_tts_provider_does_not_auto_speak_replies_without_opt_in", "tests/runtime/test_flows.py::test_read_selection_aloud_speaks_selected_text_without_model"],
+      "success_assertions": ["A completed answer stays silent while manual selected-text read-aloud still synthesizes and plays."],
+      "audit_note": "Uses production FlowController paths with provider/audio boundaries faked.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I006"]
+    },
+    {
+      "function_id": "F273",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "enabled TTS speak-replies setting -> streamed query completion -> audio queue",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_tts_speaks_completed_segments_before_full_reply_done"],
+      "success_assertions": ["Stable reply segments synthesize and play in order before and through final completion."],
+      "audit_note": "Provider and audio playback are deterministic external boundaries.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I006"]
+    },
+    {
+      "function_id": "F274",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "read-selection-aloud action -> native selection snapshot -> TTS synthesis/playback",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_read_selection_aloud_native_hotkey_routes_to_tts", "tests/runtime/test_flows.py::test_read_selection_aloud_speaks_selected_text_without_model"],
+      "success_assertions": ["Selected text is synthesized, played, displayed as reading, and no model query occurs."],
+      "audit_note": "Native selection and audio device are external deterministic boundaries.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F296",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "voice press/release events with transcript review enabled -> Intent picker -> accepted query",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_voice_review_transcript_opens_intent_overlay_before_query"],
+      "success_assertions": ["The transcript opens for review before querying and the reviewed context choice reaches the query."],
+      "audit_note": "Microphone/STT/UI processes are external worker boundaries; FlowController state is real.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I007"]
+    },
+    {
+      "function_id": "F297",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "voice press/release events with review disabled -> transcription -> query stream",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_voice_flow_records_transcribes_and_queries"],
+      "success_assertions": ["Recording starts/stops, transcript is shown and queried, and the reply persists to chat without review."],
+      "audit_note": "Microphone/STT/provider are external deterministic boundaries.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I007"]
+    },
+    {
+      "function_id": "F109",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Intent shortcut File access combo Off -> Save changes -> config reload -> runtime tool policy",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_every_file_access_mode_saves_reloads_and_changes_runtime_tool_grants"],
+      "success_assertions": ["Off persists and grants none of the five local-file tools."],
+      "audit_note": "Uses visible Settings controls, real env persistence, config reload, and production policy.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F110",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Intent shortcut File access combo Read only -> Save changes -> config reload -> runtime tool policy",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_every_file_access_mode_saves_reloads_and_changes_runtime_tool_grants"],
+      "success_assertions": ["Read only persists and grants list/read while withholding create/edit/write."],
+      "audit_note": "Uses visible Settings controls, real env persistence, config reload, and production policy.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F111",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Intent shortcut File access combo Ask before writing -> Save changes -> config reload -> runtime tool policy",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_every_file_access_mode_saves_reloads_and_changes_runtime_tool_grants", "tests/test_app_user_workflows.py::test_tool_file_permission_and_approval_workflow"],
+      "success_assertions": ["Ask persists, grants all five tools, and writes require an approval decision with a diff."],
+      "audit_note": "Uses visible Settings, real persistence/policy, and the real approval/toolbox path.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F112",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Intent shortcut File access combo Write automatically -> Save changes -> config reload -> runtime tool policy",
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_every_file_access_mode_saves_reloads_and_changes_runtime_tool_grants", "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"],
+      "success_assertions": ["Write automatically persists, grants all five tools, and each tool completes its disk operation."],
+      "audit_note": "Uses visible Settings, real persistence/policy, and real isolated filesystem operations.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F341",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "live model-tool dispatcher list_files",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"],
+      "success_assertions": ["The allowed folder listing contains the real seeded file."],
+      "audit_note": "Uses the production dispatcher and a real isolated filesystem.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F342",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "live model-tool dispatcher read_file",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"],
+      "success_assertions": ["The real seeded file content is returned."],
+      "audit_note": "Uses the production dispatcher and a real isolated filesystem.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F343",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "live model-tool dispatcher create_file",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"],
+      "success_assertions": ["A new file is created once with the requested content."],
+      "audit_note": "Uses the production dispatcher and a real isolated filesystem.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F344",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "live model-tool dispatcher edit_file",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"],
+      "success_assertions": ["The requested text replacement is applied to the real file."],
+      "audit_note": "Uses the production dispatcher and a real isolated filesystem.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F345",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "live model-tool dispatcher write_file",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"],
+      "success_assertions": ["The existing file is overwritten with the requested content."],
+      "audit_note": "Uses the production dispatcher and a real isolated filesystem.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I008"]
+    },
+    {
+      "function_id": "F017",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IconOverlay construction and show-icon runtime signal",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["The real always-on-top icon surface is created, shown, and resized live for every tested icon-size state."],
+      "audit_note": "Uses the production overlay and visible Qt surface in an offscreen desktop session.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I010"]
+    },
+    {
+      "function_id": "F430",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Theme color fields -> Settings Save changes -> config reload -> application stylesheet",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["Four distinct custom palettes persist and the active application stylesheet uses the saved background color."],
+      "audit_note": "Exercises every theme color role through real fields and the production live-apply callback.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I009"]
+    },
+    {
+      "function_id": "F431",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Icon size field -> Settings Save changes -> UI-host reload -> existing IconOverlay",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["Every tested icon size persists and changes both dimensions of the already-running icon surface."],
+      "audit_note": "Covers compact, normal, and large sizes through the real live-apply chain.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I010"]
+    },
+    {
+      "function_id": "F432",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Bubble width/lines/font fields -> Save -> UI-host reload -> existing SpeechBubble.apply_config",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["Compact through roomy geometry values persist and update the live bubble width, line capacity, and font."],
+      "audit_note": "The four compound profiles exercise the shared geometry branch without replacing Wisp internals.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I011"]
+    },
+    {
+      "function_id": "F433",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Bubble color fields -> Save -> UI-host reload -> existing SpeechBubble.apply_config",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["Background including alpha, text, and spoken-word colors persist and become the live bubble QColor values."],
+      "audit_note": "All three bubble color roles are asserted after the production live-apply callback.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I011"]
+    },
+    {
+      "function_id": "F434",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Wheel-scroll and snap-back checkboxes -> Save -> live SpeechBubble behavior flags",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["All four scroll-enabled x snap-enabled combinations persist and reach the live bubble."],
+      "audit_note": "Uses the complete 2 x 2 boolean interaction matrix.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I011"]
+    },
+    {
+      "function_id": "F435",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Normal/held reveal-speed fields -> Save -> live SpeechBubble reveal mode",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["Normal and speed-boosted branches each use their saved WPM across low and high profiles."],
+      "audit_note": "Asserts both production speed branches after real settings reload.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I011"]
+    },
+    {
+      "function_id": "F436",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Display/snap delay fields -> Save -> live SpeechBubble timers",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "success_assertions": ["Minimum, normal, and long delays persist, respect the 500 ms bound, and update the existing timers."],
+      "audit_note": "Covers the input boundary and multiple valid timer states.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I011"]
+    },
+    {
+      "function_id": "F437",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "App-language combo -> repeated Save changes -> live Qt translator and Settings navigation",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_every_app_language_saves_and_applies_through_the_real_settings_button"],
+      "success_assertions": ["System, English, Simplified Chinese, Traditional Chinese, Spanish, and French each persist and leave all eight Settings pages navigable."],
+      "audit_note": "Exercises the complete 6-language x 8-page matrix through real combo, button, and navigation events.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I012"]
+    },
+    {
+      "function_id": "F438",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Assistant-language combo -> repeated Save changes -> config.get_system_prompt",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_every_assistant_language_changes_the_real_runtime_prompt"],
+      "success_assertions": ["Every offered reply-language state persists and produces the exact runtime language instruction, including match-user and system-default branches."],
+      "audit_note": "The downstream provider request matrix is still pending; this accepts the real Settings-to-runtime-prompt behavior only.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F439",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Three system-prompt editors -> Save changes -> config reload -> Settings reopen",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_three_conversation_system_prompts_save_reload_and_remain_independent"],
+      "success_assertions": ["Distinct Wisp, ChatGPT, and Claude prompts persist, reload independently, and reach their separate runtime config values."],
+      "audit_note": "Conversation-engine routing interactions remain pending; persistence and runtime separation are accepted.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F419",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Profiles menu Low setup QAction -> Save changes -> config reload -> Settings reopen",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_builtin_profile_action_saves_and_reopens_as_the_active_runtime_profile"],
+      "success_assertions": ["The built-in profile becomes visibly selected, persists as the active default profile, reaches runtime routing, and reopens with all three model routes."],
+      "audit_note": "Low setup is the only built-in profile currently exposed by the production menu.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I013"]
+    },
+    {
+      "function_id": "F423",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Run setup check button -> core.setup_check.run_setup_check -> report dialog",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_setup_check_button_runs_the_real_check_and_displays_its_report"],
+      "success_assertions": ["Pass and warning check rows are rendered with their messages and recommendations while Settings remains usable."],
+      "audit_note": "Host provider/microphone probes are deterministic external boundaries; the Settings action and report formatter are real.",
+      "dependency_status": "pending"
+    },
+    {
+      "function_id": "F427",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings navigation row -> Reset Page button -> confirmation -> scoped env rewrite -> live reload",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"],
+      "success_assertions": ["Each of the eight pages resets only its owned state, preserves every sentinel on other pages, reloads, and stays selected."],
+      "audit_note": "Parameterized over every current Settings page, including the About no-setting branch.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I015"]
+    },
+    {
+      "function_id": "F428",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings Reset All button -> confirmation -> keychain/OAuth cleanup -> env deletion -> config reload",
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_reset_all_action_clears_isolated_settings_credentials_and_sessions"],
+      "success_assertions": ["The isolated settings file disappears, runtime defaults return, both credential entries are deleted, all three OAuth sessions clear, and Settings stays usable."],
+      "audit_note": "Keychain and OAuth stores are external deterministic boundaries; destructive persistence is real but isolated.",
+      "dependency_status": "pending"
+    }
+  ]
+}

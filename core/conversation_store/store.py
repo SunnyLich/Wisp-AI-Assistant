@@ -16,6 +16,7 @@ the store. All public functions are guarded by a module lock.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import mimetypes
@@ -63,11 +64,21 @@ def _atomic_write_json(path, data) -> None:
     """Handle atomic write json for conversation store store."""
     os.makedirs(CHATS_DIR, exist_ok=True)
     tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        # Failed writes must not accumulate stale temporary chat files.
+        # Cleanup is best effort so it never hides the original write error.
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -141,9 +152,20 @@ def save_image_attachment(
     payload, mime_hint = _strip_data_url(image_base64)
     if len(payload) > _MAX_ATTACHMENT_IMAGE_BASE64_CHARS:
         raise ValueError("image exceeds the attachment capture safety limit")
-    data = base64.b64decode(payload, validate=False)
+    compact_payload = "".join(payload.split())
+    if not compact_payload:
+        raise ValueError("image payload is missing")
+    try:
+        data = base64.b64decode(compact_payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("image payload encoding is invalid") from exc
     if len(data) > _MAX_ATTACHMENT_IMAGE_BYTES:
         raise ValueError("image exceeds the attachment capture safety limit")
+    if not any(
+        data.startswith(magic) and (suffix != ".webp" or data[8:12] == b"WEBP")
+        for magic, suffix, _mime in _IMAGE_EXT_BY_MAGIC
+    ):
+        raise ValueError("image payload is unreadable or unsupported")
     digest = hashlib.sha256(data).hexdigest()
     suffix, mime = _image_suffix_and_mime(data, mime_hint, name)
     stem = _safe_segment(Path(name or "image").stem, "image")
@@ -240,15 +262,14 @@ def attachment_image_base64(ref: dict) -> str:
     declared_size = ref.get("size")
     if isinstance(declared_size, int) and declared_size > _MAX_ATTACHMENT_IMAGE_BYTES:
         return ""
-    try:
-        path = attachment_path(ref)
-        if path.stat().st_size > _MAX_ATTACHMENT_IMAGE_BYTES:
-            return ""
-        with path.open("rb") as stream:
-            data = stream.read(_MAX_ATTACHMENT_IMAGE_BYTES + 1)
-    except OSError:
-        return ""
-    if len(data) > _MAX_ATTACHMENT_IMAGE_BYTES:
+    from core.attachment_source import IMAGE_SUFFIXES, read_attachment_source
+
+    data, _error = read_attachment_source(
+        attachment_path(ref),
+        max_bytes=_MAX_ATTACHMENT_IMAGE_BYTES,
+        allowed_suffixes=IMAGE_SUFFIXES,
+    )
+    if not data:
         return ""
     return base64.b64encode(data).decode("ascii")
 
@@ -273,12 +294,18 @@ def attachment_context_text(ref: dict, *, max_chars: int = 50_000) -> str:
     name = str(ref.get("name") or ref.get("path") or "attachment")
     kind = str(ref.get("kind") or "file")
     path = attachment_path(ref)
+    from core.attachment_source import CONTEXT_SUFFIXES, IMAGE_SUFFIXES, inspect_attachment_source
+
+    _validated, source_error = inspect_attachment_source(
+        path,
+        max_bytes=_MAX_ATTACHMENT_IMAGE_BYTES if kind == "image" else 25 * 1024 * 1024,
+        allowed_suffixes=IMAGE_SUFFIXES if kind == "image" else CONTEXT_SUFFIXES,
+    )
+    if source_error:
+        label = "image" if kind == "image" else "file"
+        return f"[Attached {label} unavailable: {name}]\nReason: {source_error}\nPath: {path}"
     if kind == "image":
-        if path.exists():
-            return f"[Attached image: {name}]\nPath: {path}"
-        return f"[Attached image missing: {name}]\nPath: {path}"
-    if not path.exists():
-        return f"[Attached file missing: {name}]\nPath: {path}"
+        return f"[Attached image: {name}]\nPath: {path}"
     try:
         from core.llm_clients.client import read_document_file
 
@@ -334,6 +361,8 @@ def add_project(name: str, *, conversation_scope: str = "wisp") -> dict:
     name = (name or "").strip()
     if not name:
         raise ValueError("project name is required")
+    if len(name) > 120 or any(ord(char) < 32 for char in name):
+        raise ValueError("project name is invalid")
     scope = str(conversation_scope or "wisp").strip().lower() or "wisp"
     with _lock:
         projects = load_projects()

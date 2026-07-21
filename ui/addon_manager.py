@@ -395,15 +395,11 @@ class AddonManagerDialog(QDialog):
     @staticmethod
     def _open_addons_folder():
         """Open addons folder."""
+        from core.system.file_browser import reveal_path
         from core.system.paths import ADDONS_DIR
+
         ADDONS_DIR.mkdir(parents=True, exist_ok=True)
-        path = str(ADDONS_DIR)
-        if sys.platform == "win32":
-            os.startfile(path)
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", path])
-        else:
-            subprocess.Popen(["xdg-open", path])
+        reveal_path(ADDONS_DIR)
 
 
 class AddonSettingsDialog(QDialog):

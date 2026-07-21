@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import warnings
 from collections.abc import Callable
 from pathlib import Path
@@ -629,6 +630,38 @@ class SettingsDialog(QDialog):
             return
         super().keyPressEvent(event)
 
+    def _active_child_workflow(self) -> str:
+        """Return the child workflow that makes discarding Settings unsafe."""
+        for installer in list(getattr(self, "_optional_install_dialogs", []) or []):
+            try:
+                if getattr(installer, "exit_code", None) is None:
+                    return t("an installer")
+            except RuntimeError:
+                continue
+        wizard = getattr(self, "_profile_setup_wizard", None)
+        if wizard is not None:
+            try:
+                if wizard.isVisible():
+                    return t("the profile setup wizard")
+            except RuntimeError:
+                pass
+        return ""
+
+    def reject(self) -> None:
+        """Discard pending edits unless a child workflow is still active."""
+        child = self._active_child_workflow()
+        if child:
+            QMessageBox.information(
+                self,
+                t("Finish the open task first"),
+                t("Settings cannot close while {child} is active.").format(child=child),
+            )
+            return
+        # Unsaved controls are intentionally disposable. Do not reconstruct
+        # widgets from the baseline here: that can fail on a stale dynamic row,
+        # and no runtime/persistent state is changed until Save changes runs.
+        super().reject()
+
     def _on_settings_tab_changed(self, index: int) -> None:
         """Run page-specific deferred checks after the user opens that page."""
         nav = getattr(self, "_settings_nav", None)
@@ -996,11 +1029,15 @@ class SettingsDialog(QDialog):
         self._settings_nav = nav
         sidebar_layout.addWidget(nav, 1)
 
-        profile_btn = QPushButton(t("Profiles..."))
+        profile_label = QLabel(t("Profile"))
+        profile_label.setObjectName("settingsProfileLabel")
+        sidebar_layout.addWidget(profile_label)
+        profile_btn = QPushButton()
         self._profiles_btn = profile_btn
         profile_btn.setObjectName("settingsProfilesButton")
         profile_btn.setToolTip(t("Load or create a profile for common Wisp setups. Review changes before saving."))
         profile_btn.setMenu(self._build_profiles_menu(profile_btn))
+        self._refresh_profile_button_text()
         sidebar_layout.addWidget(profile_btn)
         setup_btn = QPushButton(t("Run setup check"))
         setup_btn.setObjectName("settingsSetupCheckButton")
@@ -1113,8 +1150,10 @@ class SettingsDialog(QDialog):
         saved_profiles = self._saved_custom_profile_entries()
         if saved_profiles:
             menu.addSeparator()
-            for index, _profile_id, label in saved_profiles:
-                action = menu.addAction(label)
+            for index, profile_id, _label in saved_profiles:
+                action = menu.addAction(
+                    self._custom_profile_display_label(profile_id, _label, saved_profiles)
+                )
                 action.setToolTip(t("Load this custom profile into Settings."))
                 action.triggered.connect(
                     lambda _checked=False, slot=index: self._apply_saved_profile(slot)
@@ -1138,8 +1177,58 @@ class SettingsDialog(QDialog):
         if isinstance(btn, QPushButton):
             old_menu = btn.menu()
             btn.setMenu(self._build_profiles_menu(btn))
+            self._refresh_profile_button_text()
             if old_menu is not None:
                 old_menu.deleteLater()
+
+    def _selected_profile_id(self) -> str:
+        """Return the profile currently selected for Settings/runtime use."""
+        return str(
+            getattr(self, "_pending_active_profile", "")
+            or self._env.get("SETTINGS_PROFILE", "")
+            or self._env.get("ACTIVE_PROFILE", "")
+            or "default"
+        ).strip()
+
+    def _selected_custom_profile_entry(self) -> tuple[int, str, str] | None:
+        """Return the selected custom profile slot, id, and display label."""
+        selected_id = self._selected_profile_id()
+        for entry in self._saved_custom_profile_entries():
+            if entry[1] == selected_id:
+                return entry
+        return None
+
+    @staticmethod
+    def _custom_profile_display_label(
+        profile_id: str,
+        label: str,
+        entries: list[tuple[int, str, str]],
+    ) -> str:
+        """Disambiguate profiles only when their user-visible names collide."""
+        duplicate = sum(1 for _index, _id, other_label in entries if other_label == label) > 1
+        return f"{label} ({profile_id})" if duplicate else label
+
+    def _refresh_profile_button_text(self) -> None:
+        """Show the selected profile name on the closed profile selector."""
+        btn = getattr(self, "_profiles_btn", None)
+        if not isinstance(btn, QPushButton):
+            return
+        profile_id = self._selected_profile_id()
+        preset_slug = self._preset_slug(getattr(self, "_active_preset_slug", ""))
+        selected = self._selected_custom_profile_entry()
+        if preset_slug and profile_id == "default":
+            label = t(_PRESET_LABELS[preset_slug])
+        elif selected is not None:
+            label = self._custom_profile_display_label(
+                selected[1], selected[2], self._saved_custom_profile_entries()
+            )
+        else:
+            label = (
+                t("Default")
+                if profile_id == "default"
+                else profile_id.replace("-", " ").title()
+            )
+        btn.setText(label)
 
     def _saved_custom_profile_entries(self) -> list[tuple[int, str, str]]:
         """Return custom PROFILE_N entries saved in the env file."""
@@ -1307,7 +1396,15 @@ class SettingsDialog(QDialog):
             "PROFILE_COUNT": str(slot),
         }
         vals.update({f"PROFILE_{slot}_{key}": value for key, value in profile_values.items()})
-        _write_env(vals)
+        try:
+            _write_env(vals)
+        except Exception as exc:  # noqa: BLE001 - leave the profile list unchanged
+            QMessageBox.warning(
+                self,
+                t("Create profile failed"),
+                t("Could not create {profile}: {error}").format(profile=label, error=exc),
+            )
+            return
         self._env.update(vals)
         self._active_preset_slug = ""
         self._pending_active_profile = profile_id
@@ -1333,8 +1430,31 @@ class SettingsDialog(QDialog):
         label = str(label or "").strip()
         if not accepted or not label or label == old_label:
             return
+        duplicate = next(
+            (
+                saved_label
+                for saved_slot, _saved_id, saved_label in self._saved_custom_profile_entries()
+                if saved_slot != slot and saved_label.casefold() == label.casefold()
+            ),
+            "",
+        )
+        if duplicate:
+            QMessageBox.warning(
+                self,
+                t("Rename profile failed"),
+                t("A profile named {profile} already exists.").format(profile=label),
+            )
+            return
         vals = {f"PROFILE_{slot}_LABEL": label}
-        _write_env(vals)
+        try:
+            _write_env(vals)
+        except Exception as exc:  # noqa: BLE001 - preserve the old profile label
+            QMessageBox.warning(
+                self,
+                t("Rename profile failed"),
+                t("Could not rename {profile}: {error}").format(profile=old_label, error=exc),
+            )
+            return
         self._env.update(vals)
         self._refresh_profiles_menu()
         self._schedule_dirty_refresh()
@@ -1362,18 +1482,33 @@ class SettingsDialog(QDialog):
             for index, _pid, _label in self._saved_custom_profile_entries()
             if index != slot
         ]
-        remove_keys: set[str] = set()
+        remove_keys = {
+            key
+            for key in self._env
+            if re.match(r"^PROFILE_\d+_", key)
+        }
+        remove_keys.add("PROFILE_COUNT")
         if str(self._env.get("ACTIVE_PROFILE", "") or "") == profile_id:
             remove_keys.add("ACTIVE_PROFILE")
-            self._env.pop("ACTIVE_PROFILE", None)
         if str(self._env.get("SETTINGS_PROFILE", "") or "") == profile_id:
             remove_keys.add("SETTINGS_PROFILE")
-            self._env.pop("SETTINGS_PROFILE", None)
+        vals: dict[str, str] = {"PROFILE_COUNT": str(len(profiles))}
+        for index, profile in enumerate(profiles, start=1):
+            vals.update({f"PROFILE_{index}_{key}": value for key, value in profile.items()})
+        try:
+            _write_env(vals, remove_keys=remove_keys - set(vals))
+        except Exception as exc:  # noqa: BLE001 - keep the selected profile intact
+            QMessageBox.warning(
+                self,
+                t("Delete profile failed"),
+                t("Could not delete {profile}: {error}").format(profile=label, error=exc),
+            )
+            return
+        for key in remove_keys:
+            self._env.pop(key, None)
+        self._env.update(vals)
         if str(getattr(self, "_pending_active_profile", "") or "") == profile_id:
             self._pending_active_profile = ""
-        self._rewrite_custom_profiles(profiles)
-        if remove_keys:
-            _write_env({}, remove_keys=remove_keys)
         self._refresh_profiles_menu()
         self._schedule_dirty_refresh()
         self._status_lbl.setText(
@@ -1422,6 +1557,7 @@ class SettingsDialog(QDialog):
             file_access=self._env.get(f"PROFILE_{slot}_FILE_ACCESS"),
         )
         self._pending_active_profile = profile_id
+        self._refresh_profile_button_text()
         self._refresh_stt_active_backend()
         self._schedule_warning_marker_refresh()
         self._schedule_dirty_refresh()
@@ -1564,6 +1700,45 @@ class SettingsDialog(QDialog):
         if source and value.strip() == t(source):
             return source
         return value
+
+    def _validate_caller_mutations(self) -> bool:
+        """Reject incomplete, duplicate, invalid, or stale shortcut/action edits."""
+        labels: set[str] = set()
+        try:
+            for blk in self._caller_blocks:
+                label = self._caller_label_value(blk).strip()
+                if not label:
+                    raise ValueError(t("Every intent shortcut needs a name."))
+                if any(ord(char) < 32 for char in label):
+                    raise ValueError(t("Intent shortcut names cannot contain control characters."))
+                normalized_label = label.casefold()
+                if normalized_label in labels:
+                    raise ValueError(t("Intent shortcut names must be unique."))
+                labels.add(normalized_label)
+
+                keys: set[str] = set()
+                custom_key = _get(blk["custom_key"]).strip().casefold()
+                if custom_key:
+                    if len(custom_key) != 1 or not custom_key.isprintable():
+                        raise ValueError(t("Action keys must be one printable character."))
+                    keys.add(custom_key)
+                for row in blk["intent_rows"]:
+                    key = _get(row["key"]).strip().casefold()
+                    action_label = _get(row["label"]).strip()
+                    prompt = _get(row["prompt"]).strip()
+                    if not key or not action_label or not prompt:
+                        raise ValueError(t("Every action choice needs a key, label, and prompt."))
+                    if len(key) != 1 or not key.isprintable():
+                        raise ValueError(t("Action keys must be one printable character."))
+                    if key in keys:
+                        raise ValueError(t("Action keys must be unique within each intent shortcut."))
+                    if any(ord(char) < 32 and char not in "\n\t" for char in prompt):
+                        raise ValueError(t("Action prompt data is invalid."))
+                    keys.add(key)
+        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+            QMessageBox.warning(self, t("Invalid intent shortcut"), str(exc))
+            return False
+        return True
 
     def _snapshot_settings(self) -> dict[str, str]:
         """Handle snapshot settings for settings dialog."""
@@ -1991,7 +2166,10 @@ class SettingsDialog(QDialog):
         if not preset_key:
             return
         self._active_preset_slug = preset_key
-        self._pending_active_profile = ""
+        # Built-in Settings presets use the default runtime profile. Leaving a
+        # custom profile active would make config.reload() immediately replace
+        # the selected preset's model and context values with PROFILE_N_* values.
+        self._pending_active_profile = "default"
         values = self._preset_effective_values(preset_key)
         self._apply_env_values_to_ui(values)
         self._rebuild_stt_languages()
@@ -2011,6 +2189,7 @@ class SettingsDialog(QDialog):
                 clear_tools=context_defaults.get("clear_tools", "").lower() == "true",
             )
         self._refresh_stt_active_backend()
+        self._refresh_profile_button_text()
         self._schedule_warning_marker_refresh()
         self._schedule_dirty_refresh()
         self._status_lbl.setText(
@@ -2914,12 +3093,9 @@ class SettingsDialog(QDialog):
 
         def _worker():
             """Handle worker for settings dialog."""
-            try:
-                from core.llm_clients import client as llm
-                models = llm.list_models(provider, api_key=api_key, base_url=base_url)
-                carrier.done.emit(models, "")
-            except Exception as exc:  # noqa: BLE001 — surfaced to the user as a tooltip
-                carrier.done.emit([], str(exc))
+            from core.llm_clients import client as llm
+            models, error = llm.safe_list_models(provider, api_key=api_key, base_url=base_url)
+            carrier.done.emit(models, error)
 
         threading.Thread(target=_worker, daemon=True, name="model-list-fetch").start()
 
@@ -4286,9 +4462,12 @@ class SettingsDialog(QDialog):
             return
         self._tts_install_status_running = False
         self._tts_install_status_checked = True
+        from ui.runtime_log_bridge import log_event
+
         if not isinstance(result, dict) or not result.get("ok"):
             self._tts_install_status_result = None
             message = f"Install status check failed: {result.get('error') if isinstance(result, dict) else result}"
+            log_event("installer", "error", message)
             for attr in ("_elevenlabs_install_status_lbl", "_kokoro_install_status_lbl"):
                 label = getattr(self, attr, None)
                 if isinstance(label, QLabel):
@@ -4298,6 +4477,22 @@ class SettingsDialog(QDialog):
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
             return
+        # Mirror the Voice-page detection line into the runtime event log:
+        # staged installs that failed while Wisp was closed used to be visible
+        # only in this Settings label.
+        summary = (
+            f"Install status: ElevenLabs {'installed' if result.get('elevenlabs_installed') else 'not installed'}; "
+            f"Kokoro {'installed (' + str(result.get('kokoro_mode') or 'cpu') + ')' if result.get('kokoro_installed') else 'not installed'}."
+        )
+        log_event("installer", "info", summary)
+        for status_key, package_name in (
+            ("elevenlabs_install_status", "ElevenLabs"),
+            ("kokoro_install_status", "Kokoro"),
+        ):
+            raw_status = result.get(status_key)
+            failed_message = _failed_optional_install_message(raw_status if isinstance(raw_status, dict) else None)
+            if failed_message:
+                log_event("installer", "error", f"{package_name} last install failed: {failed_message}")
         self._tts_install_status_result = dict(result)
         self._apply_elevenlabs_install_status(
             bool(result.get("elevenlabs_installed")),
@@ -5091,6 +5286,9 @@ class SettingsDialog(QDialog):
         dialog.show()
         dialog.raise_()
         dialog.activateWindow()
+        from ui.runtime_log_bridge import log_event
+
+        log_event("installer", "info", f"{display_name} install started (installer window).")
 
         if isinstance(button, QPushButton):
             button.setEnabled(False)
@@ -5146,6 +5344,8 @@ class SettingsDialog(QDialog):
                     message = str(install_status.get("message") or "")
             except Exception:
                 message = ""
+            from ui.runtime_log_bridge import log_event
+
             if install_status.get("restart_apply"):
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
@@ -5153,6 +5353,7 @@ class SettingsDialog(QDialog):
                     _disconnect_clicked_handlers(button)
                     button.clicked.connect(lambda _checked=False: QApplication.instance().quit() if QApplication.instance() else None)
                 self._set_test_pending(status, f"{display_name} packages are staged. Click Restart app now to close Wisp and apply them.")
+                log_event("installer", "info", f"{display_name} packages are staged; restart Wisp to apply them.")
                 return
             if not message:
                 message = (
@@ -5160,6 +5361,7 @@ class SettingsDialog(QDialog):
                     if exit_code == 0
                     else f"{display_name} install failed with exit code {exit_code}."
                 )
+            log_event("installer", "info" if ok else "error", message)
             self._set_test_status(status, ok, _translate_status_message(message))
 
         if test_key == "kokoro_install":
@@ -5225,6 +5427,9 @@ class SettingsDialog(QDialog):
         self._latest_test_token[test_key] = token
         self._running_test_tokens.add((test_key, token))
         self._set_test_pending(status, f"Installing {display_name}: starting installer.")
+        from ui.runtime_log_bridge import log_event
+
+        log_event("installer", "info", f"{display_name} install started (inline).")
 
         def _progress(message: str) -> None:
             self._queue_test_progress(test_key, token, message)
@@ -5312,7 +5517,9 @@ class SettingsDialog(QDialog):
                 for phase, command in commands:
                     _progress(f"Installing {display_name}: {phase}.")
                     print(f"{log_prefix} Running: {' '.join(command)}", flush=True)
-                    _settings_log.info("Installing %s with command: %s", display_name, command)
+                    # debug: the print above already reaches stderr (and the
+                    # runtime event log) — an info record would duplicate it.
+                    _settings_log.debug("Installing %s with command: %s", display_name, command)
                     _write_log(f"{log_prefix} Running: {' '.join(command)}")
                     try:
                         process = subprocess.Popen(
@@ -5346,7 +5553,7 @@ class SettingsDialog(QDialog):
                         # The staged installer already writes its own lines to
                         # the shared log file; only mirror them to the console.
                         print(f"{log_prefix} {line}", flush=True)
-                        _settings_log.info("%s install: %s", display_name, line)
+                        _settings_log.debug("%s install: %s", display_name, line)
                         tail.append(line)
                         tail = tail[-30:]
                         progress_message = _optional_install_progress_text(line, display_name)
@@ -5385,8 +5592,13 @@ class SettingsDialog(QDialog):
         def _worker() -> None:
             try:
                 ok, result_message = _runner()
+                failure_detail = ""
             except Exception as exc:
                 ok, result_message = False, f"{display_name} install failed: {exc}"
+                failure_detail = traceback.format_exc()
+            from ui.runtime_log_bridge import log_event
+
+            log_event("installer", "info" if ok else "error", result_message, detail=failure_detail)
             with self._pending_test_results_lock:
                 self._pending_test_results.append((test_key, token, ok, result_message))
 
@@ -6708,6 +6920,24 @@ class SettingsDialog(QDialog):
         updates_cv.addWidget(self._update_status_lbl)
         self._about_updates_card = updates_card
 
+        crash_card, crash_cv = self._card("Crash report")
+        crash_cv.addWidget(_desc_label(
+            "",
+            "Create a redacted diagnostic bundle to attach to a bug report. Wisp includes bounded log tails "
+            "and system details, but does not collect chat, memory, settings, environment, or keychain files. "
+            "Review the archive before sharing because logs can still contain user-provided text.",
+        ))
+        self._crash_report_status_lbl = QLabel(t("No crash report created yet."))
+        self._crash_report_status_lbl.setObjectName("settingsCrashReportStatus")
+        self._crash_report_status_lbl.setWordWrap(True)
+        self._crash_report_status_lbl.setStyleSheet("color: palette(placeholder-text);")
+        self._crash_report_btn = QPushButton(t("Create crash report…"))
+        self._crash_report_btn.setObjectName("settingsCrashReportButton")
+        self._crash_report_btn.clicked.connect(self._create_crash_report)
+        crash_cv.addWidget(self._crash_report_status_lbl)
+        crash_cv.addWidget(self._crash_report_btn)
+        self._about_crash_card = crash_card
+
         uninstall_card, uninstall_cv = self._card("Uninstall")
         uninstall_cv.addWidget(_desc_label(
             "",
@@ -6958,10 +7188,40 @@ class SettingsDialog(QDialog):
         ))
         outer.addWidget(about_card)
         outer.addWidget(self._about_updates_card)
+        outer.addWidget(self._about_crash_card)
         outer.addWidget(self._about_uninstall_card)
         outer.addStretch()
         scroll.setWidget(outer_w)
         return scroll
+
+    def _create_crash_report(self) -> None:
+        """Create a redacted diagnostic bundle and reveal it to the user."""
+        from core.crash_report import create_crash_report
+        from core.system.file_browser import reveal_path
+
+        self._crash_report_btn.setEnabled(False)
+        self._crash_report_status_lbl.setText(t("Creating crash report…"))
+        QApplication.processEvents()
+        try:
+            path = create_crash_report()
+            self._crash_report_status_lbl.setText(t("Crash report created: {name}").format(name=path.name))
+            try:
+                reveal_path(path)
+            except Exception as exc:  # noqa: BLE001 - the report still exists if Explorer/Finder fails
+                _settings_log.warning("Could not reveal crash report %s: %s", path, exc)
+            QMessageBox.information(
+                self,
+                t("Crash report created"),
+                t("The redacted report was saved here:")
+                + f"\n\n{path}\n\n"
+                + t("Review the ZIP before attaching it to a bug report."),
+            )
+        except Exception as exc:  # noqa: BLE001 - user-facing diagnostic action
+            _settings_log.exception("Crash report creation failed")
+            self._crash_report_status_lbl.setText(t("Crash report could not be created."))
+            QMessageBox.warning(self, t("Crash report failed"), str(exc))
+        finally:
+            self._crash_report_btn.setEnabled(True)
 
     def _uninstall_wisp(self) -> None:
         """Confirm and launch the detached, self-removing Wisp uninstaller."""
@@ -8048,16 +8308,24 @@ class SettingsDialog(QDialog):
         # a key via "+ Add API Key". Avoids a spurious "Groq" row on every open.
 
         # ── Model sections ────────────────────────────────────────────────
+        selected_profile = self._selected_custom_profile_entry()
+        selected_profile_values = (
+            self._profile_values_from_env_slot(selected_profile[0])
+            if selected_profile is not None
+            else {}
+        )
+
         def _load_section(sk, penv, menv, fenv, pdef, mdef, fdef=""):
             """Load section."""
             for r in list(self._model_section_rows[sk]):
                 self._remove_model_section_row(sk, r)
             self._add_model_section_row(
                 sk,
-                self._env.get(penv, pdef),
-                self._env.get(menv, mdef),
+                selected_profile_values.get(penv, self._env.get(penv, pdef)),
+                selected_profile_values.get(menv, self._env.get(menv, mdef)),
             )
-            for p, m in _parse_fallback_rows(self._env.get(fenv, fdef)):
+            fallbacks = selected_profile_values.get(fenv, self._env.get(fenv, fdef))
+            for p, m in _parse_fallback_rows(fallbacks):
                 self._add_model_section_row(sk, p, m)
 
         _load_section("LLM",        "LLM_PROVIDER",        "LLM_MODEL",        "LLM_FALLBACKS",        cfg.LLM_PROVIDER,        cfg.LLM_MODEL,        cfg.LLM_FALLBACKS)
@@ -8289,9 +8557,13 @@ class SettingsDialog(QDialog):
         _set(self._fields["CUSTOM_BASE_URL"],      self._env.get("CUSTOM_BASE_URL",      cfg.CUSTOM_BASE_URL))
         _set(self._fields["GITHUB_CLIENT_ID"],     self._env.get("GITHUB_CLIENT_ID",     cfg.GITHUB_CLIENT_ID))
         _set(self._fields["GITHUB_OAUTH_SCOPES"],  self._env.get("GITHUB_OAUTH_SCOPES",  cfg.GITHUB_OAUTH_SCOPES))
-        _set(self._fields["CONTEXT_BROWSER_MAX_CHARS"], self._env.get("CONTEXT_BROWSER_MAX_CHARS", str(cfg.CONTEXT_BROWSER_MAX_CHARS)))
-        _set(self._fields["CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS"], self._env.get("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", str(cfg.CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS)))
-        _set(self._fields["CONTEXT_TOOL_DOCUMENT_MAX_CHARS"], self._env.get("CONTEXT_TOOL_DOCUMENT_MAX_CHARS", str(cfg.CONTEXT_TOOL_DOCUMENT_MAX_CHARS)))
+        for key, default in (
+            ("CONTEXT_BROWSER_MAX_CHARS", cfg.CONTEXT_BROWSER_MAX_CHARS),
+            ("CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS", cfg.CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS),
+            ("CONTEXT_TOOL_DOCUMENT_MAX_CHARS", cfg.CONTEXT_TOOL_DOCUMENT_MAX_CHARS),
+        ):
+            value = selected_profile_values.get(key, self._env.get(key, str(default)))
+            _set(self._fields[key], value)
         _set(self._fields["TOOL_FILE_ROOTS"], self._env.get("TOOL_FILE_ROOTS", "\n".join(getattr(cfg, "TOOL_FILE_ROOTS", []))))
         _set(
             self._fields["TOOL_FILE_BLOCKED_GLOBS"],
@@ -8605,6 +8877,7 @@ class SettingsDialog(QDialog):
             )
         )
         self._refresh_capability_warning_markers()
+        self._refresh_profile_button_text()
         self._loading_values = False
         self._wire_change_tracking(self)
         self._refresh_search_index()
@@ -9948,6 +10221,8 @@ class SettingsDialog(QDialog):
         """
         import config as cfg
 
+        if not self._validate_caller_mutations():
+            return False
         self._save_api_keys_to_keychain()
 
         def _section_vals(sk):
@@ -10237,6 +10512,11 @@ class SettingsDialog(QDialog):
                 vals[f"CALLER_{n}_INTENT_{m}_PROMPT"] = str(intent.get("prompt", ""))
         # The Chat model is combined with the Main LLM, so purge any stale
         # CHAT_LLM_* keys a previous version may have written.
+        selected_profile = self._selected_custom_profile_entry()
+        if selected_profile is not None:
+            slot, profile_id, label = selected_profile
+            profile_values = self._current_profile_values(label, profile_id)
+            vals.update({f"PROFILE_{slot}_{key}": value for key, value in profile_values.items()})
         vals.update(self._preset_values_to_persist(vals))
         startup_error = ""
         try:
@@ -10245,11 +10525,18 @@ class SettingsDialog(QDialog):
             sync_start_on_login(str(vals.get("START_ON_LOGIN", "")).lower() == "true")
         except Exception as exc:  # noqa: BLE001 - settings still save; startup can be retried.
             startup_error = str(exc) or type(exc).__name__
+        active_preset = self._preset_slug(getattr(self, "_active_preset_slug", ""))
+        remove_keys = (
+            set()
+            if active_preset
+            else {_SETTINGS_PRESET_KEY}
+        )
         _write_env(
             vals,
             remove_keys=set(secret_store.API_KEY_NAMES)
             | connection_alias_keys
-            | {"CHAT_LLM_PROVIDER", "CHAT_LLM_MODEL", "CHAT_LLM_FALLBACKS", "TOOL_FILE_MODE"},
+            | {"CHAT_LLM_PROVIDER", "CHAT_LLM_MODEL", "CHAT_LLM_FALLBACKS", "TOOL_FILE_MODE"}
+            | remove_keys,
         )
         if startup_error:
             QMessageBox.warning(

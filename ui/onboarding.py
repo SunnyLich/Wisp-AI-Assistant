@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from urllib.parse import urlparse
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -833,9 +834,19 @@ class OnboardingWizard(QDialog):
             self._oauth_status.setStyleSheet("color: palette(placeholder-text);")
 
     def _finish(self) -> None:
+        if not clean_profile_name(self._name.text()):
+            self._provider_hint.setText(t("Enter a valid profile name before finishing setup."))
+            self._provider_hint.setStyleSheet("color: #c04040;")
+            return
         provider = str(self._provider.currentData() or "") if self._is_advanced() else ""
         model = self._provider_model.currentText().strip() if self._is_advanced() else ""
         custom_base_url = self._custom_base_url.text().strip() if provider == "custom" else ""
+        if provider == "custom":
+            parsed = urlparse(custom_base_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                self._provider_hint.setText(t("Enter a valid HTTP(S) custom endpoint URL."))
+                self._provider_hint.setStyleSheet("color: #c04040;")
+                return
         key = self._provider_key.text().strip() if self._is_advanced() else ""
         if key and provider in _PROVIDER_SECRET_NAMES:
             key_name = _PROVIDER_SECRET_NAMES[provider]
@@ -866,12 +877,20 @@ class OnboardingWizard(QDialog):
             stt_preference=stt_preference,
             settings=values,
         )
-        values = persisted_profile_setup_values(
-            name=self._name.text(),
-            setup_values=values,
-            existing_env=settings_env.read_settings_env(),
-        )
-        settings_env.write_settings_env(values)
+        try:
+            existing_env = settings_env.read_settings_env()
+            values = persisted_profile_setup_values(
+                name=self._name.text(),
+                setup_values=values,
+                existing_env=existing_env,
+            )
+            settings_env.write_settings_env(values)
+        except Exception as exc:  # noqa: BLE001 - keep setup open and retryable
+            self._provider_hint.setText(
+                t("Profile settings could not be saved: {error}").format(error=exc)
+            )
+            self._provider_hint.setStyleSheet("color: #c04040;")
+            return
         self.open_chat_requested = self._open_chat.isChecked()
         if self._on_complete:
             self._on_complete(self.open_chat_requested)

@@ -129,6 +129,27 @@ def brain_dir() -> Path:
     return repo_root() / "runtime" / "brain"
 
 
+def configure_worker_logging() -> None:
+    """Route worker app logs to stderr so the supervisor can aggregate them.
+
+    Workers historically never configured logging, so their INFO records (for
+    example the "bubble notice: ..." mirrors) were dropped by Python's
+    lastResort WARNING-level handler and never reached the supervisor's
+    runtime event log. Root stays at WARNING to keep third-party noise out of
+    Runtime Status; wisp.* loggers emit INFO.
+    """
+    import logging
+
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("[%(levelname)s] %(name)s: %(message)s"))
+    root.addHandler(handler)
+    root.setLevel(logging.WARNING)
+    logging.getLogger("wisp").setLevel(logging.INFO)
+
+
 def configure_paths(*, include_brain: bool = False) -> Path:
     """Make shared repo modules importable and return the repo root."""
     # Every worker process starts here — guard them all against the synthetic
@@ -136,6 +157,7 @@ def configure_paths(*, include_brain: bool = False) -> Path:
     # and capture native/Python crash stacks into their per-worker log.
     suppress_console_ctrl_c()
     install_crash_diagnostics()
+    configure_worker_logging()
     root = repo_root()
     paths = [root]
     if include_brain:

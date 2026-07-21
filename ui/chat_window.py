@@ -1700,14 +1700,41 @@ class ChatWindow(QWidget):
         )
         if not ok:
             return
-        conv["title_override"] = name.strip()
+        name = str(name or "").strip()
+        if not name:
+            QMessageBox.warning(self, t("Rename conversation"), t("Conversation title cannot be empty."))
+            return
+        if len(name) > 200 or any(ord(char) < 32 for char in name):
+            QMessageBox.warning(self, t("Rename conversation"), t("Conversation title is invalid."))
+            return
+        duplicate = any(
+            other_idx != idx
+            and self._conversation_title(other_idx, other).strip().casefold() == name.casefold()
+            for other_idx, other in enumerate(self._conversations)
+        )
+        if duplicate:
+            QMessageBox.warning(self, t("Rename conversation"), t("A conversation already uses that title."))
+            return
+        previous = deepcopy(conv)
+        conv["title_override"] = name
         _touch_conversation(conv)
         self._rebuild_sidebar()
-        self._persist()
+        if not self._persist():
+            conv.clear()
+            conv.update(previous)
+            self._rebuild_sidebar()
+            detail = str(getattr(self, "_last_persist_error", "") or t("Unknown storage error."))
+            QMessageBox.warning(
+                self,
+                t("Rename conversation failed"),
+                t("Wisp could not save the new conversation title: {error}").format(error=detail),
+            )
 
     def _assign_project(self, idx: int, project_id: str) -> None:
         """Handle assign project for chat window."""
         if not (0 <= idx < len(self._conversations)):
+            return
+        if project_id not in {str(project.get("id") or "") for project in self._projects}:
             return
         self._conversations[idx]["project_id"] = project_id
         _touch_conversation(self._conversations[idx])
@@ -1725,16 +1752,26 @@ class ChatWindow(QWidget):
             t("Delete this conversation? This cannot be undone."),
         ) != QMessageBox.StandardButton.Yes:
             return
-        del self._conversations[idx]
+        removed = self._conversations.pop(idx)
+        previous_active_idx = self._active_idx
         if self._active_idx >= idx:
             self._active_idx = max(0, self._active_idx - 1)
+        if not self._persist():
+            self._conversations.insert(idx, removed)
+            self._active_idx = previous_active_idx
+            detail = str(getattr(self, "_last_persist_error", "") or t("Unknown storage error."))
+            QMessageBox.warning(
+                self,
+                t("Delete conversation failed"),
+                t("Wisp could not delete the conversation: {error}").format(error=detail),
+            )
+            return
         self._rebuild_stack()
         self._rebuild_sidebar()
         if self._conversations:
             self._switch(min(self._active_idx, len(self._conversations) - 1))
         else:
             self._input_frame.setEnabled(False)
-        self._persist()
 
     def _rebuild_stack(self) -> None:
         """Tear down and rebuild all stack pages 1:1 with _conversations."""
@@ -1757,13 +1794,16 @@ class ChatWindow(QWidget):
             self._stack.addWidget(ph)
         self._stack.setCurrentIndex(max(0, min(self._active_idx, self._stack.count() - 1)))
 
-    def _persist(self) -> None:
+    def _persist(self) -> bool:
         """Handle persist for chat window."""
+        self._last_persist_error = None
         if self._persist_fn:
             try:
                 self._persist_fn()
-            except Exception:
-                pass
+            except Exception as exc:
+                self._last_persist_error = exc
+                return False
+        return True
 
     def _btn_style(self, active: bool, latest: bool) -> str:
         """Handle btn style for chat window."""
@@ -3635,6 +3675,12 @@ class ChatWindow(QWidget):
     def eventFilter(self, obj, event):
         """Handle event filter for chat window."""
         from PySide6.QtCore import QEvent
+        # This object is also installed on QApplication for Ctrl+wheel zoom.
+        # PySide can forward model-item action events whose watched value is a
+        # QStandardItem rather than a QObject. Passing that value to the base
+        # QObject implementation raises recursively from the Qt callback.
+        if not isinstance(obj, QObject):
+            return False
         if event.type() == QEvent.Type.Wheel and (
             event.modifiers() & Qt.KeyboardModifier.ControlModifier
         ):

@@ -184,9 +184,13 @@ def read_env_file(path: Path) -> dict[str, str]:
     """Read env file."""
     if not path.exists():
         return {}
+    try:
+        values = dotenv_values(path)
+    except (OSError, UnicodeError):
+        return {}
     return {
         key: value
-        for key, value in dotenv_values(path).items()
+        for key, value in values.items()
         if key is not None and value is not None
     }
 

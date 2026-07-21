@@ -20,7 +20,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -156,18 +156,21 @@ class _FactRow(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm == QMessageBox.StandardButton.Yes:
+            def remove_row() -> None:
+                parent = self.parent()
+                if parent is not None:
+                    layout = parent.layout()
+                    if layout is not None:
+                        layout.removeWidget(self)
+                self.deleteLater()
+
             self._run_background(
                 lambda: self._manager.delete_fact(self._fact_id),
                 "delete",
+                on_success=remove_row,
             )
-            parent = self.parent()
-            if parent is not None:
-                layout = parent.layout()
-                if layout is not None:
-                    layout.removeWidget(self)
-            self.deleteLater()
 
-    def _run_background(self, fn, action: str) -> None:
+    def _run_background(self, fn, action: str, *, on_success=None) -> None:
         """Run background."""
         def worker() -> None:
             """Handle worker for fact row."""
@@ -175,6 +178,9 @@ class _FactRow(QWidget):
                 fn()
             except Exception as exc:
                 _memory_log.warning("Memory %s failed: %s", action, exc)
+            else:
+                if on_success is not None:
+                    QTimer.singleShot(0, on_success)
 
         threading.Thread(
             target=worker,
@@ -386,7 +392,6 @@ class MemoryPanel(QWidget):
         if not text:
             return
         project = self._add_cat.currentData() or ""
-        self._add_text.clear()
         self._run_add_fact(text, project)
 
     def _run_add_fact(self, text: str, project: str) -> None:
@@ -395,7 +400,8 @@ class MemoryPanel(QWidget):
             """Handle worker for memory panel."""
             error = ""
             try:
-                self._manager.add_fact_manual(text, project=project)
+                if self._manager.add_fact_manual(text, project=project) is False:
+                    error = t("That fact is invalid or duplicates an existing fact.")
             except Exception as exc:
                 error = str(exc)
                 _memory_log.warning("Memory add failed: %s", exc)
@@ -412,6 +418,7 @@ class MemoryPanel(QWidget):
         if error:
             QMessageBox.warning(self, t("Memory update failed"), error)
             return
+        self._add_text.clear()
         self.refresh_facts()
 
 

@@ -5530,6 +5530,9 @@ Continue?</translation>
     <message><source>will retry when first used</source><translation>首次使用時將重試</translation></message>
     <message><source>failed - {message}</source><translation>失敗 — {message}</translation></message>
     <message><source>stopped</source><translation>已停止</translation></message>
+    <message><source>Copy all</source><translation>複製全部</translation></message>
+    <message><source>Log directory</source><translation>記錄目錄</translation></message>
+    <message><source>running</source><translation>執行中</translation></message>
     <message><source>waiting to start</source><translation>等待開始</translation></message>
     <message><source>not completed</source><translation>未完成</translation></message>
     <message><source>unknown error</source><translation>未知錯誤</translation></message>
@@ -5720,5 +5723,16 @@ Shared uv/pip caches and unrelated Hugging Face models will not be removed.</sou
     <message><source>ChatGPT started {action}</source><translation>ChatGPT 已開始 {action}</translation></message>
     <message><source>ChatGPT {action}: {status}</source><translation>ChatGPT {action}：{status}</translation></message>
     <message><source>ChatGPT login</source><translation>ChatGPT 登入</translation></message>
+    <message><source>Crash report</source><translation>當機報告</translation></message>
+    <message><source>Create a redacted diagnostic bundle to attach to a bug report. Wisp includes bounded log tails and system details, but does not collect chat, memory, settings, environment, or keychain files. Review the archive before sharing because logs can still contain user-provided text.</source><translation>建立經過遮蔽處理的診斷套件，以附加至錯誤報告。Wisp 會包含長度受限的記錄檔末尾與系統詳細資料，但不會收集聊天、記憶、設定、環境或鑰匙圈檔案。分享前請檢查壓縮檔，因為記錄中仍可能包含使用者提供的文字。</translation></message>
+    <message><source>No crash report created yet.</source><translation>尚未建立當機報告。</translation></message>
+    <message><source>Create crash report…</source><translation>建立當機報告…</translation></message>
+    <message><source>Creating crash report…</source><translation>正在建立當機報告…</translation></message>
+    <message><source>Crash report created: {name}</source><translation>已建立當機報告：{name}</translation></message>
+    <message><source>Crash report created</source><translation>已建立當機報告</translation></message>
+    <message><source>The redacted report was saved here:</source><translation>遮蔽處理後的報告已儲存於：</translation></message>
+    <message><source>Review the ZIP before attaching it to a bug report.</source><translation>將 ZIP 附加至錯誤報告前，請先檢查其內容。</translation></message>
+    <message><source>Crash report could not be created.</source><translation>無法建立當機報告。</translation></message>
+    <message><source>Crash report failed</source><translation>當機報告建立失敗</translation></message>
   </context>
 </TS>

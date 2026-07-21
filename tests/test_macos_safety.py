@@ -7,9 +7,7 @@ from core.system import macos_safety
 
 
 class MacOSSafetyTests(unittest.TestCase):
-    """Test case for mac o s safety tests behavior."""
     def test_safe_mode_defaults_disable_optional_native_paths(self):
-        """Verify safe mode defaults disable optional native paths behavior."""
         with patch.object(macos_safety.sys, "platform", "darwin"), \
              patch.dict(macos_safety.os.environ, {}, clear=True):
             self.assertTrue(macos_safety.safe_mode_enabled())
@@ -22,7 +20,6 @@ class MacOSSafetyTests(unittest.TestCase):
             self.assertFalse(macos_safety.openai_compat_tools_enabled())
 
     def test_safe_mode_can_be_disabled_for_validation(self):
-        """Verify safe mode can be disabled for validation behavior."""
         with patch.object(macos_safety.sys, "platform", "darwin"), \
              patch.dict(macos_safety.os.environ, {"WISP_MACOS_SAFE_MODE": "0"}, clear=True):
             self.assertFalse(macos_safety.safe_mode_enabled())
@@ -33,7 +30,6 @@ class MacOSSafetyTests(unittest.TestCase):
             self.assertTrue(macos_safety.openai_compat_tools_enabled())
 
     def test_safe_mode_has_targeted_opt_ins(self):
-        """Verify safe mode has targeted opt ins behavior."""
         env = {
             "WISP_MACOS_ENABLE_AUDIO": "1",
             "WISP_MACOS_ENABLE_FS_WATCHER": "1",

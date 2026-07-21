@@ -49,6 +49,7 @@ jobs:
   verify-locks:
     name: Verify dependency locks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -81,10 +82,41 @@ jobs:
             --output-file "$linux_lock"
           diff -u <(normalize_lock requirements/requirements-linux.lock) <(normalize_lock "$linux_lock")
 
+  lint:
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: |
+            requirements/requirements-linux.lock
+            requirements/requirements-dev.lock
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/requirements-linux.lock -r requirements/requirements-dev.lock
+
+      - name: Ruff lint
+        run: python -m ruff check .
+
+      # Mypy has a pre-existing baseline of ~1,386 errors (measured 2026-07-19),
+      # so it reports without gating merges yet. Ratchet the count down, then
+      # remove continue-on-error to make it blocking.
+      - name: Mypy type-check (non-blocking baseline)
+        continue-on-error: true
+        run: python -m mypy
+
   test:
     name: Tests (${{ matrix.os }}, chunk ${{ matrix.chunk }}/4)
     needs: verify-locks
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     env:
       PYTHONFAULTHANDLER: "1"
       QT_QPA_PLATFORM: offscreen
@@ -137,6 +169,9 @@ jobs:
 
       - name: Byte-compile all sources
         run: python -m compileall -q core ui runtime config.py
+
+      - name: Scan tracked files for committed secrets
+        run: python scripts/scan_secrets.py
 
       - name: Run test suite
         run: python scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4

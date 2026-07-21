@@ -741,6 +741,7 @@ class AddonManager:
                 return False
             addon.runtime_python = Path(str(addon.runtime_status.get("python") or ""))
 
+        addon.error = ""
         addon.host = AddonHostProcess(addon)
         addon.hooks = _safe_list(_call_host(addon, "hooks", {}, timeout=3.0))
         addon.tray_actions = (
@@ -760,6 +761,12 @@ class AddonManager:
             else []
         )
         addon.hotkeys = _safe_hotkeys(addon, _call_host(addon, "get_hotkeys")) if _has_permission(addon, "hotkeys") else []
+        if addon.error:
+            addon.status = "error"
+            if addon.host is not None:
+                addon.host.stop()
+                addon.host = None
+            return False
         addon.status = "loaded"
         return True
 
@@ -802,7 +809,7 @@ def load_manifest(folder: Path) -> AddonManifest:
         ]
     permissions = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}
     raw_events = data.get("events") or permissions.get("events")
-    return AddonManifest(
+    manifest = AddonManifest(
         id=addon_id,
         name=str(plugin.get("name") or folder.name),
         version=str(plugin.get("version") or "0.0.0"),
@@ -819,6 +826,9 @@ def load_manifest(folder: Path) -> AddonManifest:
         settings=raw_settings if isinstance(raw_settings, list) else [],
         tools=data.get("tools") if isinstance(data.get("tools"), list) else [],
     )
+    if manifest.api_version != "1":
+        raise ValueError(f"unsupported addon API version: {manifest.api_version}")
+    return manifest
 
 
 def addon_setting(addon_id: str, key: str, default: Any = None) -> Any:

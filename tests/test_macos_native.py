@@ -8,9 +8,7 @@ from core.platform import macos_native
 
 
 class MacosNativeHelperTests(unittest.TestCase):
-    """Test case for macos native helper tests behavior."""
     def test_helpers_are_noops_off_macos(self):
-        """Verify helpers are noops off macos behavior."""
         with mock.patch.object(macos_native, "IS_MAC", False):
             self.assertIsNone(macos_native.get_clipboard_text())
             self.assertFalse(macos_native.set_clipboard_text("x"))
@@ -18,7 +16,6 @@ class MacosNativeHelperTests(unittest.TestCase):
             self.assertFalse(macos_native.paste_text("x"))
 
     def test_get_clipboard_text_uses_pbpaste(self):
-        """Verify get clipboard text uses pbpaste behavior."""
         result = types.SimpleNamespace(returncode=0, stdout="hello", stderr="")
         with mock.patch.object(macos_native, "IS_MAC", True), \
              mock.patch.object(macos_native.subprocess, "run", return_value=result) as run:
@@ -26,7 +23,6 @@ class MacosNativeHelperTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ["/usr/bin/pbpaste"])
 
     def test_set_clipboard_text_uses_pbcopy(self):
-        """Verify set clipboard text uses pbcopy behavior."""
         result = types.SimpleNamespace(returncode=0, stdout="", stderr="")
         with mock.patch.object(macos_native, "IS_MAC", True), \
              mock.patch.object(macos_native.subprocess, "run", return_value=result) as run:
@@ -35,7 +31,6 @@ class MacosNativeHelperTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["input"], "hello")
 
     def test_get_selected_text_restores_clipboard(self):
-        """Verify get selected text restores clipboard behavior."""
         restored: list[str] = []
         with mock.patch.object(macos_native, "IS_MAC", True), \
              mock.patch.object(macos_native, "send_key_combo", return_value=True) as send, \
@@ -47,7 +42,6 @@ class MacosNativeHelperTests(unittest.TestCase):
         self.assertEqual(restored, ["before"])
 
     def test_paste_text_sets_clipboard_then_sends_combo(self):
-        """Verify paste text sets clipboard then sends combo behavior."""
         with mock.patch.object(macos_native, "IS_MAC", True), \
              mock.patch.object(macos_native, "set_clipboard_text", return_value=True) as set_clip, \
              mock.patch.object(macos_native, "send_key_combo", return_value=True) as send, \
@@ -57,7 +51,6 @@ class MacosNativeHelperTests(unittest.TestCase):
         send.assert_called_once_with("cmd+v")
 
     def test_list_document_windows_parses_jxa_json(self):
-        """Verify list document windows parses jxa json behavior."""
         result = types.SimpleNamespace(
             returncode=0,
             stdout='[{"process_name":"TextEdit","pid":123,"frontmost":true,"title":"Notes.txt - TextEdit"}]',

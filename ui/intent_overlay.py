@@ -42,6 +42,14 @@ _DEBUG_KEYS = os.environ.get("WISP_INTENT_KEY_DEBUG", "0").strip().lower() not i
 }
 
 
+def _configured_overlay_timeout_ms(value: object) -> int:
+    """Return a safe intent-picker timeout for malformed runtime config."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return _AUTO_CLOSE_MS
+
+
 def _key_name(key: int) -> str:
     """Handle key name for UI intent overlay."""
     try:
@@ -465,15 +473,18 @@ class IntentOverlay(QWidget):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._cancel)
-        self._overlay_timeout_ms = max(
-            0,
-            int(getattr(config, "INTENT_OVERLAY_TIMEOUT_MS", _AUTO_CLOSE_MS) or 0),
+        self._overlay_timeout_ms = _configured_overlay_timeout_ms(
+            getattr(config, "INTENT_OVERLAY_TIMEOUT_MS", _AUTO_CLOSE_MS)
         )
         self._restart_timer()
 
     def _restart_timer(self) -> None:
         """Restart the auto-close countdown after a user interaction."""
         if self._custom_mode or self._handled or self._overlay_timeout_ms <= 0:
+            # A timer may already be active when the picker enters custom mode,
+            # completes, or receives a live timeout change. Stop it so a stale
+            # timeout cannot cancel the newer state.
+            self._timer.stop()
             return
         self._timer.start(self._overlay_timeout_ms)
 

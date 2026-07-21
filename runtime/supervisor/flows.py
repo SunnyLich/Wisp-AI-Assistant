@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 from core.system.env_utils import mcp_server_id_from_tool, mcp_server_override_key
 from runtime.supervisor import flow_context, flow_estimates, flow_utils, tool_modes
+from runtime.supervisor.runtime_log import RuntimeEventLog, normalize_severity
 from ui.i18n import t
 
 log = logging.getLogger("wisp.runtime.flows")
@@ -270,6 +271,7 @@ class FlowController:
         brain: WorkerLike,
         audio: WorkerLike,
         run_async: bool = True,
+        runtime_log: RuntimeEventLog | None = None,
     ) -> None:
         """Initialize the flow controller instance."""
         self.native = native
@@ -277,6 +279,8 @@ class FlowController:
         self.brain = brain
         self.audio = audio
         self.run_async = run_async
+        self.runtime_log = runtime_log if runtime_log is not None else RuntimeEventLog()
+        self.runtime_log.set_publisher(self._publish_runtime_events)
         self._lock = threading.RLock()
         self._pending: PendingInvocation | None = None
         self._voice_context: dict[str, Any] = {}
@@ -350,6 +354,9 @@ class FlowController:
         self.ui.on_event("ui.settings.open_requested", self._on_settings_open_requested)
         self.ui.on_event("ui.addons.open_requested", self._on_addons_open_requested)
         self.ui.on_event("ui.runtime_status.open_requested", self._on_runtime_status_open_requested)
+        self.ui.on_event("ui.runtime_status.opened", self._on_runtime_status_opened)
+        self.ui.on_event("ui.runtime_status.closed", self._on_runtime_status_closed)
+        self.ui.on_event("ui.log.event", self._on_ui_log_event)
         self.ui.on_event("ui.addons.run_action", self._on_addons_run_action)
         self.ui.on_event("ui.addons.set_enabled", self._on_addons_set_enabled)
         self.ui.on_event("ui.addons.set_setting", self._on_addons_set_setting)
@@ -405,9 +412,16 @@ class FlowController:
             self.audio.call("audio.prewarm", timeout=30.0, wait=False)
         except Exception:
             log.exception("audio prewarm did not start")
+        # Surface results that detached installers (staged applies, model
+        # downloads) wrote while Wisp was closed, right at startup.
+        try:
+            self.runtime_log.ingest_installer_statuses()
+        except Exception:  # noqa: BLE001 - installer status files are best-effort
+            log.exception("could not ingest installer status files")
 
     def stop(self) -> None:
         """Stop supervisor-owned background activity before worker teardown."""
+        self.runtime_log.disable_publishing()
         with self._speech_warmup_lock:
             self._speech_warmup_shutdown = True
             self._speech_warmup_stop.set()
@@ -611,6 +625,27 @@ class FlowController:
     def _on_runtime_status_open_requested(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle runtime status open requested events."""
         self._schedule(self.open_runtime_status)
+
+    def _on_runtime_status_opened(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Start live-publishing runtime events while the window is open."""
+        self.runtime_log.enable_publishing()
+
+    def _on_runtime_status_closed(self, _data: dict[str, Any], _req_id: Any = None) -> None:
+        """Stop live-publishing runtime events once the window closes."""
+        self.runtime_log.disable_publishing()
+
+    def _on_ui_log_event(self, data: dict[str, Any], _req_id: Any = None) -> None:
+        """Record a structured log event reported by the UI worker."""
+        payload = data if isinstance(data, dict) else {}
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            return
+        self.runtime_log.append(
+            str(payload.get("source") or "ui").strip()[:24] or "ui",
+            normalize_severity(str(payload.get("severity") or "")),
+            title,
+            detail=str(payload.get("detail") or ""),
+        )
 
     def _on_addons_run_action(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle addons run action events."""
@@ -1785,7 +1820,7 @@ class FlowController:
             context = self._context_snapshot({"context_clipboard": False})
         except Exception as exc:  # noqa: BLE001 - keep tray action user-facing
             log.exception("read selection aloud failed to capture context")
-            self._notice(f"{t('Could not read selected text')}: {self._friendly_error(exc)}")
+            self._notice(f"{t('Could not read selected text')}: {self._friendly_error(exc)}", severity="error")
             return
         text = str(context.get("selected_text") or "").strip()
         if not text:
@@ -1850,7 +1885,7 @@ class FlowController:
             record_result = self.audio.call("audio.record.start", timeout=20.0)
         except Exception as exc:  # noqa: BLE001
             log.exception("voice record start failed")
-            self._notice(f"Couldn't start recording: {self._friendly_error(exc)}")
+            self._notice(f"Couldn't start recording: {self._friendly_error(exc)}", severity="error")
             self._mark_voice_failed()
             self._set_idle()
             return
@@ -1858,7 +1893,7 @@ class FlowController:
             error = str(record_result.get("error") or "").strip()
             if error:
                 log.warning("voice record start unavailable: %s", error)
-                self._notice(f"Couldn't start recording: {self._friendly_error(error)}")
+                self._notice(f"Couldn't start recording: {self._friendly_error(error)}", severity="error")
             self._mark_voice_failed()
             self._set_idle()
             return
@@ -1952,7 +1987,7 @@ class FlowController:
             result = self.audio.call("audio.live.start", timeout=20.0)
         except Exception as exc:  # noqa: BLE001
             log.exception("live voice start failed")
-            self._notice(f"{t('Could not start live voice')}: {self._friendly_error(exc)}")
+            self._notice(f"{t('Could not start live voice')}: {self._friendly_error(exc)}", severity="error")
             self._mark_live_voice_idle()
             self._set_idle()
             return
@@ -1976,7 +2011,7 @@ class FlowController:
             elif error == "unsupported_provider":
                 self._notice(t("Live voice currently supports Gemini Live through the Google provider."))
             else:
-                self._notice(f"{t('Could not start live voice')}: {error or 'unknown error'}")
+                self._notice(f"{t('Could not start live voice')}: {error or 'unknown error'}", severity="error")
             self._mark_live_voice_idle()
             self._set_idle()
             return
@@ -2011,7 +2046,7 @@ class FlowController:
             record_result = self.audio.call("audio.record.start", timeout=20.0)
         except Exception as exc:  # noqa: BLE001 - surface mic/worker failure in the UI
             log.exception("dictation record start failed")
-            self._notice(f"Couldn't start dictation: {self._friendly_error(exc)}")
+            self._notice(f"Couldn't start dictation: {self._friendly_error(exc)}", severity="error")
             self._mark_dictate_failed()
             self._set_idle()
             return
@@ -2019,7 +2054,7 @@ class FlowController:
             error = str(record_result.get("error") or "").strip()
             if error:
                 log.warning("dictation record start unavailable: %s", error)
-                self._notice(f"Couldn't start dictation: {self._friendly_error(error)}")
+                self._notice(f"Couldn't start dictation: {self._friendly_error(error)}", severity="error")
             self._mark_dictate_failed()
             self._set_idle()
             return
@@ -2035,7 +2070,7 @@ class FlowController:
                 result = self.audio.call("audio.record.stop_transcribe", timeout=180.0)
             except Exception as exc:  # noqa: BLE001 - surface transcribe failure in the UI
                 log.exception("dictation transcribe failed")
-                self._notice(f"Dictation failed: {self._friendly_error(exc)}")
+                self._notice(f"Dictation failed: {self._friendly_error(exc)}", severity="error")
                 self._set_idle()
                 return
             text = str((result or {}).get("text") or "").strip()
@@ -2198,6 +2233,18 @@ class FlowController:
         rows = list(run_setup_check())
         self._safe_call(self.ui, "ui.health.show", {"rows": rows, "title": "Setup check"}, timeout=5.0)
         warnings = [row for row in rows if row.get("status") in {"warn", "fail"}]
+        self.runtime_log.append(
+            "health",
+            "info",
+            f"Setup check ran: {len(rows)} check(s), {len(warnings)} issue(s).",
+        )
+        for row in warnings:
+            self.runtime_log.append(
+                "health",
+                "error" if row.get("status") == "fail" else "warning",
+                f"Setup check - {row.get('name')}: {row.get('message')}",
+                detail=str(row.get("recommendation") or ""),
+            )
         if warnings:
             first = warnings[0]
             self._safe_call(
@@ -2531,17 +2578,28 @@ class FlowController:
         }
 
     def open_runtime_status(self) -> None:
-        """Open a terminal-like diagnostics view for packaged/no-console runs."""
+        """Open a live diagnostics view for packaged/no-console runs."""
         workers = [
             self._worker_status_row("native", self.native),
             self._worker_status_row("ui", self.ui),
             self._worker_status_row("brain", self.brain),
             self._worker_status_row("audio", self.audio),
         ]
+        # Fold in results that detached installer processes left on disk, then
+        # send the full aggregated event backlog; the window streams updates
+        # afterwards via ui.runtime_status.append.
+        try:
+            self.runtime_log.ingest_installer_statuses()
+        except Exception:  # noqa: BLE001 - installer status files are best-effort
+            log.exception("could not ingest installer status files")
         self._safe_call(
             self.ui,
             "ui.runtime_status.show",
-            {"workers": workers, "log_dir": os.environ.get("WISP_RUN_LOG_DIR", "")},
+            {
+                "workers": workers,
+                "log_dir": os.environ.get("WISP_RUN_LOG_DIR", ""),
+                "events": self.runtime_log.snapshot(),
+            },
             timeout=30.0,
         )
 
@@ -3007,6 +3065,14 @@ class FlowController:
                     list((payload or {}).get("file_context") or []),
                     conversation_index=early_chat_index,
                 )
+                generated_attachments = list((payload or {}).get("attachments") or [])
+                if generated_attachments and not self._reply_bubble_cancelled(gen):
+                    self._safe_call(
+                        self.ui,
+                        "ui.reply.image",
+                        {"attachments": generated_attachments},
+                        timeout=30.0,
+                    )
                 text_done = str((payload or {}).get("text") or "")
                 if text_done:
                     self._last_reply = text_done
@@ -3091,7 +3157,7 @@ class FlowController:
                     {"conversation_index": early_chat_index, "text": ""},
                     timeout=30.0,
                 )
-            self._notice(f"LLM request failed: {self._friendly_error(exc)}")
+            self._notice(f"LLM request failed: {self._friendly_error(exc)}", severity="error")
             self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
             self._set_idle()
             return
@@ -3122,6 +3188,13 @@ class FlowController:
         self._last_reply = text
         assistant_annotations = self._chat_text_annotations(text, role="assistant")
         bubble_cancelled = self._reply_bubble_cancelled(gen)
+        if assistant_attachments and not done_seen and not bubble_cancelled:
+            self._safe_call(
+                self.ui,
+                "ui.reply.image",
+                {"attachments": assistant_attachments},
+                timeout=30.0,
+            )
         if early_chat_index is not None:
             self._safe_call(
                 self.ui,
@@ -3254,7 +3327,7 @@ class FlowController:
             )
         except Exception as exc:  # noqa: BLE001 - surface route/config failures in the UI
             log.exception("brain rewrite failed")
-            self._notice(f"Rewrite failed: {self._friendly_error(exc)}")
+            self._notice(f"Rewrite failed: {self._friendly_error(exc)}", severity="error")
             self._safe_call(self.ui, "ui.reply.done", timeout=30.0)
             self._set_idle()
             return
@@ -3461,6 +3534,20 @@ class FlowController:
             log.exception("worker call failed: %s", method)
             return None
 
+    def _publish_runtime_events(self, events: list[dict[str, Any]]) -> None:
+        """Push a batch of new runtime events to the open Runtime Status window.
+
+        Deliberately raw (no _fire, no logging): a failure here must not write
+        new log records, or a dead UI worker would feed the log from its own
+        publish failures. Raising lets the event log disable publishing.
+        """
+        alive = getattr(self.ui, "alive", None)
+        if callable(alive) and not alive():
+            # WorkerClient.call would respawn the worker; a cosmetic log push
+            # must never be the thing that restarts a dead UI process.
+            raise RuntimeError("ui worker is not running")
+        self.ui.call("ui.runtime_status.append", {"events": events}, wait=False)
+
     def _fire(self, worker: WorkerLike, method: str, params: dict[str, Any] | None = None) -> None:
         """Send a fire-and-forget request - the response is not awaited.
 
@@ -3663,16 +3750,33 @@ class FlowController:
         """Set idle."""
         self._fire(self.ui, "ui.overlay.state", {"state": "idle"})
 
-    def _notice(self, text: str, *, severity: str = "") -> None:
+    def _notice(self, text: str, *, severity: str = "", technical_detail: str = "") -> None:
         """Show a transient warning/status bubble that dismisses itself.
 
         These are advisory ("didn't catch that", "couldn't start recording", …),
         so they auto-hide after a few seconds instead of lingering — long enough
         to read, short enough not to nag after an accidental tap.
+
+        Every notice is also recorded in the runtime event log: the first line
+        stays visible in Runtime Status while the recommendation and any
+        technical detail (e.g. a traceback) collapse behind it.
         """
         from core.error_recommendations import format_error
 
-        payload = {"text": format_error(text), "timeout_ms": 6000}
+        formatted = format_error(text)
+        # The event log gets the technical detail (tracebacks, raw provider
+        # errors); the transient bubble only shows the friendly text.
+        logged = format_error(text, technical_detail=technical_detail) if technical_detail else formatted
+        lines = logged.splitlines()
+        self.runtime_log.append(
+            "assistant",
+            normalize_severity(severity) if severity else "warning",
+            lines[0] if lines else logged,
+            detail="\n".join(lines[1:]).strip(),
+        )
+        # log_mirrored tells the UI host not to report this notice back via
+        # ui.log.event — the richer supervisor-side record above already exists.
+        payload = {"text": formatted, "timeout_ms": 6000, "log_mirrored": True}
         severity_name = str(severity or "").strip().lower()
         if severity_name:
             payload["severity"] = severity_name
@@ -3973,12 +4077,19 @@ class FlowController:
             t_ctx0 = time.monotonic()
             context = pending.context if isinstance(pending.context, dict) and pending.context else {}
             if not context:
-                context = self._context_snapshot(
-                    pending.caller,
-                    include_browser=False,
-                    preview_context_sources=True,
-                    dedupe_selection=True,
-                )
+                try:
+                    context = self._context_snapshot(
+                        pending.caller,
+                        include_browser=False,
+                        preview_context_sources=True,
+                        dedupe_selection=True,
+                    )
+                except Exception:
+                    # The pre-picker capture is deliberately best-effort. Keep
+                    # the post-picker retry under the same contract so a denied
+                    # permission or dead native source cannot abort the intent.
+                    log.exception("post-picker context snapshot failed")
+                    context = {}
             t_ctx = time.monotonic()
             if not self._is_current(generation):
                 return
@@ -5345,7 +5456,11 @@ class FlowController:
     def _capture_fullscreen_b64(self) -> str | None:
         """Handle capture fullscreen b64 for flow controller."""
         started = time.monotonic()
-        result = self.native.call("native.capture.fullscreen", timeout=30.0)
+        try:
+            result = self.native.call("native.capture.fullscreen", timeout=30.0)
+        except Exception:
+            log.exception("auto screenshot capture failed after %.2fs", time.monotonic() - started)
+            return None
         path = result.get("path") if isinstance(result, dict) else ""
         image_b64 = self._file_b64(path) if path else None
         log.info(

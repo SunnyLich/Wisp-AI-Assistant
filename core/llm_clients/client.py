@@ -19,6 +19,7 @@ import sys
 import threading as _threading
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
+from urllib.parse import urlsplit as _urlsplit
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -211,7 +212,12 @@ def _execute_retrieve_website(inputs: dict, *, tool_name: str = "retrieve_websit
         return "retrieve_website requires a URL."
     from core.context_fetcher import fetch_browser_content_for_tool
 
-    result = fetch_browser_content_for_tool(url)
+    try:
+        result = fetch_browser_content_for_tool(url)
+    except Exception as exc:  # noqa: BLE001 - browser context is optional
+        return f"Could not fetch content from {url!r}: {type(exc).__name__}: {exc}"
+    if not isinstance(result, str):
+        return f"Could not fetch content from {url!r}: browser source returned an unsupported format."
     _log_context(
         f"tool: {tool_name} (browser) - {url!r}",
         result or "",
@@ -262,7 +268,7 @@ def _execute_memory_save(inputs: dict) -> str:
 def _execute_git_status(inputs: dict) -> str:
     """Handle execute git status for LLM clients client."""
     cwd = inputs.get("cwd") or config.TOOL_GIT_ROOT
-    return _run_read_only_command(["git", "status", "--short"], cwd=cwd)
+    return _run_read_only_command(["git", "status", "--short", "--", "."], cwd=cwd)
 
 
 def _execute_git_diff(inputs: dict) -> str:
@@ -276,16 +282,34 @@ def _run_read_only_command(args: list[str], cwd: str) -> str:
     import subprocess
     from pathlib import Path
 
-    root = Path(cwd or ".").expanduser().resolve()
-    completed = subprocess.run(
-        args,
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
+    try:
+        root = Path(cwd or ".").expanduser().resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        return f"Git working folder is unavailable: {type(exc).__name__}: {exc}"
+    if not root.is_dir():
+        return f"Git working folder is not a directory: {root}"
+    try:
+        completed = subprocess.run(
+            args,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except FileNotFoundError:
+        return "Git is unavailable on this system."
+    except PermissionError as exc:
+        return f"Git working tree cannot be read: {exc}"
+    except subprocess.TimeoutExpired:
+        return "Git inspection timed out."
+    except OSError as exc:
+        return f"Git inspection failed: {type(exc).__name__}: {exc}"
     output = (completed.stdout or completed.stderr or "").strip()
-    return output[:12000] or f"{' '.join(args)} returned no output."
+    if completed.returncode:
+        return output[:12000] or f"{' '.join(args)} failed with exit code {completed.returncode}."
+    if len(output) > 12000:
+        return output[:12000] + "\n[Git output truncated at 12000 characters.]"
+    return output or f"{' '.join(args)} returned no output."
 
 
 def set_file_edit_approval_callback(callback: Callable[[dict], bool] | None) -> None:
@@ -471,6 +495,8 @@ def _execute_github_repo(inputs: dict) -> str:
     repo = str(inputs.get("repo") or "").strip()
     if not repo:
         return "Missing repo. Use owner/name."
+    if not _valid_github_repo(repo):
+        return "Invalid repo identifier. Use owner/name."
     return _github_get_json(f"https://api.github.com/repos/{repo}")
 
 
@@ -480,12 +506,27 @@ def _execute_github_issue(inputs: dict) -> str:
     number = str(inputs.get("number") or "").strip()
     if not repo or not number:
         return "Missing repo or number."
+    if not _valid_github_repo(repo) or not number.isdigit() or int(number) <= 0:
+        return "Invalid GitHub issue identifier. Use owner/name and a positive issue number."
     return _github_get_json(f"https://api.github.com/repos/{repo}/issues/{number}")
+
+
+def _valid_github_repo(repo: str) -> bool:
+    """Return whether a repository identifier is a safe owner/name pair."""
+    import re
+
+    return bool(
+        re.fullmatch(
+            r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})/[A-Za-z0-9_.-]{1,100}",
+            str(repo or "").strip(),
+        )
+    )
 
 
 def _github_get_json(url: str) -> str:
     """Handle github get json for LLM clients client."""
     import json
+    import urllib.error
     import urllib.request
 
     from core.auth import github as github_auth
@@ -502,8 +543,21 @@ def _github_get_json(url: str) -> str:
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        data = json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            return "GitHub authentication is invalid or expired. Sign in again from Settings."
+        if exc.code == 403:
+            return "GitHub denied access. The token may lack a required scope or the resource is private."
+        if exc.code == 404:
+            return "The requested GitHub resource does not exist or is inaccessible."
+        return f"GitHub API is unavailable (HTTP {exc.code})."
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return f"GitHub network request failed: {type(exc).__name__}: {exc}"
+    except (ValueError, TypeError) as exc:
+        return f"GitHub API returned invalid data: {type(exc).__name__}: {exc}"
     return json.dumps(data, indent=2, ensure_ascii=False)[:12000]
 
 
@@ -1681,7 +1735,7 @@ def _get_codex_client():
             if _codex_client is None:
                 with ssl_init_lock():
                     _codex_client = sdk_clients.openai_client(
-                        api_key="chatgpt-oauth-dummy",
+                        api_key="chatgpt-oauth-dummy",  # secret-scan: allow
                         base_url="https://chatgpt.com/backend-api/codex",
                         http_client=sdk_clients.httpx_client(transport=_CodexTransport()),
                     )
@@ -2822,6 +2876,14 @@ def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list
     return sorted(ids)
 
 
+def safe_list_models(provider: str, *, api_key: str = "", base_url: str = "") -> tuple[list[str], str]:
+    """Return live model ids plus an in-band error for Settings refreshes."""
+    try:
+        return list_models(provider, api_key=api_key, base_url=base_url), ""
+    except Exception as exc:  # noqa: BLE001 - Settings keeps its curated fallback list
+        return [], f"{type(exc).__name__}: {exc}"
+
+
 _CHATGPT_SUPPORTED_MODELS = {
     "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
     "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2",
@@ -2972,6 +3034,7 @@ def _check_route_config(provider: str, model: str, route_name: str) -> None:
     if provider == "custom":
         if not config.CUSTOM_BASE_URL:
             raise ValueError(f"{route_name} route uses 'custom' but CUSTOM_BASE_URL is not set.")
+        _validate_custom_base_url(config.CUSTOM_BASE_URL, route_name)
         return
     if provider == "ollama":
         return   # local, no key required
@@ -3010,8 +3073,10 @@ def _check_route_config_with_credentials(
             )
         return
     if provider == "custom":
-        if not (custom_base_url or config.CUSTOM_BASE_URL):
+        base_url = custom_base_url or config.CUSTOM_BASE_URL
+        if not base_url:
             raise ValueError(f"{route_name} route uses 'custom' but CUSTOM_BASE_URL is not set.")
+        _validate_custom_base_url(base_url, route_name)
         return
     if provider == "ollama":
         return   # no key required
@@ -3030,6 +3095,19 @@ def _check_route_config_with_credentials(
         return
     if not _api_key_for(provider):
         raise ValueError(f"{route_name} route uses {provider!r}, but its API key is not configured.")
+
+
+def _validate_custom_base_url(value: str, route_name: str) -> None:
+    """Require an absolute HTTP(S) endpoint before constructing an SDK client."""
+    try:
+        parsed = _urlsplit(str(value or "").strip())
+        valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            valid = False
+    except (TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise ValueError(f"{route_name} custom base URL is invalid: {value!r}")
 
 
 def _get_openai_client():

@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 import textwrap
 
+import pytest
+
 from addons.mcp_bridge import MCPStdioClient
 
 
@@ -56,3 +58,19 @@ def test_mcp_bridge_tolerates_cp1252_bytes_in_server_output(tmp_path):
     assert tools[0]["description"].startswith("old")
     assert tools[0]["description"].endswith("new")
 
+
+def test_mcp_server_unavailable_and_protocol_errors_are_controlled(monkeypatch):
+    """The bridge distinguishes an absent process from a JSON-RPC error response."""
+    client = MCPStdioClient("offline", "missing-command", timeout=0.01)
+    with pytest.raises(RuntimeError, match="not running"):
+        client._send({"jsonrpc": "2.0", "method": "tools/list"})
+
+    client._alive = True
+    client._responses[1] = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {"code": -32601, "message": "protocol method unavailable"},
+    }
+    monkeypatch.setattr(client, "_send", lambda _payload: None)
+    with pytest.raises(RuntimeError, match="protocol method unavailable"):
+        client._request("tools/list", {})

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -26,12 +27,13 @@ _WISP_MODEL_CACHE_NAMES = {
     "models--Systran--faster-whisper-large-v3",
 }
 _KEYRING_SERVICE = "python-ai-overlay"
+_CHATGPT_KEYRING_CHUNKS = tuple(f"chatgpt-oauth-chunk-{index}" for index in range(32))
 _KEYRING_ACCOUNTS = (
     "__wisp_secrets__",
     "chatgpt-oauth",
     "github-oauth",
     "github-copilot-token",
-)
+) + _CHATGPT_KEYRING_CHUNKS
 
 
 @dataclass(frozen=True)
@@ -299,24 +301,40 @@ def launch_uninstaller(plan: UninstallPlan, *, wait_pid: int | None = None) -> U
         raise UninstallError("Could not remove Wisp credentials: " + "; ".join(credential_failures))
 
     helper_root = Path(tempfile.gettempdir()) / f"wisp-uninstall-{uuid.uuid4().hex}"
-    helper_root.mkdir(parents=True, exist_ok=False)
-    log_path = helper_root / "uninstall-failures.log"
-    pid = updater.wisp_wait_pid(wait_pid)
-    if plan.platform == "win32":
-        script_path = helper_root / "uninstall-wisp.ps1"
-        script_path.write_text(render_windows_uninstall_script(plan, wait_pid=pid, log_path=log_path), encoding="utf-8")
-        command = [
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script_path),
-        ]
-    else:
-        script_path = helper_root / "uninstall-wisp.sh"
-        script_path.write_text(render_posix_uninstall_script(plan, wait_pid=pid, log_path=log_path), encoding="utf-8")
-        script_path.chmod(script_path.stat().st_mode | stat.S_IXUSR)
-        command = [str(script_path)]
-    updater.launch_detached_helper(command, cwd=helper_root)
-    return UninstallLaunch(script_path=script_path, failure_log_path=log_path)
+    helper_created = False
+    try:
+        helper_root.mkdir(parents=True, exist_ok=False)
+        helper_created = True
+        log_path = helper_root / "uninstall-failures.log"
+        pid = updater.wisp_wait_pid(wait_pid)
+        if plan.platform == "win32":
+            script_path = helper_root / "uninstall-wisp.ps1"
+            script_path.write_text(
+                render_windows_uninstall_script(plan, wait_pid=pid, log_path=log_path),
+                encoding="utf-8",
+            )
+            command = [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script_path),
+            ]
+        else:
+            script_path = helper_root / "uninstall-wisp.sh"
+            script_path.write_text(
+                render_posix_uninstall_script(plan, wait_pid=pid, log_path=log_path),
+                encoding="utf-8",
+            )
+            script_path.chmod(script_path.stat().st_mode | stat.S_IXUSR)
+            command = [str(script_path)]
+        updater.launch_detached_helper(command, cwd=helper_root)
+        return UninstallLaunch(script_path=script_path, failure_log_path=log_path)
+    except Exception:
+        # A helper that never launched cannot remove itself.  Do not leave its
+        # script/log directory behind when setup, permission, or process launch
+        # fails.  The original exception remains the actionable failure.
+        if helper_created:
+            shutil.rmtree(helper_root, ignore_errors=True)
+        raise

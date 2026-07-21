@@ -355,6 +355,15 @@ def _call_tool(name: str, args: dict) -> list:
     return [{"type": "text", "text": str(result)}]
 
 
+def _safe_call_tool(name: str, args: dict) -> tuple[list, bool]:
+    """Return MCP content and an error flag without escaping tool faults."""
+    try:
+        return _call_tool(name, args), False
+    except Exception as exc:  # noqa: BLE001 - protocol must survive capture faults
+        _log(f"tool {name!r} failed: {exc}")
+        return [{"type": "text", "text": f"error: {type(exc).__name__}: {exc}"}], True
+
+
 def main() -> int:
     """Answer JSON-RPC lines from stdin until EOF; single-threaded on purpose."""
     if hasattr(sys.stdin, "reconfigure"):
@@ -389,14 +398,8 @@ def main() -> int:
             params = msg.get("params") or {}
             name = str(params.get("name") or "")
             args = params.get("arguments") or {}
-            try:
-                _ok(mid, {"content": _call_tool(name, args), "isError": False})
-            except Exception as exc:
-                _log(f"tool {name!r} failed: {exc}")
-                _ok(mid, {
-                    "content": [{"type": "text", "text": f"error: {exc}"}],
-                    "isError": True,
-                })
+            content, is_error = _safe_call_tool(name, args)
+            _ok(mid, {"content": content, "isError": is_error})
         elif mid is not None:
             _err(mid, -32601, f"unknown method: {method}")
         # notifications without a handler are ignored per JSON-RPC

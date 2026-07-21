@@ -10,9 +10,7 @@ from core.auth import copilot_client
 
 
 class CopilotClientBridgeTests(unittest.TestCase):
-    """Test case for copilot client bridge tests behavior."""
     def test_client_options_preserve_environment_and_set_state_home(self):
-        """Verify client options preserve environment and set state home behavior."""
         options = copilot_client._client_options("github_pat_test")
 
         self.assertEqual(options["env"]["COPILOT_GITHUB_TOKEN"], "github_pat_test")
@@ -23,33 +21,26 @@ class CopilotClientBridgeTests(unittest.TestCase):
         self.assertEqual(options["env"].get("PATH"), os.environ.get("PATH"))
 
     def test_sync_ask_awaits_async_sdk_methods(self):
-        """Verify sync ask awaits async sdk methods behavior."""
         calls = []
 
         class FakeSession:
-            """Test case for fake session behavior."""
             async def send_and_wait(self, options):
-                """Verify send and wait behavior."""
                 calls.append(("send_and_wait", options))
                 return {"data": {"content": "OK"}}
 
         class FakeCopilotClient:
             """Client for fake copilot client communication."""
             def __init__(self, options):
-                """Initialize the fake copilot client instance."""
                 calls.append(("init", options))
 
             async def start(self):
-                """Verify start behavior."""
                 calls.append(("start", None))
 
             async def create_session(self, options):
-                """Verify create session behavior."""
                 calls.append(("create_session", options))
                 return FakeSession()
 
             async def stop(self):
-                """Verify stop behavior."""
                 calls.append(("stop", None))
                 return []
 

@@ -1,6 +1,7 @@
 """Tests for test memory quality."""
 
 import json
+import builtins
 import threading
 import time
 from unittest.mock import patch
@@ -9,7 +10,6 @@ from core.memory_store import store
 
 
 def _seed_router_attrs(manager):
-    """Verify seed router attrs behavior."""
     manager._ctx_router_lock = threading.Lock()
     manager._ctx_router = None
     manager._ctx_router_fact_signature = ()
@@ -17,27 +17,22 @@ def _seed_router_attrs(manager):
 
 
 def test_summarizer_rejects_task_request():
-    """Verify summarizer rejects task request behavior."""
     assert not store._is_memory_worthy_fact("Please fix the settings dialog", source="summarizer")
 
 
 def test_summarizer_keeps_durable_preference():
-    """Verify summarizer keeps durable preference behavior."""
     assert store._is_memory_worthy_fact("I prefer concise answers", source="summarizer")
 
 
 def test_explicit_can_keep_short_command_shaped_fact():
-    """Verify explicit can keep short command shaped fact behavior."""
     assert store._is_memory_worthy_fact("fix grammar before pasting text", source="explicit")
 
 
 def test_rejects_secrets():
-    """Verify rejects secrets behavior."""
-    assert not store._is_memory_worthy_fact("My API key is sk-testabcdefghijklmnop", source="explicit")
+    assert not store._is_memory_worthy_fact("My API key is sk-testabcdefghijklmnop", source="explicit")  # secret-scan: allow
 
 
 def test_memory_manager_tolerates_storage_directory_creation_failure():
-    """Verify memory manager tolerates storage directory creation failure behavior."""
     with patch.object(store.os, "makedirs", side_effect=PermissionError("denied")), \
          patch.object(store.MemoryManager, "_sync_consolidation_timer", autospec=True, return_value=None):
         manager = store.MemoryManager()
@@ -46,7 +41,6 @@ def test_memory_manager_tolerates_storage_directory_creation_failure():
 
 
 def test_memory_uses_json_store_even_when_macos_safe_mode_is_disabled():
-    """Verify memory uses json store even when macos safe mode is disabled behavior."""
     with patch.object(store.macos_safety.sys, "platform", "darwin"), \
          patch.dict(store.macos_safety.os.environ, {"WISP_MACOS_SAFE_MODE": "0"}, clear=True), \
          patch.object(store.os, "makedirs", return_value=None), \
@@ -57,7 +51,6 @@ def test_memory_uses_json_store_even_when_macos_safe_mode_is_disabled():
 
 
 def test_lightweight_fact_list_does_not_initialize_memory_manager(tmp_path, monkeypatch):
-    """Verify lightweight fact list does not initialize memory manager behavior."""
     fallback = tmp_path / "facts_fallback.json"
     fallback.write_text(
         json.dumps([
@@ -70,7 +63,6 @@ def test_lightweight_fact_list_does_not_initialize_memory_manager(tmp_path, monk
     class BrokenMemoryManager:
         """Coordinate broken memory manager behavior."""
         def __init__(self):
-            """Initialize the broken memory manager instance."""
             raise AssertionError("MemoryManager should not be constructed")
 
     monkeypatch.setattr(store, "_manager", None)
@@ -84,7 +76,6 @@ def test_lightweight_fact_list_does_not_initialize_memory_manager(tmp_path, monk
 
 
 def test_lightweight_manual_fact_write_uses_json_store(tmp_path, monkeypatch):
-    """Verify lightweight manual fact write uses json store behavior."""
     fallback = tmp_path / "facts_fallback.json"
     monkeypatch.setattr(store, "_MEMORY_DIR", str(tmp_path))
     monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
@@ -99,7 +90,6 @@ def test_lightweight_manual_fact_write_uses_json_store(tmp_path, monkeypatch):
 
 
 def test_retrieve_relevant_returns_json_facts(monkeypatch):
-    """Verify retrieve relevant returns json facts behavior."""
     manager = store.MemoryManager.__new__(store.MemoryManager)
     _seed_router_attrs(manager)
     monkeypatch.setattr(
@@ -189,14 +179,12 @@ def test_retrieve_relevant_allows_explicit_memory_inventory_query(monkeypatch):
 
 
 def test_get_manager_is_thread_safe(monkeypatch):
-    """Verify get manager is thread safe behavior."""
     created: list[object] = []
     release = threading.Event()
 
     class SlowMemoryManager:
         """Coordinate slow memory manager behavior."""
         def __init__(self):
-            """Initialize the slow memory manager instance."""
             created.append(self)
             release.wait(timeout=2)
 
@@ -207,7 +195,6 @@ def test_get_manager_is_thread_safe(monkeypatch):
     results: list[object] = []
 
     def call_get_manager():
-        """Verify call get manager behavior."""
         results.append(store.get_manager())
 
     t1 = threading.Thread(target=call_get_manager)
@@ -225,7 +212,6 @@ def test_get_manager_is_thread_safe(monkeypatch):
 
 
 def test_manual_fact_writes_are_serialized(monkeypatch):
-    """Verify manual fact writes are serialized behavior."""
     manager = store.MemoryManager.__new__(store.MemoryManager)
     manager._ltm_lock = threading.RLock()
     _seed_router_attrs(manager)
@@ -235,7 +221,6 @@ def test_manual_fact_writes_are_serialized(monkeypatch):
     state_lock = threading.Lock()
 
     def slow_fallback(_text, _category, _source, _project=None):
-        """Verify slow fallback behavior."""
         nonlocal active, max_active
         with state_lock:
             active += 1
@@ -257,14 +242,12 @@ def test_manual_fact_writes_are_serialized(monkeypatch):
 
 
 def _fallback_manager():
-    """Verify fallback manager behavior."""
     manager = store.MemoryManager.__new__(store.MemoryManager)
     manager._ltm_lock = threading.RLock()
     return _seed_router_attrs(manager)
 
 
 def test_save_memory_scopes_general_and_project(tmp_path, monkeypatch):
-    """Verify save memory scopes general and project behavior."""
     fallback = tmp_path / "facts_fallback.json"
     monkeypatch.setattr(store, "_MEMORY_DIR", str(tmp_path))
     monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
@@ -293,7 +276,6 @@ def test_save_memory_scopes_general_and_project(tmp_path, monkeypatch):
 
 
 def test_save_memory_project_scope_falls_back_to_general_without_active_project(tmp_path, monkeypatch):
-    """Verify save memory project scope falls back to general without active project behavior."""
     fallback = tmp_path / "facts_fallback.json"
     monkeypatch.setattr(store, "_MEMORY_DIR", str(tmp_path))
     monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
@@ -305,7 +287,6 @@ def test_save_memory_project_scope_falls_back_to_general_without_active_project(
 
 
 def test_memory_save_note_only_when_tool_offered():
-    """Verify memory save note only when tool offered behavior."""
     from core.llm_clients import client
 
     base = "You are a concise desktop assistant."
@@ -315,7 +296,6 @@ def test_memory_save_note_only_when_tool_offered():
 
 
 def test_save_memory_default_scope_follows_active_project(tmp_path, monkeypatch):
-    """Verify save memory default scope follows active project behavior."""
     fallback = tmp_path / "facts_fallback.json"
     monkeypatch.setattr(store, "_MEMORY_DIR", str(tmp_path))
     monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
@@ -334,7 +314,6 @@ def test_save_memory_default_scope_follows_active_project(tmp_path, monkeypatch)
 
 
 def test_add_explicit_fact_defaults_to_active_project(tmp_path, monkeypatch):
-    """Verify add explicit fact defaults to active project behavior."""
     fallback = tmp_path / "facts_fallback.json"
     monkeypatch.setattr(store, "_MEMORY_DIR", str(tmp_path))
     monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
@@ -353,7 +332,6 @@ def test_add_explicit_fact_defaults_to_active_project(tmp_path, monkeypatch):
 
 
 def test_update_fact_moves_scope_between_general_and_project(tmp_path, monkeypatch):
-    """Verify update fact moves scope between general and project behavior."""
     fallback = tmp_path / "facts_fallback.json"
     monkeypatch.setattr(store, "_MEMORY_DIR", str(tmp_path))
     monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
@@ -377,7 +355,6 @@ def test_update_fact_moves_scope_between_general_and_project(tmp_path, monkeypat
 
 
 def test_memory_save_tool_executor(monkeypatch):
-    """Verify memory save tool executor behavior."""
     from core.llm_clients import client
 
     captured: dict = {}
@@ -385,7 +362,6 @@ def test_memory_save_tool_executor(monkeypatch):
     class FakeManager:
         """Coordinate fake manager behavior."""
         def save_memory(self, text, scope="general"):
-            """Verify save memory behavior."""
             captured["text"] = text
             captured["scope"] = scope
             return {"ok": True, "scope": scope, "project": None, "text": text}
@@ -394,3 +370,43 @@ def test_memory_save_tool_executor(monkeypatch):
     out = client._execute_memory_save({"text": "I like green tea", "scope": "general"})
     assert "green tea" in out
     assert captured == {"text": "I like green tea", "scope": "general"}
+
+
+def test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed(tmp_path, monkeypatch):
+    """The shared memory runtime contains storage, duplicate, and route failures."""
+    fallback = tmp_path / "facts_fallback.json"
+    monkeypatch.setattr(store, "_MEMORY_DIR", str(tmp_path))
+    monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
+
+    fallback.write_text("{corrupt json", encoding="utf-8")
+    assert store._fallback_read_all_unlocked() == []
+
+    real_open = builtins.open
+
+    def locked_open(path, *args, **kwargs):
+        if str(path) == str(fallback):
+            raise PermissionError("memory store locked")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", locked_open)
+    assert store._fallback_read_all_unlocked() == []
+    monkeypatch.setattr(builtins, "open", real_open)
+
+    fallback.unlink()
+    assert store.add_fact_manual_lightweight("I prefer concise answers") is True
+    assert store.add_fact_manual_lightweight("I prefer concise answers") is False
+    assert len(store._fallback_read_all_unlocked()) == 1
+
+    manager = _fallback_manager()
+    monkeypatch.setattr(
+        "core.llm_clients.routes.route_candidates",
+        lambda *_args: [("openai", "broken-primary"), ("anthropic", "broken-fallback")],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_memory_completion",
+        lambda provider, model, prompt, max_tokens: (_ for _ in ()).throw(
+            RuntimeError(f"{provider}/{model} unavailable")
+        ),
+    )
+    assert manager._call_memory_llm("compress memory") == ""

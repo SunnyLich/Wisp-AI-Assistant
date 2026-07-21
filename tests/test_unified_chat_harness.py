@@ -276,6 +276,43 @@ class ChatFlowHarnessTests(unittest.TestCase):
         self.assertIn("file context", trace.metadata["completion_gate_message"])
         self.assertEqual(len(trace.observations), 1)
 
+    def test_loop_backed_runner_requires_memory_tool_for_memory_request(self):
+        """A model that skips offered memory search is nudged before finalizing."""
+        scenario = ChatScenario(
+            name="needs_memory_search",
+            prompt="What do you remember about my answer style?",
+            tools=["memory_search"],
+            expected_relevant_tools=["memory_search"],
+        )
+        runner = UnifiedScriptedChatFlowRunner(
+            "unified",
+            {
+                scenario.name: [
+                    ScriptedModelStep(final="I do not remember.", status="premature"),
+                    ScriptedModelStep(
+                        tool_calls=[
+                            WispToolCall(
+                                id="memory_1",
+                                name="memory_search",
+                                arguments={"query": "answer style"},
+                            )
+                        ]
+                    ),
+                    ScriptedModelStep(final="You prefer concise answers.", status="handled"),
+                ]
+            },
+            fixtures_by_scenario={
+                scenario.name: {"memory_search": ["You prefer concise answers."]}
+            },
+        )
+
+        trace = runner.run(scenario)
+
+        self.assertEqual(trace.final_status, "handled")
+        self.assertEqual([call.name for call in trace.tool_calls], ["memory_search"])
+        self.assertIn("memory_search", trace.observations[0].summary)
+        self.assertFalse(trace.metadata["completion_gate_missed"])
+
     def test_loop_backed_runner_nudges_after_failed_read_file(self):
         """Verify failed file reads trigger a discovery nudge before final."""
         scenario = ChatScenario(

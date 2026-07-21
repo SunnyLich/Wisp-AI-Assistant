@@ -1,6 +1,7 @@
 """Tests for test builtin model tools."""
 
 import unittest
+import urllib.error
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -13,11 +14,9 @@ from core.settings_model import ToolTurnBudgets
 
 
 class BuiltinModelToolsTests(unittest.TestCase):
-    """Test case for builtin model tools tests behavior."""
     _GIT_TOOLS = {"git_status", "git_diff", "github_repo", "github_issue"}
 
     def test_git_and_github_tools_are_registered(self):
-        """Verify git and github tools are registered behavior."""
         names = {schema["name"] for schema in llm._TOOL_REGISTRY.schemas()}
 
         self.assertTrue(self._GIT_TOOLS <= names)
@@ -36,8 +35,119 @@ class BuiltinModelToolsTests(unittest.TestCase):
         }
         self.assertTrue(self._GIT_TOOLS <= relevant)
 
+    def test_model_listing_failure_matrix_is_in_band(self):
+        """Model-list refresh faults keep Settings on its curated fallback list."""
+        models, error = llm.safe_list_models("chatgpt")
+        self.assertEqual(models, [])
+        self.assertIn("does not support model listing", error)
+
+        with patch.object(llm.config, "OPENAI_API_KEY", ""):
+            models, error = llm.safe_list_models("openai")
+        self.assertEqual(models, [])
+        self.assertIn("No OpenAI API key", error)
+
+        faults = (
+            ConnectionError("provider API is offline"),
+            RuntimeError("provider API request is rate-limited"),
+        )
+        for fault in faults:
+            fake = SimpleNamespace(models=SimpleNamespace(list=lambda: (_ for _ in ()).throw(fault)))
+            with self.subTest(failure=str(fault)), patch.object(
+                llm.sdk_clients,
+                "openai_client",
+                return_value=fake,
+            ):
+                models, error = llm.safe_list_models("openai", api_key="test-key")
+            self.assertEqual(models, [])
+            self.assertIn(str(fault), error)
+
+        changed = SimpleNamespace(models=SimpleNamespace(list=lambda: SimpleNamespace(items=[])))
+        with patch.object(llm.sdk_clients, "openai_client", return_value=changed):
+            models, error = llm.safe_list_models("openai", api_key="test-key")
+        self.assertEqual(models, [])
+        self.assertIn("AttributeError", error)
+
+    def test_github_context_failure_matrix_is_controlled(self):
+        """Exercise every GitHub-context inventory cause at the real tool adapter."""
+        with patch("core.auth.github.get_valid_access_token", return_value=""):
+            self.assertIn("not configured", llm._execute_github_repo({"repo": "owner/repo"}))
+
+        self.assertIn("Invalid repo", llm._execute_github_repo({"repo": "not a repo"}))
+        self.assertIn(
+            "Invalid GitHub issue",
+            llm._execute_github_issue({"repo": "owner/repo", "number": "../private"}),
+        )
+
+        failures = (
+            (401, "authentication is invalid"),
+            (403, "required scope"),
+            (404, "does not exist"),
+            (503, "API is unavailable"),
+        )
+        with patch("core.auth.github.get_valid_access_token", return_value="token"):
+            for status, expected in failures:
+                with self.subTest(status=status), patch(
+                    "urllib.request.urlopen",
+                    side_effect=urllib.error.HTTPError(
+                        "https://api.github.test/resource",
+                        status,
+                        "failure",
+                        {},
+                        None,
+                    ),
+                ):
+                    result = llm._execute_github_repo({"repo": "owner/repo"})
+                    self.assertIn(expected, result)
+
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=urllib.error.URLError("network unavailable"),
+            ):
+                result = llm._execute_github_issue({"repo": "owner/repo", "number": 7})
+                self.assertIn("network request failed", result)
+
+            response = SimpleNamespace(
+                __enter__=lambda self: self,
+                __exit__=lambda self, *_args: False,
+                read=lambda: b"not-json",
+            )
+            with patch("urllib.request.urlopen", return_value=response):
+                result = llm._execute_github_repo({"repo": "owner/repo"})
+                self.assertIn("returned invalid data", result)
+
+    def test_git_inspection_failure_matrix_is_controlled(self):
+        """Exercise local Git faults at the shared status/diff command adapter."""
+        completed = SimpleNamespace(returncode=128, stdout="", stderr="not a git repository")
+        with TemporaryDirectory() as folder, patch(
+            "subprocess.run", return_value=completed
+        ) as run:
+            result = llm._execute_git_status({"cwd": folder})
+        self.assertIn("not a git repository", result)
+        self.assertEqual(run.call_args.args[0], ["git", "status", "--short", "--", "."])
+
+        with TemporaryDirectory() as folder, patch(
+            "subprocess.run", side_effect=FileNotFoundError
+        ):
+            self.assertIn("Git is unavailable", llm._execute_git_diff({"cwd": folder}))
+
+        with TemporaryDirectory() as folder, patch(
+            "subprocess.run", side_effect=PermissionError("access denied")
+        ):
+            self.assertIn("cannot be read", llm._execute_git_status({"cwd": folder}))
+
+        with TemporaryDirectory() as folder, patch(
+            "subprocess.run",
+            return_value=SimpleNamespace(returncode=0, stdout="x" * 12001, stderr=""),
+        ) as run:
+            result = llm._execute_git_diff({"cwd": folder})
+        self.assertIn("truncated at 12000", result)
+        self.assertEqual(run.call_args.args[0], ["git", "diff", "--", "."])
+        self.assertEqual(Path(run.call_args.kwargs["cwd"]), Path(folder).resolve())
+
+        missing = Path(folder) / "removed-before-inspection"
+        self.assertIn("working folder is unavailable", llm._execute_git_status({"cwd": missing}))
+
     def test_allowed_tool_filter_limits_general_schemas(self):
-        """Verify allowed tool filter limits general schemas behavior."""
         prompt = "show me the git status and github issue, then search the web"
 
         names = {
@@ -72,6 +182,55 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("truncated", second)
         self.assertEqual(spent, 12)
 
+    def test_shared_tool_policy_and_budget_failure_matrix_is_controlled(self):
+        """Exercise reusable tool gates for screen, memory, and approval workflows."""
+        for name in ("capture_screen", "memory_save"):
+            with self.subTest(tool=name, failure="disabled"):
+                result = llm._execute_model_tool(name, {}, allowed_tools=[])
+                self.assertIn("disabled", result)
+
+            with self.subTest(tool=name, failure="scope"):
+                result = llm._execute_model_tool(
+                    name,
+                    {},
+                    allowed_tools=["get_context.documents"],
+                )
+                self.assertIn("disabled", result)
+
+            with self.subTest(tool=name, failure="invalid inputs"):
+                result = llm._execute_model_tool(name, [], allowed_tools=[name])
+                self.assertIn("Invalid inputs", result)
+
+        with patch(
+            "core.capture.get_screen_snippet",
+            side_effect=PermissionError("screen recording permission denied"),
+        ):
+            self.assertIsNone(llm._capture_screen_b64())
+
+        with patch(
+            "core.memory_store.store.get_manager",
+            side_effect=PermissionError("memory store permission denied"),
+        ):
+            denied = llm._execute_model_tool(
+                "memory_save",
+                {"text": "I prefer concise answers."},
+                allowed_tools=["memory_save"],
+            )
+        self.assertIn("PermissionError", denied)
+
+        settings = SimpleNamespace(
+            tool_turn=ToolTurnBudgets(max_calls=0, max_result_chars=5, max_total_chars=5)
+        )
+        with patch.object(llm.config, "get_settings", return_value=settings):
+            self.assertTrue(llm._tool_call_limit_reached(0))
+            clipped, spent = llm._clip_tool_result_for_turn("too much output", 0)
+            exhausted, unchanged = llm._clip_tool_result_for_turn("more", spent)
+
+        self.assertIn("truncated", clipped)
+        self.assertEqual(spent, 5)
+        self.assertIn("budget is exhausted", exhausted)
+        self.assertEqual(unchanged, spent)
+
     def test_retrieve_website_is_browser_scoped(self):
         """Verify retrieve_website follows explicit Browser/Web tool grants."""
         names = {
@@ -91,8 +250,62 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("retrieve_website", names)
         self.assertIn("disabled", blocked)
 
+    def test_web_context_failure_matrix_is_controlled(self):
+        """Exercise every browser/web inventory cause through shared tool boundaries."""
+        disabled = llm._execute_model_tool(
+            "retrieve_website",
+            {"url": "https://example.test"},
+            allowed_tools=[],
+        )
+        self.assertIn("disabled", disabled)
+
+        with patch("core.context_fetcher.fetch_browser_content_for_tool", return_value=""):
+            blocked = llm._execute_model_tool(
+                "retrieve_website",
+                {"url": "https://blocked.example"},
+                allowed_tools=["retrieve_website"],
+            )
+        self.assertIn("Could not fetch content", blocked)
+
+        with patch(
+            "core.context_fetcher.fetch_browser_content_for_tool",
+            side_effect=OSError("network access unavailable"),
+        ):
+            offline = llm._execute_model_tool(
+                "retrieve_website",
+                {"url": "https://offline.example"},
+                allowed_tools=["retrieve_website"],
+            )
+        self.assertIn("network access unavailable", offline)
+
+        with patch("core.context_fetcher.get_all_open_document_paths", return_value=[]):
+            missing = llm._execute_model_tool(
+                "get_context",
+                {},
+                allowed_tools=["get_context.documents"],
+            )
+        self.assertIn("Could not determine", missing)
+
+        with patch(
+            "core.context_fetcher.fetch_browser_content_for_tool",
+            return_value={"unexpected": "shape"},
+        ):
+            changed = llm._execute_model_tool(
+                "retrieve_website",
+                {"url": "https://changed.example"},
+                allowed_tools=["retrieve_website"],
+            )
+        self.assertIn("unsupported format", changed)
+
+        settings = SimpleNamespace(
+            tool_turn=ToolTurnBudgets(max_calls=3, max_result_chars=25, max_total_chars=25)
+        )
+        with patch.object(llm.config, "get_settings", return_value=settings):
+            clipped, spent = llm._clip_tool_result_for_turn("page" * 100, 0)
+        self.assertIn("truncated", clipped)
+        self.assertEqual(spent, 25)
+
     def test_memory_search_is_opt_in(self):
-        """Verify memory search is opt in behavior."""
         default_names = {schema["name"] for schema in llm._get_tool_schemas("remember my project")}
         allowed_names = {
             schema["name"]
@@ -105,8 +318,49 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertNotIn("memory_search", default_names)
         self.assertIn("memory_search", allowed_names)
 
+    def test_memory_search_on_demand_failure_matrix_is_controlled(self):
+        """Keep optional memory retrieval safe across policy, store, and budget faults."""
+        disabled = llm._execute_model_tool(
+            "memory_search",
+            {"query": "answer style"},
+            allowed_tools=[],
+        )
+        scoped_out = llm._execute_model_tool(
+            "memory_search",
+            {"query": "answer style"},
+            allowed_tools=["get_context.documents"],
+        )
+        invalid = llm._execute_model_tool(
+            "memory_search",
+            {},
+            allowed_tools=["memory_search"],
+        )
+        with patch(
+            "core.memory_store.store.get_manager",
+            side_effect=OSError("memory store is unavailable"),
+        ):
+            unavailable = llm._execute_model_tool(
+                "memory_search",
+                {"query": "answer style"},
+                allowed_tools=["memory_search"],
+            )
+
+        settings = SimpleNamespace(
+            tool_turn=ToolTurnBudgets(max_calls=0, max_result_chars=8, max_total_chars=8)
+        )
+        with patch.object(llm.config, "get_settings", return_value=settings):
+            self.assertTrue(llm._tool_call_limit_reached(0))
+            clipped, spent = llm._clip_tool_result_for_turn("remembered fact" * 10, 0)
+            exhausted, _ = llm._clip_tool_result_for_turn("another fact", spent)
+
+        self.assertIn("disabled", disabled)
+        self.assertIn("disabled", scoped_out)
+        self.assertIn("missing required", invalid)
+        self.assertIn("memory store is unavailable", unavailable)
+        self.assertIn("truncated", clipped)
+        self.assertIn("budget is exhausted", exhausted)
+
     def test_memory_search_note_only_when_tool_offered(self):
-        """Verify memory search note only when tool offered behavior."""
         base = "You are a concise desktop assistant."
 
         self.assertIn("memory_search tool", llm._with_memory_search_note(base, ["memory_search"]))
@@ -114,7 +368,6 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertEqual(llm._with_memory_search_note(base, None), base)
 
     def test_prompt_guidance_builds_query_notes_from_one_place(self):
-        """Verify prompt guidance builds query notes from one place behavior."""
         system = prompt_guidance.apply_query_guidance(
             "Base prompt",
             tools_offered=True,
@@ -128,13 +381,11 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("memory_save tool", system)
 
     def test_frontloaded_memory_search_uses_query(self):
-        """Verify frontloaded memory search uses query behavior."""
         captured = {}
 
         class FakeManager:
             """Coordinate fake manager behavior."""
             def retrieve_relevant(self, query):
-                """Verify retrieve relevant behavior."""
                 captured["query"] = query
                 return "[Memory]\n- I prefer concise answers"
 
@@ -150,7 +401,6 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertEqual(captured["query"], "what do you remember about my answer style?")
 
     def test_frontloaded_memory_search_stays_opt_in(self):
-        """Verify frontloaded memory search stays opt in behavior."""
         with patch("core.memory_store.store.get_manager") as get_manager:
             ambient = llm._inject_frontloaded_tool_context(
                 "Active app: Notes",
@@ -162,7 +412,6 @@ class BuiltinModelToolsTests(unittest.TestCase):
         get_manager.assert_not_called()
 
     def test_get_context_execution_respects_source_allowlist(self):
-        """Verify get context execution respects source allowlist behavior."""
         self.assertIn(
             "disabled",
             llm._execute_model_tool(
@@ -212,7 +461,6 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("git_status", pinned)
 
     def test_pinned_context_source_grants_offer_get_context_schema(self):
-        """Verify pinned context source grants offer get context schema behavior."""
         names = {
             schema["name"]
             for schema in llm._get_tool_schemas(
@@ -225,7 +473,6 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("get_context", names)
 
     def test_pinned_browser_mode_offers_web_and_context_for_anthropic(self):
-        """Verify pinned browser mode offers web and context for anthropic behavior."""
         names = {
             schema["name"]
             for schema in llm._get_tool_schemas(
@@ -239,7 +486,6 @@ class BuiltinModelToolsTests(unittest.TestCase):
         self.assertIn("get_context", names)
 
     def test_pinned_browser_mode_openai_offers_web_and_context_functions(self):
-        """Verify pinned browser mode openai offers context function behavior."""
         schemas = llm._get_openai_tool_schemas(
             "hello",
             allowed_tools=["web_search", "get_context.browser"],
@@ -287,7 +533,6 @@ class BuiltinModelToolsTests(unittest.TestCase):
     def test_pinned_opt_in_tools_are_not_added(self):
         # capture_screen is governed by the screenshot setting, never by the
         # per-caller tool list, even if someone hand-writes it into the env.
-        """Verify pinned opt in tools are not added behavior."""
         names = {
             schema["name"]
             for schema in llm._get_tool_schemas(

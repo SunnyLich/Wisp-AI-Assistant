@@ -244,6 +244,123 @@ def test_setup_profile_keeps_existing_default_model_settings_untouched():
     assert values["THEME_MODE"] == "dark"
 
 
+def test_onboarding_choices_and_navigation_tolerate_missing_or_corrupt_saved_state(monkeypatch):
+    """Setup pages stay operable when there is no usable prior startup state."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.onboarding import OnboardingWizard
+
+    qapp = QApplication.instance() or QApplication([])
+    for existing in ({}, {"PROFILE_COUNT": "not-an-integer", "ACTIVE_PROFILE": "stale"}):
+        values = persisted_profile_setup_values(
+            name="Runtime User",
+            setup_values=profile_values(
+                name="Runtime User",
+                setup_mode="advanced",
+                tts_preference="local",
+                stt_preference="cloud",
+            ),
+            existing_env=existing,
+        )
+        assert values["PROFILE_COUNT"] == "1"
+        assert values["WISP_TTS_PREFERENCE"] == "local"
+        assert values["WISP_STT_PREFERENCE"] == "cloud"
+
+    wizard = OnboardingWizard()
+    try:
+        wizard._advanced_mode.setChecked(True)
+        sequence = wizard._page_sequence()
+        assert sequence == [0, 1, 2, 3, 4, 5, 6]
+        wizard._name.setText("Runtime User")
+        for page in sequence[1:]:
+            wizard._show_page(page)
+            assert wizard._pages.currentIndex() == page
+        for page in reversed(sequence[:-1]):
+            wizard._show_page(page)
+            assert wizard._pages.currentIndex() == page
+    finally:
+        wizard.close()
+        qapp.processEvents()
+
+
+def test_onboarding_provider_configuration_failure_matrix_is_controlled(monkeypatch):
+    """Provider setup keeps Finish retryable for validation, keychain, and save faults."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QDialog
+
+    from core import secret_store
+    from ui import onboarding
+
+    qapp = QApplication.instance() or QApplication([])
+
+    def make_wizard():
+        wizard = onboarding.OnboardingWizard()
+        wizard._advanced_mode.setChecked(True)
+        wizard._name.setText("Runtime User")
+        wizard._provider.setCurrentIndex(wizard._provider.findData("openai"))
+        wizard._provider_key.setText("test-key")
+        return wizard
+
+    scenarios = (
+        ("invalid-value", ValueError("value required by this function is invalid")),
+        ("keychain", RuntimeError("OS keychain is unavailable")),
+        ("offline", ConnectionError("endpoint is offline")),
+        ("permission", PermissionError("account lacks permission")),
+        ("save", OSError("setting cannot be saved")),
+    )
+    for kind, failure in scenarios:
+        wizard = make_wizard()
+        try:
+            with monkeypatch.context() as scoped:
+                scoped.setattr(onboarding.settings_env, "read_settings_env", lambda: {})
+                if kind == "invalid-value":
+                    wizard._name.clear()
+                elif kind == "save":
+                    scoped.setattr(secret_store, "set_secret", lambda *_a, **_k: None)
+                    scoped.setattr(
+                        onboarding.settings_env,
+                        "write_settings_env",
+                        lambda *_a, error=failure, **_k: (_ for _ in ()).throw(error),
+                    )
+                else:
+                    scoped.setattr(
+                        secret_store,
+                        "set_secret",
+                        lambda *_a, error=failure, **_k: (_ for _ in ()).throw(error),
+                    )
+                    scoped.setattr(
+                        onboarding.settings_env,
+                        "write_settings_env",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            AssertionError("failed credential must stop before settings write")
+                        ),
+                    )
+                wizard._finish()
+            assert wizard.result() != QDialog.DialogCode.Accepted
+            assert wizard._provider_hint.text()
+        finally:
+            wizard.close()
+
+    # Malformed custom endpoints are rejected before secret or settings writes.
+    wizard = make_wizard()
+    try:
+        wizard._provider.setCurrentIndex(wizard._provider.findData("custom"))
+        wizard._custom_base_url.setText("not a URL")
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                secret_store,
+                "set_secret",
+                lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("malformed URL reached keychain")),
+            )
+            wizard._finish()
+        assert wizard.result() != QDialog.DialogCode.Accepted
+        assert "HTTP(S)" in wizard._provider_hint.text()
+    finally:
+        wizard.close()
+        qapp.processEvents()
+
+
 def test_wizard_finish_persists_the_named_profile_contract(tmp_path, monkeypatch):
     """The real Finish action writes the custom profile, not only WISP_PROFILE_NAME."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

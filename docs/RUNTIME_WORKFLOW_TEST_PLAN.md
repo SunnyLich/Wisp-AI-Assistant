@@ -1,0 +1,328 @@
+# Runtime Workflow Test Plan
+
+Snapshot: 2026-07-20
+
+## Source documents
+
+This plan must be implemented against the existing documents below rather than creating a separate function list:
+
+- [Wisp App Function Inventory](./APP_FUNCTION_INVENTORY.md) is the authoritative list of **472 user-visible functions** and their **3,296 numbered failure causes**. Every inventory function must have a workflow-manifest record. Its numbered failure causes determine which fault scenarios should be applied to that function.
+- [Test Suite Audit](./TEST_SUITE_AUDIT.md) is the baseline report for the current automated tests, test locations, execution groups, and known suite limitations. It should be updated when the new workflow suite changes how tests are collected or run.
+- [Original App User Function Test Plan](../tests/APP_WORKFLOW_TEST_PLAN.md) is the earlier workflow catalogue and fixture design. Its existing real-store, fake-boundary, offscreen-Qt, and event-recorder approach should be reused rather than rebuilt.
+
+The coverage marks currently recorded in `APP_FUNCTION_INVENTORY.md` describe direct failure assertions found in the old suite. They are a starting point, not proof that a real-use workflow exists. A function is counted toward the new `472 / 472` target only when its production entry point is exercised by an automated workflow under this plan.
+
+The workflow manifest must preserve traceability back to the earlier inventory:
+
+- Store the inventory function name exactly.
+- Store every numbered failure reference assigned to that function.
+- Map each applicable failure reference to a workflow scenario or record why it is not a runtime scenario.
+- Never mark references under another function as covered merely because their wording is similar.
+- Report missing inventory functions and unmapped failure references in CI.
+
+## Implementation status
+
+### Corrected feature-acceptance baseline
+
+`tests/workflows/manifest.json` is now treated only as a traceability and test-candidate index. Its 472 records do **not** mean that 472 real-use functions work. The authoritative positive-behavior report is `tests/workflows/feature_acceptance.json`, generated from explicit audited overrides by `scripts/generate_feature_acceptance.py`.
+
+Current honest status:
+
+- **51 / 472** functions are accepted through a production entry point with a successful observable result.
+- **2 / 472** are reviewed as component-only: useful lower-level evidence, but not a full user entry chain.
+- **111 / 472** have a name-matched candidate test that still needs code-path audit.
+- **308 / 472** are untested at the real-entry acceptance level.
+- **35 / 472** have completed dependency audits.
+- **15** declared A -> B interaction matrices are accepted, including the complete 4-mode x 5-tool local-file matrix, the 2 x 2 bubble scroll/snap matrix, the 6-language x 8-Settings-page matrix, and all eight Reset Page scopes.
+
+The acceptance validator refuses to infer success coverage from section similarity, failure injection, or a shared internal helper. `tests/workflows/feature_interactions.json` separately records the behaviorally distinct state combinations for features that affect other features.
+
+The first foundation slice is merged into the existing workflow system:
+
+- `scripts/run_app_workflow_tests.py` remains the master workflow entry point.
+- `scripts/runtime_test_harness.py` provides the shared escaped-exception collector, deterministic wait helper, and opt-in process/thread/JSON/temp-path inspector.
+- The master runner now removes its completed named basetemps and collects abandoned `pytest_<pid>_*` trees only after confirming that their owner process is dead. Live concurrent runs and the explicit `WISP_KEEP_PYTEST_TEMP` debugging mode are preserved.
+- Every `pytest.mark.workflow` test automatically uses the Python and Qt runtime-failure collector through `tests/conftest.py`.
+- Real supervisor startup/shutdown and isolated app-state workflows use the state inspector first; it will be extended to more workflows as their continuing-resource allowlists are established.
+- Existing `runtime.bootstrap` crash diagnostics are reused for worker processes, and the master runner now treats their `[crash] unhandled` marker as a test failure.
+- Existing profile workflows are now included in the master runner.
+- Settings appearance acceptance now runs real Save clicks through real config reload and the production UI-host callback into already-running icon and bubble widgets. Four compound appearance profiles cover every scroll x snap boolean state, low/high geometry and timing, all color roles, and successful use of the bubble after live apply.
+- App-language acceptance saves every supported UI language and navigates all eight Settings pages after each translator change (48 cases). Assistant-language acceptance saves every offered state and verifies the exact prompt used by the runtime.
+- Remaining Settings actions now exercise the real built-in-profile QAction, setup-check report, Settings-to-onboarding entry, every page-scoped reset, and the isolated full-reset path for settings, keychain entries, and OAuth sessions.
+- `tests/workflows/manifest.json` contains all **472 / 472** machine-readable trace/candidate mappings, validated by `tests/test_workflow_manifest.py` against exact inventory text, all **3,296 / 3,296** failure references, and real pytest node IDs. This is not positive feature acceptance coverage.
+- `scripts/generate_workflow_manifest.py` reproducibly expands the inventory using curated test-family pools while preserving hand-verified records. It labels records as `verified`, `direct`, or broader `section` mappings so mapping completeness is not confused with direct workflow maturity.
+- The master runner loads every manifest-referenced file dynamically, and pytest automatically applies the `workflow` marker and runtime collector to every mapped node.
+- `tests/workflows/failure_coverage.json` separately records direct executable evidence for every numbered cause. It currently proves **3,296 / 3,296** references with **0** uncovered. Function mapping alone never grants coverage: shared harnesses are reused only when `tests/workflows/shared_failure_boundaries.json` declares the audited function/cause pairs and their exact executable nodes.
+- The master runner has a separate exact-node failure-evidence phase, including evidence under `runtime/brain/tests`, so a documented `[T###]` cannot silently stop running.
+
+The manifest now has `enforce_complete: true`. Missing functions, changed failure references, stale test node IDs, duplicate records, or a stale generated manifest fail the test suite.
+
+Current trace-mapping maturity is **12 hand-verified**, **133 direct name-matched**, and **327 section-level** records. This proves every function is traceable into the automated suite; it does not replace the later plan phases that promote mappings to dedicated production-entry workflows.
+
+The older mapping-maturity counts are retained as historical traceability information only. They must never be displayed as the current feature acceptance result.
+
+## Feature dependency and interaction policy
+
+The 472 functions are not tested as an indiscriminate 472 x 472 Cartesian product. An interaction is required when code-path tracing shows that feature A changes feature B's inputs, routing, state, availability, persistence, or visible result.
+
+For every declared A -> B edge:
+
+1. Partition A into every behaviorally distinct state.
+2. Partition B into every relevant operating state.
+3. Record every A-state x B-state case and its expected result in `tests/workflows/feature_interactions.json`.
+4. Exercise the production entry point and successful result for every recorded case.
+5. Use pairwise coverage when several independent features feed B; use the full Cartesian product when the production code contains a compound branch involving those features.
+6. Mark both feature dependency audits complete only after their outgoing and incoming effects have been traced.
+
+This policy covers cases such as Theme mode -> Save/reopen, active profile -> Settings persistence, context mode -> query payload, provider/model -> routing, and TTS mode -> reply playback without inventing combinations between unrelated functions.
+
+## Objective
+
+Build automated workflows that mimic real use of every user-visible Wisp function and expose runtime problems.
+
+Primary coverage target: **472 / 472 functions executed through production behavior**.
+
+The failure-cause catalogue in `APP_FUNCTION_INVENTORY.md` supplies scenarios to inject. It is not necessary to assert a useful error message for every cause.
+
+## Meaning of workflow
+
+A workflow is an automated process that performs the same sequence a user would perform, using the real application entry points and state transitions.
+
+Examples:
+
+- Launch Wisp, wait for its workers, open Settings, change a shortcut, save, restart, and verify the setting survived.
+- Select text in a simulated external application, open an intent, submit it, stream a result, cancel it, and verify Wisp returns to idle.
+- Open chat, attach a file, send a message, switch conversations, restart Wisp, and reopen the conversation.
+- Start an optional installer, interrupt it, restart Wisp, and verify no broken package state or temporary files remain.
+
+Mocks or fakes are allowed only at external boundaries that CI cannot safely control, such as provider servers, operating-system permissions, microphones, and keychains. The Wisp code between the user action and that boundary should remain real.
+
+## What counts as a runtime failure
+
+A workflow fails when it detects any of the following:
+
+- An unhandled exception.
+- An exception in a background thread, Qt callback, asynchronous task, worker, or subprocess.
+- A native crash or non-zero worker exit that the workflow did not request.
+- A deadlock, freeze, or operation exceeding its timeout.
+- An application state that cannot return to idle or continue with another action.
+- Corrupt settings, conversations, memory, task artifacts, or installer state.
+- A leaked thread, worker, subprocess, file handle, lock, timer, or temporary directory.
+- A stale callback or result changing a newer operation.
+- A repeatable action failing on its second or later execution.
+- A platform-specific failure on a supported operating system.
+
+An expected provider, permission, validation, or filesystem rejection is acceptable when it stays controlled: the app remains alive, the operation terminates, state remains valid, and resources are cleaned up. Tests do not need to require a particular friendly log or recommendation.
+
+## Required assertions for every workflow
+
+Each workflow must verify:
+
+1. The production entry point was invoked.
+2. The action completed, was cancelled, or failed within a bounded timeout.
+3. No unexpected exception or process exit was captured.
+4. The app reached a valid state after the action.
+5. A second unrelated action can still run.
+6. Persistent data remains parseable and internally consistent.
+7. Threads, workers, locks, timers, and temporary files return to the expected baseline.
+
+## Workflow scenarios
+
+Every function receives the scenarios that apply to it:
+
+- **Normal:** Perform the action once with valid inputs.
+- **Repeat:** Perform it multiple times and reopen any affected UI.
+- **Cancel:** Cancel before start, during work, and near completion where possible.
+- **Restart:** Restart the relevant worker or app and verify persisted state.
+- **Boundary values:** Empty, minimum, maximum, oversized, malformed, and stale inputs.
+- **Dependency failure:** Inject missing, corrupt, locked, denied, offline, timed-out, rate-limited, or crashed dependencies.
+- **Concurrency:** Run conflicting or overlapping operations where the UI permits them.
+- **Recovery:** After a controlled failure, run a valid operation and verify normal behavior resumes.
+- **Cleanup:** Verify no Wisp-owned temporary files or orphan processes remain.
+
+A parameterized scenario may cover many functions, but each function's actual entry point must be invoked. A helper-unit test alone does not count as workflow coverage for every caller.
+
+## Test harness
+
+### 1. Global runtime-failure collector
+
+Add one collector used by all workflow tests. It must capture:
+
+- Main-thread exceptions.
+- `threading.excepthook` failures.
+- `sys.unraisablehook` failures.
+- Async task/future exceptions.
+- Qt critical/fatal messages and exceptions escaping callbacks.
+- Worker and subprocess exits, stderr tracebacks, and crash codes.
+- Watchdog timeouts and UI event-loop freezes.
+
+At workflow teardown, any unexpected collected event fails the test.
+
+### 2. Application driver
+
+Provide reusable commands for real user operations:
+
+- Start and stop the supervisor and workers.
+- Open, close, and interact with Wisp windows.
+- Trigger tray actions, shortcuts, intent actions, chat actions, and Settings controls.
+- Wait for explicit state transitions instead of arbitrary sleeps.
+- Restart workers or the full app while retaining the test profile.
+
+### 3. Fault injection
+
+Add deterministic boundary adapters for:
+
+- Filesystem: missing, read-only, locked, corrupt, full, interrupted write.
+- Network/provider: offline, timeout, authentication failure, rate limit, invalid response, disconnect during streaming.
+- Workers: missing executable, failed startup, crash, freeze, delayed reply, failed shutdown.
+- Native OS: denied accessibility, screen-recording, microphone, clipboard, keychain, and global-hotkey access.
+- Audio/model assets: missing, damaged, unsupported device, no audio, unavailable model.
+- Add-ons/MCP/agents: invalid manifest, missing dependency, denied permission, malformed protocol data, host crash, lease conflict.
+
+Faults must be injected at the external boundary, not by replacing the Wisp function being tested.
+
+### 4. State and leak inspector
+
+Record a baseline before each workflow and compare it at teardown:
+
+- Wisp worker and helper processes.
+- Non-daemon threads.
+- Registered hotkeys and active timers.
+- Held locks and open temporary work areas.
+- Settings, conversation, memory, add-on, and task JSON validity.
+- Wisp-owned pytest and installer temporary directories.
+
+The inspector may allow resources explicitly owned by the continuing app session, but the allowlist must be narrow and documented.
+
+## Test layers
+
+Use all layers; lower layers run more frequently.
+
+1. **In-process workflows:** Real controllers, stores, and UI objects with external boundaries simulated. Run on every change.
+2. **Multi-worker workflows:** Real supervisor IPC and worker processes. Run on every change for critical flows and in a broader CI job.
+3. **Desktop workflows:** Real Qt event loop, windows, shortcuts, clipboard, capture, and cancellation behavior. Run in supported CI desktop sessions.
+4. **Packaged-app workflows:** Launch the built executable and exercise startup, update, crash recovery, and uninstall boundaries. Run for release candidates.
+5. **Stress workflows:** Randomized valid action sequences, repeated start/stop cycles, concurrency, and delayed callbacks. Run nightly or on demand.
+
+## Workflow manifest
+
+Create a machine-readable manifest, proposed path: `tests/workflows/manifest.yaml`.
+
+Each of the 472 functions needs one record containing:
+
+- Stable function/reference identifier.
+- Human-readable function name.
+- Workflow test node IDs.
+- Production entry point exercised.
+- Applicable scenario families.
+- Supported operating systems.
+- Required optional components.
+- Maximum allowed duration.
+- Expected persistent-state changes.
+- Expected continuing resources and cleanup requirements.
+
+The manifest validator must fail when:
+
+- An inventory function has no workflow.
+- A referenced test node does not exist.
+- A workflow is permanently skipped on every supported platform.
+- A workflow does not use the runtime-failure collector and cleanup inspector.
+
+## Implementation phases
+
+### Phase 1: Foundation
+
+- Add the global runtime-failure collector.
+- Add deterministic waits and watchdogs.
+- Add the state/leak inspector.
+- Reuse the existing pytest temporary-directory cleanup.
+- Add the workflow manifest and validator.
+
+Exit condition: one small workflow can deliberately produce each collector failure and prove the harness catches it.
+
+### Phase 2: Critical end-to-end slice
+
+Implement workflows for:
+
+- App launch and clean shutdown.
+- Worker startup, crash, freeze, restart, and failed shutdown.
+- Main ask and rewrite actions.
+- Streaming and cancellation.
+- Chat send, history persistence, corruption recovery, and restart.
+- Settings change, save, discard, and restart.
+
+Exit condition: critical workflows run through real supervisor/UI/brain/audio boundaries without unexpected failures or leftovers.
+
+### Phase 3: High-risk boundaries
+
+Implement reusable scenario matrices for:
+
+- Filesystem and persistence.
+- Provider/model routing.
+- Native permissions and hotkeys.
+- Screen capture and context collection.
+- TTS, STT, dictation, and live voice.
+- Add-ons, MCP, and local-file tools.
+- Multi-agent tasks and file leases.
+
+Exit condition: every relevant function is executed against its applicable boundary-failure matrix.
+
+### Phase 4: Remaining function inventory
+
+Work through all 20 inventory sections until the manifest reaches **472 / 472**.
+
+For each section:
+
+1. Add normal workflows.
+2. Add repeat, cancel, and restart cases.
+3. Attach applicable fault matrices.
+4. Run the section repeatedly.
+5. Fix discovered runtime issues before marking the section complete.
+
+### Phase 5: Platform and packaged validation
+
+- Run Windows, macOS, and Linux jobs for platform-specific workflows.
+- Run packaged startup and shutdown smoke tests.
+- Exercise optional-component combinations separately.
+- Run release-candidate update and uninstall workflows in disposable environments.
+
+Exit condition: no supported platform has an uncovered platform-specific function.
+
+### Phase 6: CI enforcement
+
+Add required CI gates for:
+
+- `472 / 472` inventory functions mapped to existing workflows.
+- Zero unexpected runtime-failure events.
+- Zero workflow timeouts.
+- Zero invalid persistent stores after teardown.
+- Zero unexpected worker/process/thread/temp-file leaks.
+- All mandatory platform jobs passing.
+
+Keep long stress and packaged tests in separate jobs so the fast workflow suite remains practical for normal development.
+
+## Recommended work order
+
+Prioritize by damage and likelihood:
+
+1. Startup, shutdown, IPC, and worker lifecycle.
+2. Ask/rewrite/chat streaming and cancellation.
+3. Settings, conversations, memory, and other persistent stores.
+4. Provider routing, authentication, and tool execution.
+5. Native hotkeys, focus, clipboard, capture, and permissions.
+6. TTS, STT, dictation, and live voice.
+7. Add-ons, MCP, and multi-agent execution.
+8. Installers, updates, crash reports, and uninstall.
+9. Remaining visual and convenience controls.
+
+## Completion definition
+
+This plan is complete only when:
+
+- Every one of the 472 inventory functions is executed by at least one automated real-use workflow.
+- Applicable normal, repeat, cancel, restart, boundary, fault, recovery, and cleanup scenarios are present.
+- All workflows use the shared runtime-failure collector and state/leak inspector.
+- Supported operating systems execute their platform-specific workflows.
+- CI reports zero unexpected crashes, exceptions, hangs, corrupt stores, leaked resources, and Wisp-owned temporary leftovers.
+
+The number of tests is not the success metric. The success metric is complete function execution with broad runtime fault exposure and zero undetected runtime failures.

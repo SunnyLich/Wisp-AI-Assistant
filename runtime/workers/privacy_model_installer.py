@@ -23,7 +23,7 @@ def _write_status(path: Path | None, *, ok: bool | None, message: str) -> None:
     os.replace(temp, path)
 
 
-def install(status_path: Path | None = None) -> int:
+def _install(status_path: Path | None = None) -> int:
     # These must be set before importing huggingface_hub. The Wisp installer
     # provides its own progress and error reporting, so Hub warnings/progress
     # would only duplicate or obscure the useful status lines.
@@ -89,6 +89,23 @@ def install(status_path: Path | None = None) -> int:
     _write_status(status_path, ok=True, message=message)
     _print(message)
     return 0
+
+
+def install(status_path: Path | None = None) -> int:
+    """Run the installer without letting preparation/storage faults escape."""
+    try:
+        return _install(status_path)
+    except Exception as exc:  # noqa: BLE001 - external installer must fail in-band
+        message = f"Advanced privacy installation failed: {type(exc).__name__}: {exc}"
+        try:
+            _write_status(status_path, ok=False, message=message)
+        except Exception as status_exc:  # noqa: BLE001 - exit code remains authoritative
+            _print(
+                f"Could not persist privacy installer status: "
+                f"{type(status_exc).__name__}: {status_exc}"
+            )
+        _print(message)
+        return 1
 
 
 def main() -> int:

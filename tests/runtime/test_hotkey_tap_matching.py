@@ -21,22 +21,18 @@ FN = 0x00800000  # rides along on F-keys; must be ignored when matching
 
 def test_parse_combo_rejects_bare_key():
     # A bare printable key would steal ordinary typing -> rejected.
-    """Verify parse combo rejects bare key behavior."""
     assert hotkey_helper._parse_combo_to_tap("q", VK) is None
 
 
 def test_parse_combo_ctrl_q():
-    """Verify parse combo ctrl q behavior."""
     assert hotkey_helper._parse_combo_to_tap("ctrl+q", VK) == (12, CTRL)
 
 
 def test_parse_combo_cmd_shift_1():
-    """Verify parse combo cmd shift 1 behavior."""
     assert hotkey_helper._parse_combo_to_tap("cmd+shift+1", VK) == (18, CMD | SHIFT)
 
 
 def test_match_exact_modifier():
-    """Verify match exact modifier behavior."""
     table = hotkey_helper._build_tap_table([("ctrl+q", "caller", {"index": 0})], VK)
     # ctrl+q pressed -> match.
     assert hotkey_helper._match_tap_event(12, CTRL, table) == ("caller", {"index": 0})
@@ -49,7 +45,6 @@ def test_match_exact_modifier():
 
 
 def test_match_ignores_fn_and_capslock_bits():
-    """Verify match ignores fn and capslock bits behavior."""
     table = hotkey_helper._build_tap_table([("shift+f1", "snip", {})], VK)
     # Real F-key events carry the Fn bit; matching must ignore it.
     assert hotkey_helper._match_tap_event(122, SHIFT | FN, table) == ("snip", {})
@@ -57,7 +52,6 @@ def test_match_ignores_fn_and_capslock_bits():
 
 def test_voice_key_parses_and_matches_as_start():
     # Push-to-talk default is a bare F-key (allowed; not a typing key).
-    """Verify voice key parses and matches as start behavior."""
     parsed = hotkey_helper._parse_combo_to_tap("f9", VK)
     assert parsed == (101, 0)
     # main() appends the voice key to the table as a "voice_start" entry.
@@ -68,14 +62,12 @@ def test_voice_key_parses_and_matches_as_start():
 
 
 def test_build_table_skips_unparseable():
-    """Verify build table skips unparseable behavior."""
     specs = [("ctrl+q", "caller", {"index": 0}), ("", "snip", {}), ("boguskey", "x", {})]
     table = hotkey_helper._build_tap_table(specs, VK)
     assert table == [(12, CTRL, "caller", {"index": 0})]
 
 
 def test_specs_from_config():
-    """Verify specs from config behavior."""
     config = SimpleNamespace(
         CALLER_ROWS=[
             {"hotkey": "ctrl+q", "hotkey_2": "ctrl+shift+q", "enabled": True},

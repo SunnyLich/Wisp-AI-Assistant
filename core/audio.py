@@ -258,6 +258,8 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
         _current_stop_event = stop_event
 
     # Producer: fetch TTS audio chunks
+    producer_errors: list[Exception] = []
+
     def producer():
         """Handle producer for audio."""
         try:
@@ -266,6 +268,9 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                 if stop_event.is_set():
                     break
                 chunk_q.put(chunk)
+        except Exception as exc:  # noqa: BLE001 - never leak a daemon-thread exception
+            producer_errors.append(exc)
+            print(f"[audio] TTS producer failed: {type(exc).__name__}: {exc}", flush=True)
         finally:
             chunk_q.put(None)  # sentinel
 
@@ -291,6 +296,7 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
             s.close()
 
     _audio_started = False
+    playback_failed = False
     stream = None
     try:
         print(f"[audio] opening TTS stream (rate={sample_rate}, ch={channels}, dtype={dtype})", flush=True)
@@ -347,8 +353,9 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
                     on_amplitude(min(amp, 1.0))
                 except Exception:
                     pass
-    except ModuleNotFoundError as exc:
-        print(f"[audio] streaming playback unavailable: {exc}")
+    except Exception as exc:  # noqa: BLE001 - audio backends expose platform-specific errors
+        playback_failed = True
+        print(f"[audio] streaming playback unavailable: {type(exc).__name__}: {exc}")
     finally:
         if stream is not None:
             try:
@@ -362,5 +369,7 @@ def _stream_and_play_chunks(text_chunks, on_done: callable | None,
 
     # Suppress the completion callback when interrupted — the superseding
     # generation owns the UI state now.
-    if on_done and not stop_event.is_set():
+    if producer_errors:
+        playback_failed = True
+    if on_done and not stop_event.is_set() and not playback_failed:
         on_done()

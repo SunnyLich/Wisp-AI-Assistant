@@ -1,0 +1,1864 @@
+{
+  "schema_version": 1,
+  "boundaries": [
+    {
+      "id": "agent_task_runtime",
+      "rationale": "These agent features all submit to, control, or inspect the same AgentTaskRunner task contract. Their repeated failure phrases therefore resolve through the same audited production boundary.",
+      "function_ids": [
+        "F379",
+        "F380",
+        "F381",
+        "F383",
+        "F384",
+        "F385",
+        "F386",
+        "F387",
+        "F388",
+        "F389",
+        "F390",
+        "F391",
+        "F392",
+        "F393",
+        "F394",
+        "F395",
+        "F396",
+        "F397",
+        "F398",
+        "F399",
+        "F400",
+        "F401",
+        "F402",
+        "F403",
+        "F404",
+        "F405",
+        "F406",
+        "F409",
+        "F410",
+        "F411",
+        "F412",
+        "F413",
+        "F414",
+        "F415",
+        "F416"
+      ],
+      "evidence_by_cause": {
+        "The task specification is invalid.": [
+          "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        ],
+        "The selected agent model is invalid.": [
+          "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
+        ],
+        "The task scope is invalid.": [
+          "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
+        ],
+        "A required credential is missing.": [
+          "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
+        ],
+        "A required permission is missing.": [
+          "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
+        ],
+        "The agent runtime exits unexpectedly.": [
+          "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
+        ],
+        "Concurrent agent execution conflicts.": [
+          "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
+        ],
+        "A file lease conflicts with another agent.": [
+          "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
+        ],
+        "Saved task artifacts are unavailable.": [
+          "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
+        ]
+      }
+    },
+    {
+      "id": "llm_provider_route_failover",
+      "rationale": "All listed provider choices enter the same route candidate, pre-output failover, and circuit-breaker implementation before provider-specific streaming begins.",
+      "function_ids": [
+        "F228",
+        "F229",
+        "F230",
+        "F231",
+        "F232",
+        "F233",
+        "F234",
+        "F235",
+        "F236",
+        "F237",
+        "F238",
+        "F239",
+        "F240",
+        "F241",
+        "F242",
+        "F243",
+        "F244",
+        "F245",
+        "F246",
+        "F247",
+        "F248",
+        "F249",
+        "F250"
+      ],
+      "evidence_by_cause": {
+        "The required credential is unavailable.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "The required provider account is unavailable.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "The remote provider service is offline.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "The configured local endpoint is offline.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "The selected model is not accessible.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "Rate limits are reached.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "The provider API becomes incompatible.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ]
+      }
+    },
+    {
+      "id": "global_hotkey_registration_and_delivery",
+      "rationale": "These features are invoked or configured through the shared global-hotkey parser, conflict check, native hook backend, and macOS event-tap delivery boundary.",
+      "function_ids": [
+        "F015", "F041", "F043", "F053", "F054", "F055", "F056", "F057",
+        "F058", "F059", "F060", "F061", "F062", "F063", "F064", "F065",
+        "F066", "F067", "F068", "F070", "F071", "F076", "F077", "F078",
+        "F090", "F108", "F121", "F145", "F348", "F349", "F373", "F417",
+        "F463", "F470"
+      ],
+      "evidence_by_cause": {
+        "The key binding is invalid.": [
+          "tests/runtime/test_hotkey_tap_matching.py::test_parse_combo_rejects_bare_key"
+        ],
+        "The key binding conflicts with another binding.": [
+          "tests/test_settings_dialog_controls.py::test_settings_reports_secondary_shortcut_conflicts_only_when_saving"
+        ],
+        "The OS rejects the global hook.": [
+          "tests/runtime/test_hotkey_helper_lifecycle.py::test_direct_hotkey_start_reports_os_hook_rejection"
+        ],
+        "Another application consumes the event.": [
+          "tests/runtime/test_hotkey_tap_swallow.py::test_active_tap_swallows_matched_keydown"
+        ],
+        "Input-monitoring permission is missing.": [
+          "tests/runtime/test_hotkey_tap_swallow.py::test_hotkey_tap_reports_input_monitoring_permission_failure"
+        ],
+        "Accessibility permission is missing.": [
+          "tests/runtime/test_hotkey_tap_swallow.py::test_falls_back_to_listen_only_when_active_tap_unavailable"
+        ]
+      }
+    },
+    {
+      "id": "speech_runtime_fault_contract",
+      "rationale": "These speech features share the STT/TTS runtime health contract: provider synthesis, PortAudio input/output, optional model runtime verification, device resolution, and pinned local asset verification.",
+      "function_ids": [
+        "F129", "F272", "F273", "F275", "F276", "F277", "F278", "F280",
+        "F282", "F283", "F284", "F286", "F288", "F290", "F291", "F292",
+        "F293", "F294", "F295", "F296", "F297", "F299", "F301", "F302",
+        "F303", "F304", "F305"
+      ],
+      "evidence_by_cause": {
+        "Provider authentication fails.": [
+          "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
+        ],
+        "The provider network request fails.": [
+          "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled",
+          "tests/test_audio_stream.py::AudioStreamTests::test_tts_producer_failure_does_not_escape_thread_or_claim_completion"
+        ],
+        "The selected model is unsupported.": [
+          "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
+        ],
+        "The audio device is unavailable.": [
+          "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
+        ],
+        "Audio-output permission is denied.": [
+          "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
+        ],
+        "Microphone permission is denied.": [
+          "tests/test_speech_failure_matrix.py::test_microphone_permission_failure_resets_recording_state"
+        ],
+        "The selected device is unsupported.": [
+          "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
+        ],
+        "The optional runtime is missing.": [
+          "tests/test_optional_deps.py::test_require_optional_package_runtime_rejects_invalid_managed_install"
+        ],
+        "A required model asset is missing.": [
+          "tests/test_speech_failure_matrix.py::test_missing_speech_model_assets_are_classified_without_network"
+        ],
+        "A required model asset is damaged.": [
+          "tests/test_speech_failure_matrix.py::test_damaged_speech_model_assets_are_classified_without_network"
+        ]
+      }
+    },
+    {
+      "id": "external_agent_and_transcript_boundary",
+      "rationale": "These external-agent features share the Codex/Claude harness session boundary and the guarded external transcript import, backup, append, and workspace validation layer.",
+      "function_ids": [
+        "F186", "F187", "F188", "F189", "F190", "F191", "F192", "F193",
+        "F194", "F195", "F196", "F197", "F198", "F199", "F200", "F201",
+        "F202", "F203", "F204", "F205"
+      ],
+      "evidence_by_cause": {
+        "The external client is unavailable.": [
+          "tests/test_harness_clients.py::test_codex_client_unavailable_is_reported_before_process_start"
+        ],
+        "The external session is unavailable.": [
+          "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
+        ],
+        "External authentication is invalid.": [
+          "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
+        ],
+        "The external workspace is invalid.": [
+          "tests/test_external_conversation_sync.py::test_push_rejects_source_outside_provider_root"
+        ],
+        "The external transcript path changed.": [
+          "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
+        ],
+        "The external transcript format changed.": [
+          "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
+        ],
+        "Files are locked.": [
+          "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
+        ],
+        "Backup fails.": [
+          "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
+        ],
+        "The provider rejects the operation.": [
+          "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
+        ]
+      }
+    },
+    {
+      "id": "conversation_runtime_and_persistence_boundary",
+      "rationale": "These chat, history, project, model-route, and conversation-owner features run through the same guarded ChatWindow state machine, supervisor brain.chat stream, and atomic conversation-store persistence boundary.",
+      "function_ids": [
+        "F014", "F144", "F146", "F147", "F148", "F149", "F150", "F151",
+        "F153", "F154", "F155", "F156", "F160", "F172", "F176", "F177",
+        "F179", "F180", "F181", "F182", "F183", "F184", "F185", "F253",
+        "F254", "F269", "F270", "F271", "F357", "F439"
+      ],
+      "evidence_by_cause": {
+        "The conversation store is locked.": [
+          "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
+        ],
+        "The conversation store is corrupt.": [
+          "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
+        ],
+        "A stream is still active.": [
+          "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
+        ],
+        "The configured model fails.": [
+          "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        ],
+        "The configured tool fails.": [
+          "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        ],
+        "Persistence is interrupted.": [
+          "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
+        ]
+      }
+    },
+    {
+      "id": "conversation_stale_record_boundary",
+      "rationale": "These conversation-selected actions use the same ChatWindow index validation and no-op stale-selection guard.",
+      "function_ids": [
+        "F014", "F144", "F146", "F147", "F148", "F149", "F150", "F156",
+        "F172", "F179", "F180", "F181", "F182", "F183", "F184", "F185",
+        "F253", "F254", "F269", "F270", "F271", "F357", "F439"
+      ],
+      "evidence_by_cause": {
+        "The selected conversation record is stale.": [
+          "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
+        ]
+      }
+    },
+    {
+      "id": "project_stale_record_boundary",
+      "rationale": "These project-selected chat actions share the ChatWindow project-id validation boundary.",
+      "function_ids": ["F151", "F153", "F154", "F155"],
+      "evidence_by_cause": {
+        "The selected project record is stale.": [
+          "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
+        ]
+      }
+    },
+    {
+      "id": "message_stale_record_boundary",
+      "rationale": "These message-selected chat actions share the ChatWindow retained-message index validation boundary.",
+      "function_ids": ["F160", "F176", "F177"],
+      "evidence_by_cause": {
+        "The selected message record is stale.": [
+          "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
+        ]
+      }
+    },
+    {
+      "id": "settings_persistence_and_reload_boundary",
+      "rationale": "These setup, profile, appearance, language, and Settings actions use the same settings-env reader, save transaction, cancel semantics, and live config reload boundary.",
+      "function_ids": [
+        "F005", "F007", "F008", "F009", "F048", "F418", "F419", "F423",
+        "F424", "F427", "F429", "F430", "F431", "F432", "F433", "F434",
+        "F435", "F437", "F438"
+      ],
+      "evidence_by_cause": {
+        "The settings store is read-only.": [
+          "tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"
+        ],
+        "The settings store is corrupt.": [
+          "tests/test_settings_failure_matrix.py::test_corrupt_settings_store_loads_safe_defaults"
+        ],
+        "A resource required by this function is missing.": [
+          "tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"
+        ],
+        "The pending change is discarded before persistence.": [
+          "tests/test_settings_failure_matrix.py::test_settings_cancel_discards_pending_change"
+        ],
+        "The required application restart does not occur.": [
+          "tests/test_settings_failure_matrix.py::test_settings_failed_live_reload_does_not_claim_restart_applied"
+        ]
+      }
+    },
+    {
+      "id": "settings_generic_value_validation_boundary",
+      "rationale": "These generic Settings actions reject unknown keys and invalid fixed-choice values through the shared settings widget/runtime normalization layer.",
+      "function_ids": ["F005", "F009", "F418", "F419", "F423", "F424", "F427"],
+      "evidence_by_cause": {
+        "A value required by this function is invalid.": [
+          "tests/test_settings_failure_matrix.py::test_invalid_settings_values_use_safe_widget_and_runtime_fallbacks"
+        ]
+      }
+    },
+    {
+      "id": "settings_language_validation_boundary",
+      "rationale": "These language selectors share the fixed-language combo and runtime language normalizer.",
+      "function_ids": ["F007", "F008", "F048", "F437", "F438"],
+      "evidence_by_cause": {
+        "The selected language value is invalid.": [
+          "tests/test_settings_failure_matrix.py::test_invalid_settings_values_use_safe_widget_and_runtime_fallbacks"
+        ]
+      }
+    },
+    {
+      "id": "settings_appearance_validation_boundary",
+      "rationale": "These appearance selectors share fixed theme/color selection widgets that do not activate unknown values.",
+      "function_ids": ["F429", "F430", "F433"],
+      "evidence_by_cause": {
+        "The selected appearance value is invalid.": [
+          "tests/test_settings_failure_matrix.py::test_invalid_settings_values_use_safe_widget_and_runtime_fallbacks"
+        ]
+      }
+    },
+    {
+      "id": "settings_numeric_validation_boundary",
+      "rationale": "These numeric appearance controls share safe numeric parsing/default behavior in the Settings runtime.",
+      "function_ids": ["F431", "F432", "F434", "F435"],
+      "evidence_by_cause": {
+        "The configured numeric value is invalid.": [
+          "tests/test_settings_failure_matrix.py::test_invalid_settings_values_use_safe_widget_and_runtime_fallbacks"
+        ]
+      }
+    },
+    {
+      "id": "addon_host_and_mcp_runtime_boundary",
+      "rationale": "These add-on UI, hook, tool, settings, and MCP features share manifest loading, permission gating, dependency provisioning, the isolated add-on host, and MCP bridge protocol containment.",
+      "function_ids": [
+        "F024", "F143", "F178", "F350", "F351", "F358", "F362", "F363",
+        "F364", "F367", "F368", "F369", "F370", "F371", "F372", "F374",
+        "F375", "F376", "F377"
+      ],
+      "evidence_by_cause": {
+        "The component manifest is invalid.": [
+          "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
+        ],
+        "The component permission configuration is invalid.": [
+          "tests/test_addon_manager.py::test_missing_permissions_deny_surfaces"
+        ],
+        "Dependencies are missing.": [
+          "tests/test_addon_manager.py::test_addon_with_dependencies_waits_for_environment"
+        ],
+        "The isolated host crashes.": [
+          "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
+        ],
+        "The MCP server is unavailable.": [
+          "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        ],
+        "The MCP protocol is unavailable.": [
+          "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        ]
+      }
+    },
+    {
+      "id": "addon_component_availability_boundary",
+      "rationale": "These non-MCP add-on features share the AddonManager enabled flag and supported add-on API version check.",
+      "function_ids": [
+        "F024", "F143", "F178", "F358", "F362", "F363", "F364", "F367",
+        "F368", "F369", "F370", "F371", "F372", "F374", "F375", "F376"
+      ],
+      "evidence_by_cause": {
+        "The required component is disabled.": [
+          "tests/test_addon_manager.py::test_addon_enable_and_settings_round_trip"
+        ],
+        "The required component is incompatible.": [
+          "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
+        ]
+      }
+    },
+    {
+      "id": "mcp_component_availability_boundary",
+      "rationale": "These MCP grouping/discovery features share the MCP server enabled gate and JSON-RPC protocol compatibility boundary.",
+      "function_ids": ["F350", "F351", "F377"],
+      "evidence_by_cause": {
+        "The required MCP component is disabled.": [
+          "tests/test_mcp_context_server.py::test_disabled_server_refuses_to_serve"
+        ],
+        "The required MCP component is incompatible.": [
+          "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        ]
+      }
+    },
+    {
+      "id": "memory_store_scope_and_model_boundary",
+      "rationale": "These retrieval, save, edit, viewer, and memory-tool features share the same enabled gate, JSON fact store, quality/deduplication filter, project scoping, retrieval router, and memory-model fallback chain.",
+      "function_ids": [
+        "F101", "F306", "F307", "F308", "F309", "F310", "F311", "F312",
+        "F313", "F314", "F315", "F316", "F318", "F321", "F337"
+      ],
+      "evidence_by_cause": {
+        "Memory is disabled.": [
+          "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        ],
+        "The relevant data store is locked.": [
+          "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        ],
+        "The relevant data store is corrupt.": [
+          "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        ],
+        "The memory fact is rejected.": [
+          "tests/test_memory_quality.py::test_rejects_secrets"
+        ],
+        "The memory fact duplicates an existing fact.": [
+          "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        ],
+        "Project scope is wrong.": [
+          "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        ],
+        "Retrieval is empty.": [
+          "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        ],
+        "The memory model route fails.": [
+          "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        ]
+      }
+    },
+    {
+      "id": "local_file_scope_approval_and_race_boundary",
+      "rationale": "These local-file modes, browsing actions, model tools, and approval actions share the resolved-root workspace, blocked-glob filter, in-band OS error containment, approval callback, and post-approval stale-file check.",
+      "function_ids": [
+        "F109", "F110", "F111", "F112", "F113", "F114", "F159", "F341",
+        "F342", "F343", "F344", "F345", "F352", "F353", "F355"
+      ],
+      "evidence_by_cause": {
+        "The path is outside configured allowed roots.": [
+          "tests/test_local_file_security.py::test_all_live_file_tools_reject_parent_root_escape"
+        ],
+        "The path matches a blocked glob.": [
+          "tests/test_local_file_security.py::test_live_file_missing_blocked_locked_and_os_denied_faults_are_in_band"
+        ],
+        "A target required by this function is missing.": [
+          "tests/test_local_file_security.py::test_live_file_missing_blocked_locked_and_os_denied_faults_are_in_band"
+        ],
+        "A target required by this function is locked.": [
+          "tests/test_local_file_security.py::test_live_file_missing_blocked_locked_and_os_denied_faults_are_in_band"
+        ],
+        "OS access is denied.": [
+          "tests/test_local_file_security.py::test_live_file_missing_blocked_locked_and_os_denied_faults_are_in_band"
+        ],
+        "Approval is declined.": [
+          "tests/test_app_user_workflows.py::test_tool_file_permission_and_approval_workflow"
+        ],
+        "A concurrent change invalidates the operation.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_local_file_edit_refuses_stale_approval_preview"
+        ]
+      }
+    },
+    {
+      "id": "model_route_runtime_boundary",
+      "rationale": "These model selectors, route editors, connection search actions, provider adapters, streamers, cooldowns, and warning surfaces converge on the same route parser, configuration check, provider adapter, cooldown circuit breaker, and no-partial-output fallback loop.",
+      "function_ids": [
+        "F049", "F050", "F219", "F224", "F225", "F256", "F257", "F259",
+        "F260", "F262", "F265", "F266", "F267", "F268"
+      ],
+      "evidence_by_cause": {
+        "The route is incomplete.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+        ],
+        "Credentials are invalid.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+        ],
+        "The configured endpoint is unavailable.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+        ],
+        "The selected model is unavailable.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+        ],
+        "The provider rate limit is reached.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+        ],
+        "The requested capability is unsupported.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+        ],
+        "Every fallback fails.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+        ]
+      }
+    },
+    {
+      "id": "context_policy_and_capture_boundary",
+      "rationale": "These caller and conversation context controls share the supervisor's normalized context policy, native snapshot containment, stale-selection gate, preview state, and bounded query-context assembler.",
+      "function_ids": [
+        "F079", "F080", "F084", "F085", "F088", "F165", "F167", "F171"
+      ],
+      "evidence_by_cause": {
+        "The source is disabled.": [
+          "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
+        ],
+        "The source is unavailable.": [
+          "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
+        ],
+        "The source returned no content.": [
+          "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
+        ],
+        "The source data is stale.": [
+          "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
+        ],
+        "Capture permission is missing.": [
+          "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
+        ],
+        "Saved policy is invalid.": [
+          "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
+        ],
+        "Its content exceeds the configured budget.": [
+          "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
+        ]
+      }
+    },
+    {
+      "id": "screen_capture_region_and_geometry_boundary",
+      "rationale": "These screenshot modes, snip actions, capture tools, and screenshot attachments share the native capture worker, strict region normalization, Qt virtual-desktop coordinate conversion, live screen DPR lookup, and supervisor capture containment.",
+      "function_ids": [
+        "F102", "F103", "F116", "F117", "F118", "F119", "F120", "F169", "F173", "F467"
+      ],
+      "evidence_by_cause": {
+        "Screen-recording permission is missing.": [
+          "tests/runtime/test_native_context.py::test_capture_worker_failure_matrix_is_in_band",
+          "tests/runtime/test_flows.py::test_capture_worker_unavailable_does_not_escape_caller_workflow"
+        ],
+        "The capture backend fails.": [
+          "tests/runtime/test_native_context.py::test_capture_worker_failure_matrix_is_in_band",
+          "tests/runtime/test_flows.py::test_capture_worker_unavailable_does_not_escape_caller_workflow"
+        ],
+        "Monitor geometry changes during the operation.": [
+          "tests/test_snip_overlay.py::test_region_translation_uses_live_monitor_origin_and_dpi"
+        ],
+        "DPI scaling changes during the operation.": [
+          "tests/test_snip_overlay.py::test_region_translation_uses_live_monitor_origin_and_dpi"
+        ],
+        "The selected region is empty.": [
+          "tests/runtime/test_native_context.py::test_capture_worker_failure_matrix_is_in_band",
+          "tests/test_snip_overlay.py::test_tiny_drag_cancels_instead_of_selecting"
+        ],
+        "The target window disappears.": [
+          "tests/runtime/test_native_context.py::test_capture_worker_failure_matrix_is_in_band"
+        ]
+      }
+    },
+    {
+      "id": "native_paste_clipboard_and_focus_boundary",
+      "rationale": "These rewrite, picker, clipboard-context, and paste-back actions share the captured focus token, native clipboard write/restore path, target activation, and synthetic paste dispatch.",
+      "function_ids": [
+        "F036", "F046", "F086", "F093", "F140", "F168", "F298", "F465", "F466"
+      ],
+      "evidence_by_cause": {
+        "The clipboard is locked.": [
+          "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
+        ],
+        "Focus changes before completion.": [
+          "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
+        ],
+        "The target blocks synthetic input.": [
+          "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
+        ],
+        "Another app overwrites the clipboard.": [
+          "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
+        ],
+        "Accessibility permission is missing.": [
+          "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
+        ]
+      }
+    },
+    {
+      "id": "github_context_auth_and_api_boundary",
+      "rationale": "These GitHub metadata, issue, tool-context, and conversation-context functions share the GitHub OAuth token lookup, strict owner/repository identifier parser, and bounded GitHub REST adapter.",
+      "function_ids": [
+        "F099", "F100", "F106", "F170", "F346", "F347"
+      ],
+      "evidence_by_cause": {
+        "GitHub authentication is missing.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+        ],
+        "A required GitHub OAuth scope is missing.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+        ],
+        "The requested GitHub resource is private and inaccessible.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+        ],
+        "The requested GitHub resource does not exist.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+        ],
+        "Network access is unavailable.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+        ],
+        "The remote API is unavailable.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+        ],
+        "Its identifier is invalid.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
+        ]
+      }
+    },
+    {
+      "id": "browser_web_context_tool_boundary",
+      "rationale": "These web search, page retrieval, browser context, and source-mode functions share the caller allow-list, browser-source detector, optional fetch adapter, format normalization, and per-turn tool-output budget.",
+      "function_ids": [
+        "F095", "F096", "F097", "F105", "F166", "F333", "F335"
+      ],
+      "evidence_by_cause": {
+        "Network access is disabled.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
+        ],
+        "The required tool is disabled.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
+        ],
+        "The page blocks retrieval.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
+        ],
+        "No browser source is detected.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
+        ],
+        "The response exceeds context limits.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
+        ],
+        "The remote format changes.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
+        ]
+      }
+    },
+    {
+      "id": "privacy_filter_runtime_and_review_boundary",
+      "rationale": "These send-mode, advanced-filter, and crash-report redaction functions share the built-in detector, optional local privacy runtime, post-scrub leak invariant, review decision gate, and custom-pattern parser.",
+      "function_ids": ["F322", "F323", "F326", "F327", "F328", "F329", "F452"],
+      "evidence_by_cause": {
+        "The selected privacy filter is unavailable.": [
+          "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
+        ],
+        "The selected privacy runtime is unavailable.": [
+          "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
+        ],
+        "Model assets are missing.": [
+          "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
+        ],
+        "Private-information detection times out.": [
+          "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
+        ],
+        "Private-information detection misclassifies content.": [
+          "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
+        ],
+        "The privacy review is cancelled.": [
+          "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
+        ],
+        "Redaction configuration is invalid.": [
+          "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
+        ]
+      }
+    },
+    {
+      "id": "active_document_extraction_boundary",
+      "rationale": "These picker, caller, model-tool, and conversation document-context functions share the brain active-document handler, platform window/path discovery, optional accessibility/automation readers, and bounded document reader.",
+      "function_ids": ["F032", "F092", "F104", "F334", "F382"],
+      "evidence_by_cause": {
+        "The source application is unsupported.": [
+          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        ],
+        "The source application is closed.": [
+          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        ],
+        "Accessibility permission is missing.": [
+          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        ],
+        "Automation permission is missing.": [
+          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        ],
+        "Extraction returns no text.": [
+          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        ],
+        "Content is truncated by its budget.": [
+          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        ]
+      }
+    },
+    {
+      "id": "native_selection_capture_boundary",
+      "rationale": "These persistent-context and per-conversation Selection controls share the native focus snapshot, platform accessibility selection reader, active-owner check, and empty/stale selection contract.",
+      "function_ids": ["F082", "F091", "F094", "F175", "F464"],
+      "evidence_by_cause": {
+        "Nothing is selected.": [
+          "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
+        ],
+        "Focus moved.": [
+          "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
+        ],
+        "The target control does not expose accessible text.": [
+          "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
+        ],
+        "The OS permission is missing.": [
+          "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
+        ],
+        "The target application is unsupported.": [
+          "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
+        ],
+        "The platform backend is unsupported.": [
+          "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
+        ]
+      }
+    },
+    {
+      "id": "image_attachment_and_render_boundary",
+      "rationale": "These model-returned, generated, and user-attached image functions share attachment base64 validation, image magic validation, size limits, file-reference loading, and the vision-route capability cache.",
+      "function_ids": ["F125", "F142", "F161"],
+      "evidence_by_cause": {
+        "The image payload is missing.": [
+          "tests/test_context_input_safety.py::test_image_payload_missing_unreadable_and_invalid_encoding_are_rejected"
+        ],
+        "The image is unreadable.": [
+          "tests/test_context_input_safety.py::test_image_payload_missing_unreadable_and_invalid_encoding_are_rejected"
+        ],
+        "The image exceeds the size limit.": [
+          "tests/test_context_input_safety.py::test_oversized_image_payload_is_rejected_before_decode"
+        ],
+        "The image encoding is invalid.": [
+          "tests/test_context_input_safety.py::test_image_payload_missing_unreadable_and_invalid_encoding_are_rejected"
+        ],
+        "The route lacks image support.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_image_route_rejection_is_cached_and_fails_before_provider_io"
+        ],
+        "The provider rejects the format.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_image_route_rejection_is_cached_and_fails_before_provider_io"
+        ]
+      }
+    },
+    {
+      "id": "image_context_route_boundary",
+      "rationale": "These intent and conversation image-context controls share attachment payload validation and the same vision-route capability/rejection path.",
+      "function_ids": ["F087", "F123", "F124", "F164"],
+      "evidence_by_cause": {
+        "The image payload is missing.": [
+          "tests/test_context_input_safety.py::test_image_payload_missing_unreadable_and_invalid_encoding_are_rejected"
+        ],
+        "The image is unreadable.": [
+          "tests/test_context_input_safety.py::test_image_payload_missing_unreadable_and_invalid_encoding_are_rejected"
+        ],
+        "The image encoding is invalid.": [
+          "tests/test_context_input_safety.py::test_image_payload_missing_unreadable_and_invalid_encoding_are_rejected"
+        ],
+        "The route lacks image support.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_image_route_rejection_is_cached_and_fails_before_provider_io"
+        ],
+        "The provider rejects the format.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_image_route_rejection_is_cached_and_fails_before_provider_io"
+        ]
+      }
+    },
+    {
+      "id": "chatgpt_browser_auth_boundary",
+      "rationale": "Setup and Settings ChatGPT sign-in invoke the same browser PKCE module and streaming brain handler; browser launch failure, expiry, cancellation, provider/network errors, and rejected scopes all finish through an in-band auth result.",
+      "function_ids": ["F011", "F206"],
+      "evidence_by_cause": {
+        "The browser cannot open.": ["tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open", "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "The authentication flow expires.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "The authentication flow is cancelled.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "The provider service is unavailable.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "Network access is unavailable.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "Requested scopes are rejected.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"]
+      }
+    },
+    {
+      "id": "builtin_intent_request_boundary",
+      "rationale": "Selected-text capture and the What is this, Explain simply, How do I fix this, Simplify, and Improve tone actions enter the same snapshot/context assembly, provider request, cancellation, guarded UI render, and optional rewrite paste-back lifecycle.",
+      "function_ids": ["F031", "F033", "F034", "F035", "F037", "F038", "F039", "F040", "F047"],
+      "evidence_by_cause": {
+        "Required user input is empty.": ["tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"],
+        "Required context is empty.": ["tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"],
+        "The configured route fails.": ["tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"],
+        "The network request fails.": ["tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"],
+        "The request is cancelled.": ["tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"],
+        "The result cannot be rendered.": ["tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"],
+        "The result cannot be pasted into the target application.": ["tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "request_error_recommendation_boundary",
+      "rationale": "The shared error formatter now classifies empty input/context, route and network failures, cancellation, render failures, and paste failures into redacted user-facing messages with concrete recovery steps.",
+      "function_ids": ["F051"],
+      "evidence_by_cause": {
+        "Required user input is empty.": ["tests/test_error_recommendations.py::test_request_failure_matrix_has_actionable_recommendations"],
+        "Required context is empty.": ["tests/test_error_recommendations.py::test_request_failure_matrix_has_actionable_recommendations"],
+        "The configured route fails.": ["tests/test_error_recommendations.py::test_request_failure_matrix_has_actionable_recommendations"],
+        "The network request fails.": ["tests/test_error_recommendations.py::test_request_failure_matrix_has_actionable_recommendations"],
+        "The request is cancelled.": ["tests/test_error_recommendations.py::test_request_failure_matrix_has_actionable_recommendations"],
+        "The result cannot be rendered.": ["tests/test_error_recommendations.py::test_request_failure_matrix_has_actionable_recommendations"],
+        "The result cannot be pasted into the target application.": ["tests/test_error_recommendations.py::test_request_failure_matrix_has_actionable_recommendations"]
+      }
+    },
+    {
+      "id": "connection_list_local_ui_boundary",
+      "rationale": "Filtering and expanding connection rows are local widget operations over already-loaded row metadata; an executable isolation test makes credential, network, provider, account-permission, and API adapters fail if touched and proves both operations remain functional without them.",
+      "function_ids": ["F220", "F221"],
+      "evidence_by_cause": {
+        "Credentials.": ["tests/test_settings_dialog_controls.py::test_connection_filter_and_expand_are_provider_failure_independent"],
+        "Network access.": ["tests/test_settings_dialog_controls.py::test_connection_filter_and_expand_are_provider_failure_independent"],
+        "Provider availability.": ["tests/test_settings_dialog_controls.py::test_connection_filter_and_expand_are_provider_failure_independent"],
+        "The account lacks a required permission.": ["tests/test_settings_dialog_controls.py::test_connection_filter_and_expand_are_provider_failure_independent"],
+        "The provider API is incompatible.": ["tests/test_settings_dialog_controls.py::test_connection_filter_and_expand_are_provider_failure_independent"]
+      }
+    },
+    {
+      "id": "attachment_source_runtime_boundary",
+      "rationale": "Intent screenshot attachment and pending chat attachment context now share the same stat/open race, regular-file policy, suffix allow-list, read-permission, and byte-limit adapter.",
+      "function_ids": ["F122", "F162", "F163"],
+      "evidence_by_cause": {
+        "The source file is missing.": ["tests/test_context_input_safety.py::test_attachment_source_failure_matrix_is_classified", "tests/test_context_input_safety.py::test_attachment_consumers_share_fail_closed_source_adapter"],
+        "The source file is unreadable.": ["tests/test_context_input_safety.py::test_attachment_source_failure_matrix_is_classified", "tests/test_context_input_safety.py::test_attachment_consumers_share_fail_closed_source_adapter"],
+        "The source file exceeds the size limit.": ["tests/test_context_input_safety.py::test_attachment_source_failure_matrix_is_classified", "tests/test_context_input_safety.py::test_attachment_consumers_share_fail_closed_source_adapter"],
+        "The source file is blocked by policy.": ["tests/test_context_input_safety.py::test_attachment_source_failure_matrix_is_classified", "tests/test_context_input_safety.py::test_attachment_consumers_share_fail_closed_source_adapter"],
+        "The source file format is unsupported.": ["tests/test_context_input_safety.py::test_attachment_source_failure_matrix_is_classified", "tests/test_context_input_safety.py::test_attachment_consumers_share_fail_closed_source_adapter"],
+        "The source file is removed before submission.": ["tests/test_context_input_safety.py::test_attachment_source_failure_matrix_is_classified", "tests/test_context_input_safety.py::test_attachment_consumers_share_fail_closed_source_adapter"]
+      }
+    },
+    {
+      "id": "kokoro_asset_operation_boundary",
+      "rationale": "Kokoro repair/update and post-install asset preparation use the same user-confirmed download path; provider, storage, permission, and dependency exceptions are returned as failed results, while cancellation stops before any worker starts.",
+      "function_ids": ["F287"],
+      "evidence_by_cause": {
+        "Network access is unavailable.": ["tests/test_settings_dialog_controls.py::test_kokoro_asset_prepare_failure_matrix_is_controlled"],
+        "The package source is unavailable.": ["tests/test_settings_dialog_controls.py::test_kokoro_asset_prepare_failure_matrix_is_controlled"],
+        "Available disk space is insufficient.": ["tests/test_settings_dialog_controls.py::test_kokoro_asset_prepare_failure_matrix_is_controlled"],
+        "Filesystem permission is insufficient.": ["tests/test_settings_dialog_controls.py::test_kokoro_asset_prepare_failure_matrix_is_controlled"],
+        "Dependency versions conflict.": ["tests/test_settings_dialog_controls.py::test_kokoro_asset_prepare_failure_matrix_is_controlled"],
+        "The operation is cancelled.": ["tests/test_settings_dialog_controls.py::test_kokoro_asset_repair_cancel_stops_before_download"]
+      }
+    },
+    {
+      "id": "read_selection_aloud_capture_boundary",
+      "rationale": "Read Selection Aloud captures through the supervisor/native selection boundary and must stop before TTS while presenting a controlled notice for every accessibility/backend fault.",
+      "function_ids": ["F274"],
+      "evidence_by_cause": {
+        "Focus moved.": ["tests/runtime/test_flows.py::test_read_selection_aloud_selection_failure_matrix_is_controlled"],
+        "The target control does not expose accessible text.": ["tests/runtime/test_flows.py::test_read_selection_aloud_selection_failure_matrix_is_controlled"],
+        "The OS permission is missing.": ["tests/runtime/test_flows.py::test_read_selection_aloud_selection_failure_matrix_is_controlled"],
+        "The target application is unsupported.": ["tests/runtime/test_flows.py::test_read_selection_aloud_selection_failure_matrix_is_controlled"],
+        "The platform backend is unsupported.": ["tests/runtime/test_flows.py::test_read_selection_aloud_selection_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "mcp_selection_capture_boundary",
+      "rationale": "The MCP get_selected_text operation now converts focus, accessibility, permission, application, and platform backend failures into isError content so the long-lived protocol process keeps serving.",
+      "function_ids": ["F378"],
+      "evidence_by_cause": {
+        "Focus moved.": ["tests/test_mcp_context_server.py::test_selected_text_failure_matrix_is_returned_as_mcp_tool_errors"],
+        "The target control does not expose accessible text.": ["tests/test_mcp_context_server.py::test_selected_text_failure_matrix_is_returned_as_mcp_tool_errors"],
+        "The OS permission is missing.": ["tests/test_mcp_context_server.py::test_selected_text_failure_matrix_is_returned_as_mcp_tool_errors"],
+        "The target application is unsupported.": ["tests/test_mcp_context_server.py::test_selected_text_failure_matrix_is_returned_as_mcp_tool_errors"],
+        "The platform backend is unsupported.": ["tests/test_mcp_context_server.py::test_selected_text_failure_matrix_is_returned_as_mcp_tool_errors"]
+      }
+    },
+    {
+      "id": "auth_credential_clear_boundary",
+      "rationale": "ChatGPT, GitHub, and dedicated Copilot sign-out actions now share a guarded clear-and-read-back contract, so keychain locks/unavailability/removal errors and credentials that remain after clearing cannot be reported as success.",
+      "function_ids": ["F208", "F211", "F213"],
+      "evidence_by_cause": {
+        "The local credential store is locked.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        ],
+        "The local credential store is unavailable.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        ],
+        "The local token cannot be removed.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        ],
+        "Local and provider session state diverge.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        ]
+      }
+    },
+    {
+      "id": "provider_model_listing_boundary",
+      "rationale": "The connection-level and individual-route model refresh buttons now share one safe live-list wrapper; unsupported providers, credentials, offline/rate-limited APIs, and response-shape changes return an error while the UI preserves curated models.",
+      "function_ids": ["F226", "F264"],
+      "evidence_by_cause": {
+        "The provider does not support model listing.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_model_listing_failure_matrix_is_in_band"
+        ],
+        "Authentication is missing.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_model_listing_failure_matrix_is_in_band"
+        ],
+        "The provider API is offline.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_model_listing_failure_matrix_is_in_band"
+        ],
+        "The provider API request is rate-limited.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_model_listing_failure_matrix_is_in_band"
+        ],
+        "The response schema changed.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_model_listing_failure_matrix_is_in_band"
+        ]
+      }
+    },
+    {
+      "id": "tts_connection_test_boundary",
+      "rationale": "The Settings Test TTS action runs provider synthesis inside the shared TTS diagnostic wrapper, which contains authentication, endpoint, network, model, rate-limit, and unsupported-capability exceptions.",
+      "function_ids": ["F279"],
+      "evidence_by_cause": {
+        "Authentication is invalid.": [
+          "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The configured endpoint is unavailable.": [
+          "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "Network access is unavailable.": [
+          "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The selected model is missing.": [
+          "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The provider rate limit is reached.": [
+          "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The tested capability is unsupported.": [
+          "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
+        ]
+      }
+    },
+    {
+      "id": "image_memory_connection_test_boundary",
+      "rationale": "The Settings Image-model and Memory-model test actions both call the shared route configuration/probe wrapper, which converts authentication, endpoint, network, model, rate-limit, and capability exceptions into deterministic failed diagnostics.",
+      "function_ids": ["F258", "F261"],
+      "evidence_by_cause": {
+        "Authentication is invalid.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The configured endpoint is unavailable.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "Network access is unavailable.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The selected model is missing.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The provider rate limit is reached.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"
+        ],
+        "The tested capability is unsupported.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"
+        ]
+      }
+    },
+    {
+      "id": "copilot_connection_test_boundary",
+      "rationale": "The Copilot Test Connection action enters the same provider route fault classifier and pre-output fallback contract already used by live provider calls.",
+      "function_ids": ["F214"],
+      "evidence_by_cause": {
+        "Credentials.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "Network access.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "Provider availability.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "The account lacks a required permission.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ],
+        "The provider API is incompatible.": [
+          "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output"
+        ]
+      }
+    },
+    {
+      "id": "oauth_signin_status_boundary",
+      "rationale": "The ChatGPT and GitHub settings rows share the brain auth-status handler, including local token validation and exception containment around credential/provider status reads.",
+      "function_ids": ["F207", "F210"],
+      "evidence_by_cause": {
+        "The stored token is expired.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        ],
+        "The stored token is corrupt.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        ],
+        "The credential store cannot be read.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        ],
+        "The provider status endpoint is offline.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        ],
+        "The provider status request is rate-limited.": [
+          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        ]
+      }
+    },
+    {
+      "id": "context_estimate_runtime_boundary",
+      "rationale": "The intent-picker and chat-preview functions share deferred labels for unfetched sources, a local model-independent token heuristic, snapshot exception containment, and a fresh context capture on the real send path.",
+      "function_ids": ["F089", "F174"],
+      "evidence_by_cause": {
+        "The source has not been fetched.": [
+          "tests/runtime/test_flows.py::test_context_estimate_failure_matrix_uses_fallbacks_and_refreshes_before_send"
+        ],
+        "The tokenizer is unknown.": [
+          "tests/runtime/test_flows.py::test_context_estimate_failure_matrix_uses_fallbacks_and_refreshes_before_send"
+        ],
+        "The model identity is unknown.": [
+          "tests/runtime/test_flows.py::test_context_estimate_failure_matrix_uses_fallbacks_and_refreshes_before_send"
+        ],
+        "Capture fails.": [
+          "tests/runtime/test_flows.py::test_context_estimate_failure_matrix_uses_fallbacks_and_refreshes_before_send"
+        ],
+        "The estimate becomes stale before the request is sent.": [
+          "tests/runtime/test_flows.py::test_context_estimate_failure_matrix_uses_fallbacks_and_refreshes_before_send"
+        ]
+      }
+    },
+    {
+      "id": "git_inspection_runtime_boundary",
+      "rationale": "The context Git summary plus the model-facing git_status and git_diff tools share one read-only subprocess adapter, an explicit current-folder pathspec, working-folder validation, and the same output cap.",
+      "function_ids": ["F098", "F339", "F340"],
+      "evidence_by_cause": {
+        "Git is unavailable.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_inspection_failure_matrix_is_controlled"
+        ],
+        "The selected folder is not a repository.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_inspection_failure_matrix_is_controlled"
+        ],
+        "The working tree cannot be read.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_inspection_failure_matrix_is_controlled"
+        ],
+        "The scope is wrong.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_inspection_failure_matrix_is_controlled"
+        ],
+        "The output budget is exceeded.": [
+          "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_inspection_failure_matrix_is_controlled"
+        ]
+      }
+    },
+    {
+      "id": "os_file_browser_reveal_boundary",
+      "rationale": "These add-on, log, crash-report, attachment, and general reveal actions share the resolved-path existence check and native Explorer/Finder/xdg-open launcher.",
+      "function_ids": ["F359", "F365", "F453", "F472"],
+      "evidence_by_cause": {
+        "The path no longer exists.": [
+          "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
+        ],
+        "Access is denied.": [
+          "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
+        ],
+        "The OS file-manager command is unavailable.": [
+          "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
+        ],
+        "The platform cannot reveal that item.": [
+          "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
+        ]
+      }
+    },
+    {
+      "id": "shared_speech_optional_installer_boundary",
+      "rationale": "ElevenLabs, live voice, Kokoro, and faster-whisper are installed through the same staged optional-package runner, status writer, post-install verifier, and confirmation gate.",
+      "function_ids": ["F281", "F285", "F289", "F300"],
+      "evidence_by_cause": {
+        "Network access is unavailable.": [
+          "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
+        ],
+        "The package source is unavailable.": [
+          "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
+        ],
+        "Available disk space is insufficient.": [
+          "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
+        ],
+        "Filesystem permission is insufficient.": [
+          "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
+        ],
+        "Verification fails.": [
+          "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
+        ],
+        "Dependency versions conflict.": [
+          "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
+        ],
+        "The operation is cancelled.": [
+          "tests/test_settings_dialog_controls.py::test_shared_speech_optional_install_cancellation_starts_no_installer"
+        ]
+      }
+    },
+    {
+      "id": "conversation_rename_mutation_boundary",
+      "rationale": "Conversation rename validates the proposed title before mutation and uses the atomic conversation persistence callback with an in-memory rollback when storage fails.",
+      "function_ids": ["F157"],
+      "evidence_by_cause": {
+        "The new value is empty.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"
+        ],
+        "The new value is invalid.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"
+        ],
+        "The new value duplicates an existing value.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"
+        ],
+        "The backing store is read-only.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"
+        ],
+        "The backing store is locked.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"
+        ],
+        "The backing store is corrupt.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"
+        ],
+        "The write is interrupted.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"
+        ]
+      }
+    },
+    {
+      "id": "conversation_delete_mutation_boundary",
+      "rationale": "Conversation deletion verifies the selected record, active-stream lock, and confirmation before mutation, then restores the removed record if the atomic conversation persistence callback fails.",
+      "function_ids": ["F158"],
+      "evidence_by_cause": {
+        "A target required by this function is missing.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"
+        ],
+        "A target required by this function is locked.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"
+        ],
+        "Confirmation is cancelled.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"
+        ],
+        "Required elevation is denied.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"
+        ],
+        "Storage access is denied.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"
+        ],
+        "Another process is using the files.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"
+        ],
+        "Cleanup only partly completes.": [
+          "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"
+        ]
+      }
+    },
+    {
+      "id": "github_device_auth_boundary",
+      "rationale": "GitHub device OAuth exposes a copyable verification URL/code without requiring browser launch, contains initiation/polling errors, checks expiry and provider scope errors, and stops polling before token storage when cancelled.",
+      "function_ids": ["F209"],
+      "evidence_by_cause": {
+        "The browser cannot open.": [
+          "tests/test_github_auth.py::test_github_device_flow_cancellation_and_manual_browser_fallback"
+        ],
+        "The authentication flow expires.": [
+          "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        ],
+        "The authentication flow is cancelled.": [
+          "tests/test_github_auth.py::test_github_device_flow_cancellation_and_manual_browser_fallback"
+        ],
+        "The provider service is unavailable.": [
+          "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        ],
+        "Network access is unavailable.": [
+          "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        ],
+        "Requested scopes are rejected.": [
+          "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        ]
+      }
+    },
+    {
+      "id": "privacy_model_installer_boundary",
+      "rationale": "The advanced privacy installer has one guarded preparation/download/verification entry point with durable status output, and Settings requires explicit confirmation before starting it.",
+      "function_ids": ["F324"],
+      "evidence_by_cause": {
+        "Network access is unavailable.": [
+          "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
+        ],
+        "The package source is unavailable.": [
+          "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
+        ],
+        "Available disk space is insufficient.": [
+          "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
+        ],
+        "Filesystem permission is insufficient.": [
+          "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
+        ],
+        "Verification fails.": [
+          "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
+        ],
+        "Dependency versions conflict.": [
+          "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
+        ],
+        "The operation is cancelled.": [
+          "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        ]
+      }
+    },
+    {
+      "id": "privacy_model_removal_boundary",
+      "rationale": "Advanced privacy removal is confirmation-gated, treats an already-missing dedicated model directory as safe, and surfaces all filesystem cleanup exceptions without changing unrelated state.",
+      "function_ids": ["F325"],
+      "evidence_by_cause": {
+        "A target required by this function is missing.": ["tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"],
+        "A target required by this function is locked.": ["tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"],
+        "Confirmation is cancelled.": ["tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"],
+        "Required elevation is denied.": ["tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"],
+        "Storage access is denied.": ["tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"],
+        "Another process is using the files.": ["tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"],
+        "Cleanup only partly completes.": ["tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "addon_folder_install_boundary",
+      "rationale": "Folder installation is selected through one guarded add-on manager action; cancellation stops before the distribution adapter and all adapter/provision faults are shown in-band.",
+      "function_ids": ["F361"],
+      "evidence_by_cause": {
+        "Network access is unavailable.": ["tests/test_addon_manager_ui.py::test_addon_folder_install_failure_matrix_is_in_band"],
+        "The package source is unavailable.": ["tests/test_addon_manager_ui.py::test_addon_folder_install_failure_matrix_is_in_band"],
+        "Available disk space is insufficient.": ["tests/test_addon_manager_ui.py::test_addon_folder_install_failure_matrix_is_in_band"],
+        "Filesystem permission is insufficient.": ["tests/test_addon_manager_ui.py::test_addon_folder_install_failure_matrix_is_in_band"],
+        "Verification fails.": ["tests/test_addon_manager_ui.py::test_addon_folder_install_failure_matrix_is_in_band"],
+        "Dependency versions conflict.": ["tests/test_addon_manager_ui.py::test_addon_folder_install_failure_matrix_is_in_band"],
+        "The operation is cancelled.": ["tests/test_addon_manager_ui.py::test_addon_folder_install_failure_matrix_is_in_band"]
+      }
+    },
+    {
+      "id": "addon_archive_install_boundary",
+      "rationale": "Archive installation uses one guarded add-on distribution action that converts source, storage, permission, and dependency exceptions into a visible failure.",
+      "function_ids": ["F360"],
+      "evidence_by_cause": {
+        "Network access is unavailable.": ["tests/test_addon_manager_ui.py::test_addon_archive_install_failure_matrix_is_in_band"],
+        "The package source is unavailable.": ["tests/test_addon_manager_ui.py::test_addon_archive_install_failure_matrix_is_in_band"],
+        "Available disk space is insufficient.": ["tests/test_addon_manager_ui.py::test_addon_archive_install_failure_matrix_is_in_band"],
+        "Filesystem permission is insufficient.": ["tests/test_addon_manager_ui.py::test_addon_archive_install_failure_matrix_is_in_band"],
+        "Dependency versions conflict.": ["tests/test_addon_manager_ui.py::test_addon_archive_install_failure_matrix_is_in_band"]
+      }
+    },
+    {
+      "id": "addon_dependency_repair_boundary",
+      "rationale": "Dependency installation/rebuild is gated by explicit approval and the manager returns or raises all environment-provision failures through one guarded UI action.",
+      "function_ids": ["F366"],
+      "evidence_by_cause": {
+        "Network access is unavailable.": ["tests/test_addon_manager_ui.py::test_addon_dependency_repair_failure_matrix_is_in_band"],
+        "The package source is unavailable.": ["tests/test_addon_manager_ui.py::test_addon_dependency_repair_failure_matrix_is_in_band"],
+        "Available disk space is insufficient.": ["tests/test_addon_manager_ui.py::test_addon_dependency_repair_failure_matrix_is_in_band"],
+        "Filesystem permission is insufficient.": ["tests/test_addon_manager_ui.py::test_addon_dependency_repair_failure_matrix_is_in_band"],
+        "Verification fails.": ["tests/test_addon_manager_ui.py::test_addon_dependency_repair_failure_matrix_is_in_band"],
+        "Dependency versions conflict.": ["tests/test_addon_manager_ui.py::test_addon_dependency_repair_failure_matrix_is_in_band"],
+        "The operation is cancelled.": ["tests/test_addon_manager_ui.py::test_addon_dependency_repair_failure_matrix_is_in_band"]
+      }
+    },
+    {
+      "id": "confirmed_uninstall_target_boundary",
+      "rationale": "Release and explicitly selected source-checkout removal use the same exact-target plan and detached renderer; the matrix runs both plan kinds through confirmation and launch faults, while renderer assertions prove missing-target, retry, partial-failure logging, and self-cleanup behavior.",
+      "function_ids": ["F460", "F461"],
+      "evidence_by_cause": {
+        "A target required by this function is missing.": ["tests/test_uninstaller.py::test_uninstall_renderers_retry_missing_locked_and_partial_targets"],
+        "A target required by this function is locked.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free", "tests/test_uninstaller.py::test_uninstall_renderers_retry_missing_locked_and_partial_targets"],
+        "Confirmation is cancelled.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free"],
+        "Required elevation is denied.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free"],
+        "Storage access is denied.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free"],
+        "Another process is using the files.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free", "tests/test_uninstaller.py::test_uninstall_renderers_retry_missing_locked_and_partial_targets"],
+        "Cleanup only partly completes.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free", "tests/test_uninstaller.py::test_uninstall_renderers_retry_missing_locked_and_partial_targets"]
+      }
+    },
+    {
+      "id": "detached_uninstaller_boundary",
+      "rationale": "The same launch function writes both platform helpers, launches them detached, removes an unlaunched helper after every setup/permission/process failure, and the rendered helper skips missing targets, records partial cleanup, and removes itself.",
+      "function_ids": ["F462"],
+      "evidence_by_cause": {
+        "A target required by this function is missing.": ["tests/test_uninstaller.py::test_uninstall_renderers_retry_missing_locked_and_partial_targets"],
+        "A target required by this function is locked.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free", "tests/test_uninstaller.py::test_uninstall_renderers_retry_missing_locked_and_partial_targets"],
+        "Confirmation is cancelled.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free"],
+        "Required elevation is denied.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free"],
+        "Storage access is denied.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free"],
+        "Cleanup only partly completes.": ["tests/test_uninstaller.py::test_uninstall_runtime_failure_matrix_is_controlled_and_leak_free", "tests/test_uninstaller.py::test_uninstall_renderers_retry_missing_locked_and_partial_targets"]
+      }
+    },
+    {
+      "id": "onboarding_saved_state_boundary",
+      "rationale": "Setup navigation, TTS/STT choices, and icon-state guidance share the stateless onboarding page model; the test drives every page and persists the choices with both absent and corrupt prior profile state.",
+      "function_ids": ["F006", "F012", "F013", "F018"],
+      "evidence_by_cause": {
+        "Saved startup state is unavailable.": ["tests/test_onboarding.py::test_onboarding_choices_and_navigation_tolerate_missing_or_corrupt_saved_state"],
+        "Saved startup state is corrupt.": ["tests/test_onboarding.py::test_onboarding_choices_and_navigation_tolerate_missing_or_corrupt_saved_state"]
+      }
+    },
+    {
+      "id": "worker_startup_transaction_boundary",
+      "rationale": "All four app workers start through WispSupervisor.start_all; every executable/dependency/timeout/stale-process/lock/permission/crash fault now rolls back the entire partial process set.",
+      "function_ids": ["F016"],
+      "evidence_by_cause": {
+        "A required worker executable is missing.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "A required worker dependency is missing.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "Inter-process startup times out.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "An old worker process remains.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "A stale process lock remains.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "Required OS permission is absent.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "A worker crashes during initialization.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"]
+      }
+    },
+    {
+      "id": "supervisor_launch_lifecycle_boundary",
+      "rationale": "Packaged/source/autostart/setup/status/quit launch paths converge on supervisor main: the workflow proves duplicate-lock refusal, crash containment, and final shutdown, while the startup matrix proves partial-start rollback on permission/interruption faults.",
+      "function_ids": ["F001", "F002", "F003", "F004", "F027", "F029", "F030"],
+      "evidence_by_cause": {
+        "A stale instance lock remains.": ["tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"],
+        "Required OS permission is absent.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "Startup is interrupted.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"]
+      }
+    },
+    {
+      "id": "supervisor_shutdown_interruption_boundary",
+      "rationale": "Every listed lifecycle uses the same supervisor shutdown loop, which continues through a worker exception and force-audits the complete managed process snapshot.",
+      "function_ids": ["F001", "F002", "F003", "F004", "F027", "F029"],
+      "evidence_by_cause": {
+        "Shutdown is interrupted.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_shutdown_continues_after_one_worker_raises"]
+      }
+    },
+    {
+      "id": "supervisor_worker_crash_boundary",
+      "rationale": "These supervisor-backed launch modes share the same worker exit callback and crash-log lifecycle; the workflow injects a UI worker exit, records diagnostics, keeps shutdown deterministic, and returns in-band.",
+      "function_ids": ["F002", "F003", "F004", "F027", "F029"],
+      "evidence_by_cause": {
+        "A worker crashes.": ["tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"]
+      }
+    },
+    {
+      "id": "clear_context_runtime_boundary",
+      "rationale": "Clear-context is an in-memory user action rather than a filesystem deletion: it is safe when already empty, requires no secondary confirmation/elevation, clears local buffers before the guarded UI call, and remains cleared for every UI/storage-style exception.",
+      "function_ids": ["F083"],
+      "evidence_by_cause": {
+        "A target required by this function is missing.": ["tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"],
+        "A target required by this function is locked.": ["tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"],
+        "Confirmation is cancelled.": ["tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"],
+        "Required elevation is denied.": ["tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"],
+        "Storage access is denied.": ["tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"],
+        "Another process is using the files.": ["tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"],
+        "Cleanup only partly completes.": ["tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"]
+      }
+    },
+    {
+      "id": "settings_factory_reset_boundary",
+      "rationale": "Both inventory entries invoke SettingsDialog._reset_all; the matrix verifies cancellation, idempotent missing-file reset, and locked/elevation/storage/process/partial filesystem exceptions through the real confirmation and reset entry point.",
+      "function_ids": ["F332", "F428"],
+      "evidence_by_cause": {
+        "A target required by this function is missing.": ["tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"],
+        "A target required by this function is locked.": ["tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"],
+        "Confirmation is cancelled.": ["tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"],
+        "Required elevation is denied.": ["tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"],
+        "Storage access is denied.": ["tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"],
+        "Another process is using the files.": ["tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"],
+        "Cleanup only partly completes.": ["tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"]
+      }
+    },
+    {
+      "id": "custom_profile_delete_boundary",
+      "rationale": "Custom-profile deletion now computes one atomic env transaction and changes the dialog model only after persistence succeeds; the production entry-point matrix covers stale targets, cancellation, and every filesystem cleanup fault.",
+      "function_ids": ["F422"],
+      "evidence_by_cause": {
+        "A target required by this function is missing.": ["tests/test_settings_dialog_controls.py::test_custom_profile_delete_failure_matrix_is_transactional"],
+        "A target required by this function is locked.": ["tests/test_settings_dialog_controls.py::test_custom_profile_delete_failure_matrix_is_transactional"],
+        "Confirmation is cancelled.": ["tests/test_settings_dialog_controls.py::test_custom_profile_delete_failure_matrix_is_transactional"],
+        "Required elevation is denied.": ["tests/test_settings_dialog_controls.py::test_custom_profile_delete_failure_matrix_is_transactional"],
+        "Storage access is denied.": ["tests/test_settings_dialog_controls.py::test_custom_profile_delete_failure_matrix_is_transactional"],
+        "Another process is using the files.": ["tests/test_settings_dialog_controls.py::test_custom_profile_delete_failure_matrix_is_transactional"],
+        "Cleanup only partly completes.": ["tests/test_settings_dialog_controls.py::test_custom_profile_delete_failure_matrix_is_transactional"]
+      }
+    },
+    {
+      "id": "memory_fact_delete_boundary",
+      "rationale": "Fact deletion is confirmation-gated and now removes the UI row only from the successful background callback; the matrix injects every store/permission/process/partial-cleanup exception and proves the fact stays visible and retryable.",
+      "function_ids": ["F320"],
+      "evidence_by_cause": {
+        "A target required by this function is locked.": ["tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"],
+        "Confirmation is cancelled.": ["tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"],
+        "Required elevation is denied.": ["tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"],
+        "Storage access is denied.": ["tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"],
+        "Another process is using the files.": ["tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"],
+        "Cleanup only partly completes.": ["tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"]
+      }
+    },
+    {
+      "id": "settings_save_transaction_boundary",
+      "rationale": "All Settings writes finish through SettingsDialog._apply_settings; its executable matrix injects each validation/store fault, verifies failure remains in-band, and proves the existing settings file is byte-for-byte unchanged.",
+      "function_ids": ["F425"],
+      "evidence_by_cause": {
+        "The new value is empty.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The new value is invalid.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The new value duplicates an existing value.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The backing store is read-only.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The backing store is locked.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The backing store is corrupt.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The write is interrupted.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"]
+      }
+    },
+    {
+      "id": "custom_profile_mutation_boundary",
+      "rationale": "Create and rename use the same profile env transaction. Their production-action matrices cover empty, normalized-invalid, duplicate, read-only, locked, corrupt, and interrupted writes while proving disk and the dialog model remain unchanged on failure.",
+      "function_ids": ["F420", "F421"],
+      "evidence_by_cause": {
+        "The new value is empty.": ["tests/test_settings_dialog_controls.py::test_custom_profile_create_failure_matrix_is_controlled", "tests/test_settings_dialog_controls.py::test_custom_profile_rename_failure_matrix_is_controlled"],
+        "The new value is invalid.": ["tests/test_settings_dialog_controls.py::test_custom_profile_create_failure_matrix_is_controlled", "tests/test_settings_dialog_controls.py::test_custom_profile_rename_failure_matrix_is_controlled"],
+        "The new value duplicates an existing value.": ["tests/test_settings_dialog_controls.py::test_custom_profile_create_failure_matrix_is_controlled", "tests/test_settings_dialog_controls.py::test_custom_profile_rename_failure_matrix_is_controlled"],
+        "The backing store is read-only.": ["tests/test_settings_dialog_controls.py::test_custom_profile_create_failure_matrix_is_controlled", "tests/test_settings_dialog_controls.py::test_custom_profile_rename_failure_matrix_is_controlled"],
+        "The backing store is locked.": ["tests/test_settings_dialog_controls.py::test_custom_profile_create_failure_matrix_is_controlled", "tests/test_settings_dialog_controls.py::test_custom_profile_rename_failure_matrix_is_controlled"],
+        "The backing store is corrupt.": ["tests/test_settings_dialog_controls.py::test_custom_profile_create_failure_matrix_is_controlled", "tests/test_settings_dialog_controls.py::test_custom_profile_rename_failure_matrix_is_controlled"],
+        "The write is interrupted.": ["tests/test_settings_dialog_controls.py::test_custom_profile_create_failure_matrix_is_controlled", "tests/test_settings_dialog_controls.py::test_custom_profile_rename_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "memory_fact_project_mutation_boundary",
+      "rationale": "Fact project changes use the memory row's guarded background update; the matrix rejects empty input and injects invalid/duplicate/read-only/locked/corrupt/interrupted store failures while keeping the editor alive and retryable.",
+      "function_ids": ["F319"],
+      "evidence_by_cause": {
+        "The new value is empty.": ["tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"],
+        "The new value is invalid.": ["tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"],
+        "The new value duplicates an existing value.": ["tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"],
+        "The backing store is read-only.": ["tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"],
+        "The backing store is locked.": ["tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"],
+        "The backing store is corrupt.": ["tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"],
+        "The write is interrupted.": ["tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"]
+      }
+    },
+    {
+      "id": "provider_connection_configuration_boundary",
+      "rationale": "Connection add/alias/key/clear/custom-endpoint/masking actions share the Settings connection rows and credential adapter. The matrix drives those production actions while injecting validation, keychain, endpoint, network, and account faults; the shared settings transaction separately proves persistence failure containment.",
+      "function_ids": ["F215", "F216", "F217", "F218", "F222", "F223", "F330", "F331"],
+      "evidence_by_cause": {
+        "A value required by this function is invalid.": ["tests/test_settings_dialog_controls.py::test_connection_configuration_failure_matrix_is_controlled"],
+        "The OS keychain is unavailable.": ["tests/test_settings_dialog_controls.py::test_connection_configuration_failure_matrix_is_controlled"],
+        "The endpoint URL is malformed.": ["tests/test_settings_dialog_controls.py::test_connection_configuration_failure_matrix_is_controlled"],
+        "The endpoint is offline.": ["tests/test_settings_dialog_controls.py::test_connection_configuration_failure_matrix_is_controlled"],
+        "The account lacks permission.": ["tests/test_settings_dialog_controls.py::test_connection_configuration_failure_matrix_is_controlled"],
+        "The setting cannot be saved.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"]
+      }
+    },
+    {
+      "id": "onboarding_provider_configuration_boundary",
+      "rationale": "The onboarding Finish action now validates the profile/custom URL, guards keychain storage, and contains prior-env reads and settings writes. Its matrix injects all six setup-provider failure classes and proves the wizard stays open for correction or retry.",
+      "function_ids": ["F010"],
+      "evidence_by_cause": {
+        "A value required by this function is invalid.": ["tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"],
+        "The OS keychain is unavailable.": ["tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"],
+        "The endpoint URL is malformed.": ["tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"],
+        "The endpoint is offline.": ["tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"],
+        "The account lacks permission.": ["tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"],
+        "The setting cannot be saved.": ["tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "shared_qt_surface_runtime_boundary",
+      "rationale": "These icon, picker, bubble, drag-row, delay, and standard-window functions all execute on Wisp's Qt surface/event-loop contract. Production tests prove hidden-surface restoration, destroyed-widget replacement, input/compositor routing, stale/off-screen geometry correction, freeze detection, and contained window-manager refusal; each function's normal workflow separately drives its own action.",
+      "function_ids": ["F017", "F019", "F020", "F021", "F042", "F134", "F136", "F137", "F263", "F436", "F471"],
+      "evidence_by_cause": {
+        "The widget is hidden.": ["tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"],
+        "The widget was destroyed.": ["tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract", "tests/test_settings_dialog_controls.py::test_hidden_settings_dialog_is_replaced_without_clearing_new_one"],
+        "Another window consumes input.": ["tests/test_overlay_bubble_visibility.py::test_wayland_icon_uses_compositor_move_and_press_menu"],
+        "Saved window geometry is stale.": ["tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"],
+        "The window is positioned off-screen.": ["tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"],
+        "The UI thread is blocked.": ["tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"],
+        "The window manager rejects the behavior.": ["tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"]
+      }
+    },
+    {
+      "id": "tray_action_dispatch_boundary",
+      "rationale": "Last chat, Memory, Settings, provider controls, and Quit are built on the same tray/menu QAction dispatch surface. The matrix disables native tray support, rebuilds a destroyed tray/menu, verifies callbacks, and proves missing or unresponsive UI consumers never block QAction dispatch.",
+      "function_ids": ["F022", "F023", "F025", "F026", "F028"],
+      "evidence_by_cause": {
+        "The desktop lacks tray support.": ["tests/test_overlay_bubble_visibility.py::test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking"],
+        "The tray icon was not created.": ["tests/test_overlay_bubble_visibility.py::test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking"],
+        "The tray action callback was not created.": ["tests/test_overlay_bubble_visibility.py::test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking"],
+        "The UI target required by this function is unavailable.": ["tests/test_overlay_bubble_visibility.py::test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking"],
+        "The UI worker is unresponsive.": ["tests/test_overlay_bubble_visibility.py::test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking"]
+      }
+    },
+    {
+      "id": "bubble_reply_state_runtime_boundary",
+      "rationale": "Streaming, reveal, speed, drag, snap, selection, and copy share SpeechBubble's reply state, timers, render pipeline, and external callbacks. The matrix injects every callback/timer/render fault and proves a later notice still renders; the stale-speech test proves older stream state cannot follow a newer reply.",
+      "function_ids": ["F127", "F128", "F131", "F135", "F138", "F139", "F141"],
+      "evidence_by_cause": {
+        "Reply state is stale.": ["tests/test_bubble_transcript.py::test_pending_speech_stops_following_latest_stream_text"],
+        "The UI thread is blocked.": ["tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"],
+        "The render data is invalid.": ["tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"],
+        "A timer callback fails.": ["tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"],
+        "A speech callback fails.": ["tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"]
+      }
+    },
+    {
+      "id": "bubble_status_render_runtime_boundary",
+      "rationale": "Listening/transcript/progress/answer/warning/error status text uses the same guarded SpeechBubble timers, render validation, and callbacks; the matrix proves all faults remain contained and the real UI worker watchdog detects a blocked event loop.",
+      "function_ids": ["F126"],
+      "evidence_by_cause": {
+        "The UI thread is blocked.": ["tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"],
+        "The render data is invalid.": ["tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"],
+        "A timer callback fails.": ["tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"],
+        "A speech callback fails.": ["tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"]
+      }
+    },
+    {
+      "id": "settings_update_operation_boundary",
+      "rationale": "Packaged checks, packaged download/apply, and source origin/main pulls share the Settings asynchronous updater carrier and status controls. The matrix runs all three production actions through network/source/disk/permission/verification/dependency faults and verifies explicit apply cancellation never starts the helper.",
+      "function_ids": ["F448", "F449", "F450"],
+      "evidence_by_cause": {
+        "Network access is unavailable.": ["tests/test_settings_dialog_controls.py::test_update_check_download_repo_failure_matrix_is_in_band"],
+        "The package source is unavailable.": ["tests/test_settings_dialog_controls.py::test_update_check_download_repo_failure_matrix_is_in_band"],
+        "Available disk space is insufficient.": ["tests/test_settings_dialog_controls.py::test_update_check_download_repo_failure_matrix_is_in_band"],
+        "Filesystem permission is insufficient.": ["tests/test_settings_dialog_controls.py::test_update_check_download_repo_failure_matrix_is_in_band"],
+        "Verification fails.": ["tests/test_settings_dialog_controls.py::test_update_check_download_repo_failure_matrix_is_in_band"],
+        "Dependency versions conflict.": ["tests/test_settings_dialog_controls.py::test_update_check_download_repo_failure_matrix_is_in_band"],
+        "The operation is cancelled.": ["tests/test_settings_dialog_controls.py::test_update_check_download_repo_failure_matrix_is_in_band"]
+      }
+    },
+    {
+      "id": "metadata_diagnostic_surface_boundary",
+      "rationale": "The repeated metadata/artifact failure set is executed as one multi-surface matrix, not inferred from wording: every fault invokes installed-version fallback, update error status, crash-bundle creation/review, runtime event logging, worker-status construction, and exact uninstall-plan confirmation.",
+      "function_ids": ["F447", "F451", "F455", "F456", "F457", "F459"],
+      "evidence_by_cause": {
+        "A required file is unavailable.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "Required network access is unavailable.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "A required permission is unavailable.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "Version metadata is invalid.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "Verification metadata is invalid.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "Another process locks the target.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "Disk space is low.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "Bundling cleanup fails for this function.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"],
+        "Update-apply cleanup fails.": ["tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "crash_bundle_private_source_exclusion_boundary",
+      "rationale": "Crash-bundle exclusion is deliberately independent of connection settings, keychain, endpoints, network, and account state. The production bundle test makes all three private/network adapters fatal if touched and still verifies chats/settings/keychain-like contents are absent from the ZIP.",
+      "function_ids": ["F454"],
+      "evidence_by_cause": {
+        "A value required by this function is invalid.": ["tests/test_crash_report.py::test_crash_report_redacts_logs_and_excludes_unrelated_user_data"],
+        "The OS keychain is unavailable.": ["tests/test_crash_report.py::test_crash_report_redacts_logs_and_excludes_unrelated_user_data"],
+        "The endpoint URL is malformed.": ["tests/test_crash_report.py::test_crash_report_redacts_logs_and_excludes_unrelated_user_data"],
+        "The endpoint is offline.": ["tests/test_crash_report.py::test_crash_report_redacts_logs_and_excludes_unrelated_user_data"],
+        "The account lacks permission.": ["tests/test_crash_report.py::test_crash_report_redacts_logs_and_excludes_unrelated_user_data"],
+        "The setting cannot be saved.": ["tests/test_crash_report.py::test_crash_report_redacts_logs_and_excludes_unrelated_user_data"]
+      }
+    },
+    {
+      "id": "shared_model_tool_policy_budget_boundary",
+      "rationale": "Screen capture, durable-memory save, alternate-operation feedback, and per-request limits pass through the same caller allowlist and neutral tool-loop budgets. The matrix executes the production gates, strict registry input validation, screen and memory permission failures, zero-call budget, result clipping, and total-output exhaustion; the approval workflow separately proves denied alternate-operation feedback remains in-band.",
+      "function_ids": ["F336", "F338", "F354", "F356"],
+      "evidence_by_cause": {
+        "The tool is disabled.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_shared_tool_policy_and_budget_failure_matrix_is_controlled"],
+        "The tool scope is denied.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_shared_tool_policy_and_budget_failure_matrix_is_controlled"],
+        "The tool permission is denied.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_shared_tool_policy_and_budget_failure_matrix_is_controlled", "tests/test_app_user_workflows.py::test_tool_file_permission_and_approval_workflow"],
+        "The tool inputs are invalid.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_shared_tool_policy_and_budget_failure_matrix_is_controlled"],
+        "The tool-call budget is exhausted.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_shared_tool_policy_and_budget_failure_matrix_is_controlled", "tests/test_unified_chat_harness.py::ChatFlowHarnessTests::test_loop_backed_runner_enforces_tool_call_budget"],
+        "The tool-output budget is exhausted.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_shared_tool_policy_and_budget_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "request_and_reply_cancellation_boundary",
+      "rationale": "Request cancellation, bubble Stop, and dismiss-only notices share the supervisor cancellation token, bounded worker IPC, stale reply-state guard, and cleanup path. The executable request and IPC tests prove delivery and bounded completion; the bubble tests prove stale and non-cancellable UI states remain safe.",
+      "function_ids": ["F052", "F132", "F133"],
+      "evidence_by_cause": {
+        "The cancel event is not delivered.": ["tests/test_app_user_workflows.py::test_stream_cancel_stops_query_and_returns_partial_result", "tests/runtime/test_supervisor_ipc.py::test_brain_worker_cancel_stops_active_stream_over_ipc", "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue", "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"],
+        "The operation is blocked in an uninterruptible call.": ["tests/runtime/test_supervisor_ipc.py::test_stream_total_timeout_cancels_active_brain_request", "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue", "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"],
+        "Cleanup hangs.": ["tests/runtime/test_supervisor_ipc.py::test_stream_total_timeout_cancels_active_brain_request", "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue", "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"],
+        "The UI state is already stale.": ["tests/test_app_user_workflows.py::test_stream_cancel_stops_query_and_returns_partial_result", "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue", "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"]
+      }
+    },
+    {
+      "id": "github_oauth_override_boundary",
+      "rationale": "GitHub OAuth overrides feed the same device authorization flow as the normal login. The matrix contains browser, expiry, cancellation, provider, network, and rejected-scope failures, while the keyring test proves a returned token cannot silently fall back to plaintext storage.",
+      "function_ids": ["F212"],
+      "evidence_by_cause": {
+        "The browser cannot open.": ["tests/test_github_auth.py::test_github_device_flow_cancellation_and_manual_browser_fallback"],
+        "The authentication flow expires.": ["tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"],
+        "The authentication flow is cancelled.": ["tests/test_github_auth.py::test_github_device_flow_cancellation_and_manual_browser_fallback"],
+        "The provider service is unavailable.": ["tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"],
+        "Network access is unavailable.": ["tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"],
+        "Requested scopes are rejected.": ["tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"],
+        "The returned token cannot be stored.": ["tests/test_github_auth.py::test_github_token_storage_fails_closed_when_keyring_is_unavailable"]
+      }
+    },
+    {
+      "id": "chat_model_connection_test_boundary",
+      "rationale": "Settings Test Chat uses the shared route probe and configuration check. The probe tests reject an incomplete route before provider I/O and convert authentication, endpoint, network, model, rate-limit, and unsupported-capability exceptions into a failed diagnostic.",
+      "function_ids": ["F255"],
+      "evidence_by_cause": {
+        "The route is incomplete.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_openrouter_route_test_reports_missing_explicit_key_before_probe"],
+        "Authentication is invalid.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"],
+        "The configured endpoint is unavailable.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"],
+        "Network access is unavailable.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"],
+        "The selected model is missing.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"],
+        "The provider rate limit is reached.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"],
+        "The tested capability is unsupported.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_route_connection_failure_matrix_returns_controlled_diagnostic"]
+      }
+    },
+    {
+      "id": "on_demand_memory_search_boundary",
+      "rationale": "On-demand memory search is gated by the memory setting, caller allowlist, provider tool capability, completion gate, guarded memory-store adapter, and shared request budgets. The matrix executes each gate and the unified harness proves a model that skips the required search is nudged into issuing it.",
+      "function_ids": ["F107"],
+      "evidence_by_cause": {
+        "Memory is disabled.": ["runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"],
+        "The memory-search tool is disabled.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_memory_search_on_demand_failure_matrix_is_controlled"],
+        "The model does not support tool calling.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_openai_compat_tools_unsupported_downgrades_to_frontloaded_context"],
+        "The model does not issue the required tool call.": ["tests/test_unified_chat_harness.py::ChatFlowHarnessTests::test_loop_backed_runner_requires_memory_tool_for_memory_request"],
+        "The memory store is unavailable.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_memory_search_on_demand_failure_matrix_is_controlled"],
+        "Retrieval returns nothing.": ["tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"],
+        "The tool budget is exhausted.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_memory_search_on_demand_failure_matrix_is_controlled", "tests/test_unified_chat_harness.py::ChatFlowHarnessTests::test_loop_backed_runner_enforces_tool_call_budget"]
+      }
+    },
+    {
+      "id": "bounded_context_source_boundary",
+      "rationale": "Browser, ambient-document, and tool-document limits use the supervisor context-policy snapshot and the shared per-result/total tool budget. The runtime matrix disables, denies, empties, and stales sources while enforcing the captured-context cap; the tool matrix proves clipping and total-output exhaustion.",
+      "function_ids": ["F115"],
+      "evidence_by_cause": {
+        "The source is disabled.": ["tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"],
+        "The source is inaccessible.": ["tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"],
+        "The source returned no content.": ["tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"],
+        "The source data is stale.": ["tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"],
+        "The source content exceeds the context budget.": ["tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"],
+        "The source content exceeds the tool-output budget.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_shared_tool_policy_and_budget_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "fallback_timed_reveal_boundary",
+      "rationale": "Providers without word timestamps use SpeechBubble's WPM fallback timer. The Settings test verifies provider capability classification, the bubble matrix proves invalid WPM falls back safely and completion stops/reset timers, and the UI watchdog covers a blocked event loop.",
+      "function_ids": ["F130"],
+      "evidence_by_cause": {
+        "Provider timestamp capability is detected incorrectly.": ["tests/test_settings_dialog_controls.py::test_tts_provider_timing_notice_only_for_providers_without_word_timestamps"],
+        "The reveal timing configuration is invalid.": ["tests/test_bubble_transcript.py::test_timed_reveal_invalid_config_and_finish_reset_are_safe"],
+        "The UI event loop is blocked.": ["tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"],
+        "Speech state ends without resetting the reveal timer.": ["tests/test_bubble_transcript.py::test_timed_reveal_invalid_config_and_finish_reset_are_safe", "tests/runtime/test_flows.py::test_no_tts_reply_done_lets_wpm_reveal_drain"]
+      }
+    },
+    {
+      "id": "launch_install_runtime_integrity_boundary",
+      "rationale": "Packaged, source, duplicate-instance, runtime-status, autostart, and shutdown entry paths depend on the same repository/install metadata and Python runtime before supervisor lifecycle behavior can succeed. The reusable preflight matrix executes missing/corrupt installation and runtime states; supervisor tests separately cover lock, startup, and cleanup behavior.",
+      "function_ids": ["F001", "F002", "F003", "F027", "F029", "F030"],
+      "evidence_by_cause": {
+        "The Wisp installation is missing.": ["tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"],
+        "The Wisp installation is corrupt.": ["tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"],
+        "The required runtime is missing.": ["tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"],
+        "The required runtime is corrupt.": ["tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"]
+      }
+    },
+    {
+      "id": "first_start_install_integrity_boundary",
+      "rationale": "First-start setup begins with the same install metadata validation as the reusable development/launch preflight, then runs its component checks. The matrix proves both absent and structurally corrupt installations are rejected before setup reports readiness.",
+      "function_ids": ["F004"],
+      "evidence_by_cause": {
+        "The Wisp installation is missing.": ["tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"],
+        "The Wisp installation is corrupt.": ["tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"]
+      }
+    },
+    {
+      "id": "startup_ui_dependency_availability_boundary",
+      "rationale": "Setup navigation, TTS/STT choices, and idle/listening/thinking/speaking state all run on the same Qt/runtime, supervisor worker, permission, and tray surface. The preflight, startup transaction, and tray dispatch matrices prove each shared dependency failure remains controlled.",
+      "function_ids": ["F006", "F012", "F013", "F018"],
+      "evidence_by_cause": {
+        "A runtime required by this function is unavailable.": ["tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"],
+        "A permission required by this function is missing.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "A required worker is unavailable.": ["tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"],
+        "The desktop tray facility is unavailable.": ["tests/test_overlay_bubble_visibility.py::test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking"]
+      }
+    },
+    {
+      "id": "secondary_hotkey_action_delivery_boundary",
+      "rationale": "Removing an action, invoking the custom prompt, and switching dictation modes all depend on the same native global-hook registration, conflict detector, accessibility fallback, and event-swallow behavior as the primary hotkeys.",
+      "function_ids": ["F073", "F075", "F081"],
+      "evidence_by_cause": {
+        "The OS rejects the key hook.": ["tests/runtime/test_hotkey_helper_lifecycle.py::test_direct_hotkey_start_reports_os_hook_rejection"],
+        "A binding conflicts.": ["tests/test_settings_dialog_controls.py::test_settings_reports_secondary_shortcut_conflicts_only_when_saving"],
+        "Accessibility permission is missing.": ["tests/runtime/test_hotkey_tap_swallow.py::test_falls_back_to_listen_only_when_active_tap_unavailable"],
+        "Another app consumes input.": ["tests/runtime/test_hotkey_tap_swallow.py::test_active_tap_swallows_matched_keydown"]
+      }
+    },
+    {
+      "id": "macos_native_helper_failure_boundary",
+      "rationale": "macOS helper and Accessibility operations enter the same native selection/focus boundary. Its matrix contains absent features, permission failures, focus changes, and unsupported target applications without returning stale content.",
+      "function_ids": ["F468"],
+      "evidence_by_cause": {
+        "The required desktop feature is unavailable.": ["tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"],
+        "OS permissions are missing.": ["tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text", "tests/test_platform_macos.py::MacHotkeyTests::test_accessibility_check_uses_application_services_trust"],
+        "Focus changes.": ["tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"],
+        "The target application is unsupported.": ["tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"]
+      }
+    },
+    {
+      "id": "linux_desktop_fallback_failure_boundary",
+      "rationale": "Linux accessibility and display fallbacks are best-effort: the AT-SPI matrix injects absent services plus sandbox/session permission faults and an empty incompatible toolkit tree, while the Qt surface matrix contains compositor refusal.",
+      "function_ids": ["F469"],
+      "evidence_by_cause": {
+        "The required Linux accessibility service is absent.": ["tests/test_linux_atspi.py::test_linux_platform_fallback_failure_matrix_is_in_band"],
+        "The required Linux display service is absent.": ["tests/test_linux_atspi.py::test_linux_platform_fallback_failure_matrix_is_in_band"],
+        "Sandbox permission denies access.": ["tests/test_linux_atspi.py::test_linux_platform_fallback_failure_matrix_is_in_band"],
+        "Desktop-session permission denies access.": ["tests/test_linux_atspi.py::test_linux_platform_fallback_failure_matrix_is_in_band"],
+        "The compositor blocks the operation.": ["tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"],
+        "The target toolkit exposes no compatible interface.": ["tests/test_linux_atspi.py::test_linux_platform_fallback_failure_matrix_is_in_band"]
+      }
+    },
+    {
+      "id": "intent_shortcut_rename_boundary",
+      "rationale": "Shortcut renames now pass the production caller validator before the shared atomic Settings transaction. The UI matrix rejects empty, control-character, and duplicate names; the persistence matrix injects read-only, locked, corrupt, and interrupted stores.",
+      "function_ids": ["F069"],
+      "evidence_by_cause": {
+        "The new value is empty.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The new value is invalid.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The new value duplicates an existing value.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The backing store is read-only.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The backing store is locked.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The backing store is corrupt.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The write is interrupted.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"]
+      }
+    },
+    {
+      "id": "intent_action_add_boundary",
+      "rationale": "Adding an action row uses the production caller/action validator before Settings persistence. The matrix rejects key conflicts, missing fields, malformed prompt data, and the shared transaction contains write failures.",
+      "function_ids": ["F072"],
+      "evidence_by_cause": {
+        "The key conflicts with another action.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "Required fields are empty.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The prompt data is invalid.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The shortcut configuration cannot be persisted.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"]
+      }
+    },
+    {
+      "id": "intent_action_edit_boundary",
+      "rationale": "Editing an action uses the same key/field/prompt validator and Settings transaction. The matrix covers replacement conflicts, invalid edits, stale row metadata, and read-only/corrupt stores without persisting a partial configuration.",
+      "function_ids": ["F074"],
+      "evidence_by_cause": {
+        "The replacement key conflicts.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The edited value is invalid.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The row is stale.": ["tests/test_settings_dialog_controls.py::test_intent_shortcut_mutation_failure_matrix_is_controlled"],
+        "The shortcut configuration store is read-only.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"],
+        "The shortcut configuration store is corrupt.": ["tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"]
+      }
+    },
+    {
+      "id": "project_create_transaction_boundary",
+      "rationale": "Project creation validates its name, deduplicates case-insensitively, and writes through the atomic project store. The matrix rejects empty/invalid values, returns the existing duplicate, injects read-only/locked/interrupted replacement failures, and the corrupt-store test proves fail-closed loading.",
+      "function_ids": ["F152"],
+      "evidence_by_cause": {
+        "The new value is empty.": ["tests/test_conversation_store.py::test_add_project_failure_matrix_is_transactional"],
+        "The new value is invalid.": ["tests/test_conversation_store.py::test_add_project_failure_matrix_is_transactional"],
+        "The new value duplicates an existing value.": ["tests/test_conversation_store.py::test_add_project_failure_matrix_is_transactional"],
+        "The backing store is read-only.": ["tests/test_conversation_store.py::test_add_project_failure_matrix_is_transactional"],
+        "The backing store is locked.": ["tests/test_conversation_store.py::test_add_project_failure_matrix_is_transactional"],
+        "The backing store is corrupt.": ["tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"],
+        "The write is interrupted.": ["tests/test_conversation_store.py::test_add_project_failure_matrix_is_transactional"]
+      }
+    },
+    {
+      "id": "manual_memory_fact_add_boundary",
+      "rationale": "Manual fact creation now returns the real insert result and clears typed input only after success. The UI matrix stops empty input, retains invalid/duplicate input, and injects read-only, locked, corrupt, and interrupted stores; the memory-store matrix verifies deduplication and corrupt-store containment.",
+      "function_ids": ["F317"],
+      "evidence_by_cause": {
+        "The new value is empty.": ["tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable"],
+        "The new value is invalid.": ["tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable"],
+        "The new value duplicates an existing value.": ["tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable", "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"],
+        "The backing store is read-only.": ["tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable"],
+        "The backing store is locked.": ["tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable"],
+        "The backing store is corrupt.": ["tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable", "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"],
+        "The write is interrupted.": ["tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable"]
+      }
+    },
+    {
+      "id": "exact_model_name_probe_boundary",
+      "rationale": "An exact manually entered model is not trusted until the shared live route probe succeeds. The matrix injects misspelling, account, endpoint, provider-pairing, and route-capability failures and verifies each returns a failed diagnostic.",
+      "function_ids": ["F227"],
+      "evidence_by_cause": {
+        "The model name is misspelled.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The model is unavailable to the account.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The model is unavailable at the endpoint.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The model is paired with the wrong provider.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The model is incompatible with the selected route.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"]
+      }
+    },
+    {
+      "id": "ollama_local_runtime_boundary",
+      "rationale": "The Ollama provider uses one readiness/startup manager followed by the shared live route probe. Its matrix executes a server that never becomes ready, a launch failure, wrong remote host/port, missing model, and RAM/VRAM probe failures.",
+      "function_ids": ["F251"],
+      "evidence_by_cause": {
+        "The Ollama server is not running.": ["tests/test_ollama_manager.py::test_ollama_runtime_failure_matrix_is_controlled"],
+        "The Ollama server cannot be started.": ["tests/test_ollama_manager.py::test_ollama_runtime_failure_matrix_is_controlled"],
+        "The requested Ollama model is not installed.": ["tests/test_ollama_manager.py::test_ollama_runtime_failure_matrix_is_controlled"],
+        "The configured Ollama host is wrong.": ["tests/test_ollama_manager.py::test_ollama_runtime_failure_matrix_is_controlled"],
+        "The configured Ollama port is wrong.": ["tests/test_ollama_manager.py::test_ollama_runtime_failure_matrix_is_controlled"],
+        "Available RAM is insufficient for the model.": ["tests/test_ollama_manager.py::test_ollama_runtime_failure_matrix_is_controlled"],
+        "Available VRAM is insufficient for the model.": ["tests/test_ollama_manager.py::test_ollama_runtime_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "custom_openai_endpoint_probe_boundary",
+      "rationale": "Custom OpenAI-compatible routes now validate an absolute HTTP(S) base URL before client construction, then use the shared live route probe. The matrix injects offline, credential, model, and protocol-compatibility failures as controlled diagnostics.",
+      "function_ids": ["F252"],
+      "evidence_by_cause": {
+        "The custom base URL is invalid.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The custom endpoint is offline.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The custom endpoint rejects its credential.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The requested model is not hosted by the endpoint.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"],
+        "The endpoint is not sufficiently OpenAI-compatible.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_exact_model_and_custom_endpoint_failure_matrix_returns_diagnostics"]
+      }
+    },
+    {
+      "id": "intent_picker_timeout_boundary",
+      "rationale": "Both auto-close and zero-timeout modes use the same production timer parser and state-transition cleanup. The overlay matrix executes malformed and zero duration values, retires stale timers, and proves modal-owned cancellation is idempotent; the supervisor watchdog separately detects a blocked UI event loop.",
+      "function_ids": ["F044", "F045"],
+      "evidence_by_cause": {
+        "The configured duration is invalid.": ["tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"],
+        "The event loop is blocked.": ["tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"],
+        "A stale timer survives a state change.": ["tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"],
+        "Another modal window owns input.": ["tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"]
+      }
+    },
+    {
+      "id": "settings_cancel_transaction_boundary",
+      "rationale": "Cancel is a no-write transaction: unsaved controls never invoke the runtime apply callback and do not require reconstructing a possibly stale snapshot. The matrix injects missed dirty state and a failing snapshot, verifies persisted bytes are unchanged, and prevents Settings disposal while an installer or setup wizard is active.",
+      "function_ids": ["F426"],
+      "evidence_by_cause": {
+        "Dirty-state tracking misses an edited control.": ["tests/test_settings_failure_matrix.py::test_settings_cancel_failure_matrix_is_transactional"],
+        "A preview already changed runtime state.": ["tests/test_settings_failure_matrix.py::test_settings_cancel_failure_matrix_is_transactional"],
+        "The dialog cannot restore its original snapshot.": ["tests/test_settings_failure_matrix.py::test_settings_cancel_failure_matrix_is_transactional"],
+        "A child installer is still active.": ["tests/test_settings_failure_matrix.py::test_settings_cancel_failure_matrix_is_transactional"],
+        "A child setup wizard is still active.": ["tests/test_settings_failure_matrix.py::test_settings_cancel_failure_matrix_is_transactional"]
+      }
+    },
+    {
+      "id": "worker_recovery_diagnostic_boundary",
+      "rationale": "Recovery formatting now has an explicit unresponsive-worker rule plus a diagnostic fallback for sparse or unknown failures. The matrix preserves supplied technical context and always points users to Runtime Status, recent logs, and crash-report capture when no specific rule matches.",
+      "function_ids": ["F458"],
+      "evidence_by_cause": {
+        "The worker is unresponsive.": ["tests/test_error_recommendations.py::test_worker_recovery_failure_matrix_always_preserves_diagnostic_action", "tests/runtime/test_supervisor_ipc.py::test_brain_worker_death_mid_stream_fails_request_and_recovers"],
+        "Available logs lack enough diagnostic context.": ["tests/test_error_recommendations.py::test_worker_recovery_failure_matrix_always_preserves_diagnostic_action"],
+        "No recovery rule matches the detected failure.": ["tests/test_error_recommendations.py::test_worker_recovery_failure_matrix_always_preserves_diagnostic_action"]
+      }
+    }
+  ]
+}

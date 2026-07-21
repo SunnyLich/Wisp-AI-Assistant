@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import os
 from types import SimpleNamespace
 
-from scripts import run_app_workflow_tests
+from scripts import pytest_temp_cleanup, run_app_workflow_tests
 
 
 def test_strict_log_scan_flags_runtime_diagnostics(tmp_path):
@@ -13,6 +15,7 @@ def test_strict_log_scan_flags_runtime_diagnostics(tmp_path):
     log.write_text(
         "27 passed\n"
         'Could not parse stylesheet of object QPushButton(name = "chatContextChip_browser")\n'
+        "[crash] unhandled exception in thread provider-reader:\n"
         "Fatal Python error: finalizing\n",
         encoding="utf-8",
     )
@@ -20,6 +23,7 @@ def test_strict_log_scan_flags_runtime_diagnostics(tmp_path):
     issues = run_app_workflow_tests._strict_log_issues(log)
 
     assert "Could not parse stylesheet" in issues
+    assert "[crash] unhandled" in issues
     assert "Fatal Python error" in issues
 
 
@@ -48,6 +52,8 @@ def test_workflow_runner_covers_core_user_workflows():
     """The workflow entrypoint keeps the main user-visible suites together."""
     expected = {
         "tests/test_app_user_workflows.py",
+        "tests/test_profile_user_workflows.py",
+        "tests/test_workflow_manifest.py",
         "tests/runtime/test_flows.py",
         "tests/test_error_recommendations.py",
         "tests/test_i18n_catalog_sources.py",
@@ -57,6 +63,47 @@ def test_workflow_runner_covers_core_user_workflows():
         "tests/test_setup_check.py",
     }
     assert expected <= set(run_app_workflow_tests.WORKFLOW_TESTS)
+
+
+def test_workflow_runner_includes_every_manifest_referenced_file():
+    """The 472-function mapping is executable through the master entrypoint."""
+
+    root = run_app_workflow_tests._repo_root()
+    mapped = set(run_app_workflow_tests._manifest_workflow_test_files(root))
+    selected = set(run_app_workflow_tests._workflow_test_files(root))
+
+    assert len(mapped) >= 60
+    assert mapped - set(run_app_workflow_tests.APP_ARCHITECTURE_TESTS) <= selected
+
+
+def test_workflow_runner_executes_every_direct_failure_evidence_node():
+    """Direct failure coverage cannot exist only as documentation metadata."""
+
+    root = run_app_workflow_tests._repo_root()
+    nodes = run_app_workflow_tests._failure_evidence_nodes(root)
+    manifest = json.loads(
+        (root / "tests" / "workflows" / "failure_coverage.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    expected = {
+        node_id.replace("\\", "/")
+        for case in manifest["failure_cases"]
+        for node_id in case["evidence_node_ids"]
+    }
+
+    assert set(nodes) == expected
+    assert len(nodes) >= 82
+    assert any(node.startswith("runtime/brain/tests/") for node in nodes)
+
+
+def test_workflow_runner_reports_honest_feature_acceptance_counts():
+    root = run_app_workflow_tests._repo_root()
+    counts = run_app_workflow_tests._feature_acceptance_counts(root)
+
+    assert counts["total"] == 472
+    assert counts["accepted"] < counts["total"]
+    assert counts["complete"] is False
 
 
 def test_pytest_preflight_reports_missing_project_venv(tmp_path, monkeypatch):
@@ -231,3 +278,18 @@ def test_isolated_all_tests_fail_fast_stops_at_first_failure(tmp_path, monkeypat
     assert "pytest-main.failed_file_count=1" in summary_lines
     assert "pytest-main.error_log_count=1" in summary_lines
     assert any(line.startswith("pytest-main.error_log.1=") for line in summary_lines)
+
+
+def test_main_collects_stale_temp_before_and_current_runner_temp_after(monkeypatch):
+    """The public master entry point always performs both cleanup passes."""
+
+    calls: list[int | None] = []
+    monkeypatch.setattr(run_app_workflow_tests, "_main", lambda _argv: 7)
+    monkeypatch.setattr(
+        pytest_temp_cleanup,
+        "cleanup_stale_owned_basetemps",
+        lambda _root, runner_pid=None: calls.append(runner_pid) or [],
+    )
+
+    assert run_app_workflow_tests.main(["--example"]) == 7
+    assert calls == [None, os.getpid()]

@@ -5527,6 +5527,9 @@ Continue?</translation>
     <message><source>will retry when first used</source><translation>volverá a intentarlo al usarlo por primera vez</translation></message>
     <message><source>failed - {message}</source><translation>falló: {message}</translation></message>
     <message><source>stopped</source><translation>detenido</translation></message>
+    <message><source>Copy all</source><translation>Copiar todo</translation></message>
+    <message><source>Log directory</source><translation>Carpeta de registros</translation></message>
+    <message><source>running</source><translation>en ejecución</translation></message>
     <message><source>waiting to start</source><translation>esperando para comenzar</translation></message>
     <message><source>not completed</source><translation>no se completó</translation></message>
     <message><source>unknown error</source><translation>error desconocido</translation></message>
@@ -5717,5 +5720,16 @@ No se eliminarán las cachés compartidas de uv/pip ni los modelos de Hugging Fa
     <message><source>ChatGPT started {action}</source><translation>ChatGPT inició {action}</translation></message>
     <message><source>ChatGPT {action}: {status}</source><translation>ChatGPT {action}: {status}</translation></message>
     <message><source>ChatGPT login</source><translation>Inicio de sesión en ChatGPT</translation></message>
+    <message><source>Crash report</source><translation>Informe de fallos</translation></message>
+    <message><source>Create a redacted diagnostic bundle to attach to a bug report. Wisp includes bounded log tails and system details, but does not collect chat, memory, settings, environment, or keychain files. Review the archive before sharing because logs can still contain user-provided text.</source><translation>Crea un paquete de diagnóstico redactado para adjuntarlo a un informe de fallos. Wisp incluye fragmentos finales limitados de los registros y detalles del sistema, pero no recopila chats, memoria, ajustes, archivos de entorno ni archivos del llavero. Revisa el archivo antes de compartirlo porque los registros aún pueden contener texto proporcionado por el usuario.</translation></message>
+    <message><source>No crash report created yet.</source><translation>Todavía no se ha creado ningún informe de fallos.</translation></message>
+    <message><source>Create crash report…</source><translation>Crear informe de fallos…</translation></message>
+    <message><source>Creating crash report…</source><translation>Creando informe de fallos…</translation></message>
+    <message><source>Crash report created: {name}</source><translation>Informe de fallos creado: {name}</translation></message>
+    <message><source>Crash report created</source><translation>Informe de fallos creado</translation></message>
+    <message><source>The redacted report was saved here:</source><translation>El informe redactado se guardó aquí:</translation></message>
+    <message><source>Review the ZIP before attaching it to a bug report.</source><translation>Revisa el ZIP antes de adjuntarlo a un informe de fallos.</translation></message>
+    <message><source>Crash report could not be created.</source><translation>No se pudo crear el informe de fallos.</translation></message>
+    <message><source>Crash report failed</source><translation>Error al crear el informe de fallos</translation></message>
   </context>
 </TS>

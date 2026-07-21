@@ -182,6 +182,25 @@ def _status_label(status: str) -> str:
     return t(_STATUS_LABELS.get(str(status or "").strip().lower(), "WARN"))
 
 
+def _runtime_event_headline(event: dict[str, Any]) -> str:
+    """Render the always-visible first line of one runtime event."""
+    ts = float(event.get("ts") or 0)
+    stamp = time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "--:--:--"
+    severity = str(event.get("severity") or "info")
+    marker = {"error": " ERROR", "warning": " WARN"}.get(severity, "")
+    count = int(event.get("count") or 1)
+    suffix = f" (x{count})" if count > 1 else ""
+    return f"[{stamp}] [{event.get('source') or 'app'}]{marker} {event.get('title') or ''}{suffix}"
+
+
+def _open_folder(path: str) -> None:
+    """Open a folder in the OS file browser."""
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QDesktopServices
+
+    QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+
 def _translate_health_value(value: str) -> str:
     """Translate known health value atoms while preserving provider/model names."""
     text = str(value or "")
@@ -2052,6 +2071,7 @@ class QtProtocolHost:
         self._addon_log_dialogs: dict[str, Any] = {}
         self._status_dialogs: list[Any] = []
         self._runtime_status_dialog = None
+        self._runtime_status_snapshot: dict[str, Any] | None = None
         self._agent_run_dialog: MacAgentRunDialog | None = None
         self._agent_history_dialog: MacAgentHistoryDialog | None = None
         from core.conversation_store import store as conversation_store
@@ -2349,8 +2369,12 @@ class QtProtocolHost:
             return self._privacy_report(**params)
         if method == "ui.runtime_status.show":
             return self._runtime_status_show(**params)
+        if method == "ui.runtime_status.append":
+            return self._runtime_status_append(**params)
         if method == "ui.reply.chunk":
             return self._reply_chunk(**params)
+        if method == "ui.reply.image":
+            return self._reply_image(**params)
         if method == "ui.reply.done":
             return self._reply_done(**params)
         if method == "ui.live_voice.session":
@@ -2918,13 +2942,22 @@ class QtProtocolHost:
         timeout_ms: int = 12000,
         key: str = "",
         severity: str = "",
+        log_mirrored: bool = False,
     ) -> dict[str, Any]:
         """Handle reply notice for qt protocol host."""
         # Mirror whatever the bubble shows into the runtime log so notices and
         # errors aren't on-screen only. Log the untranslated source (collapsed to
         # one line) so log lines stay stable and greppable across UI languages.
+        # Logged at the notice's severity so the supervisor's stderr ingestion
+        # classifies it correctly. Skipped when the supervisor already recorded
+        # this notice itself (log_mirrored) — logging it again here would
+        # duplicate the runtime event.
         collapsed = " | ".join(part for part in str(text or "").splitlines() if part)
-        log.info("bubble notice: %s", collapsed or "(empty)")
+        if not log_mirrored:
+            level = {"error": logging.ERROR, "warning": logging.WARNING}.get(
+                str(severity or "").strip().lower(), logging.INFO
+            )
+            log.log(level, "bubble notice: %s", collapsed or "(empty)")
         translated = _translate_notice_text(text)
         if _is_transient_local_tts_warmup_notice(text):
             log.info("suppressed transient local TTS warmup notice: %s", collapsed or "(empty)")
@@ -3027,6 +3060,35 @@ class QtProtocolHost:
             visible_text = _translate_notice_text(text) if is_progress else text
             bubble.append_chunk(visible_text, is_thought=is_thought, annotations=annotations)
         return {"appended": len(text or ""), "is_progress": bool(is_progress)}
+
+    def _reply_image(self, attachments: list | None = None) -> dict[str, Any]:
+        """Render the first safe generated-image attachment in the speech bubble."""
+        from core.conversation_store import store as conversation_store
+
+        encoded = ""
+        for raw in attachments or []:
+            if not isinstance(raw, dict):
+                continue
+            kind = str(raw.get("kind") or "image").strip().lower()
+            if kind != "image":
+                continue
+            data_url = str(raw.get("data_url") or "").strip()
+            if data_url:
+                encoded = data_url
+            else:
+                path = str(raw.get("path") or "").strip()
+                if not path:
+                    continue
+                ref = conversation_store.external_file_attachment(
+                    path,
+                    kind="image",
+                    source=str(raw.get("source") or "generated_image"),
+                )
+                encoded = conversation_store.attachment_image_base64(ref)
+            if encoded:
+                break
+        shown = bool(encoded and self._ensure_bubble().show_image(encoded))
+        return {"shown": shown}
 
     def _live_voice_session(self, active: bool = False) -> dict[str, Any]:
         """Enter/leave live voice caption mode (bubble held open while active)."""
@@ -4399,8 +4461,13 @@ class QtProtocolHost:
         box.finished.connect(_forget)
         box.open()
 
-    def _runtime_status_text(self, workers: list[dict[str, Any]] | None = None, log_dir: str = "") -> str:
-        """Format supervisor and worker status for a terminal-like diagnostics view."""
+    def _runtime_status_text(
+        self,
+        workers: list[dict[str, Any]] | None = None,
+        log_dir: str = "",
+        events: list[dict[str, Any]] | None = None,
+    ) -> str:
+        """Format the full runtime status (workers + events) as plain text."""
         lines = [f"Wisp runtime status - {time.strftime('%Y-%m-%d %H:%M:%S')}"]
         if log_dir:
             lines.append(f"Log directory: {log_dir}")
@@ -4410,62 +4477,208 @@ class QtProtocolHost:
             module = str(worker.get("module") or "")
             pid = worker.get("pid")
             alive = "running" if worker.get("alive") else "stopped"
-            lines.append(f"[{name}] {alive} pid={pid or '-'}")
+            row = f"[{name}] {alive} pid={pid or '-'}"
             if module:
-                lines.append(f"module={module}")
-            stderr_tail = str(worker.get("stderr_tail") or "").strip()
-            if stderr_tail:
-                lines.append("recent stderr:")
-                lines.append(stderr_tail)
+                row += f" module={module}"
+            lines.append(row)
+        for event in events or []:
             lines.append("")
+            lines.append(_runtime_event_headline(event))
+            detail = str(event.get("detail") or "").strip()
+            if detail:
+                lines.extend(f"    {line}" for line in detail.splitlines())
         return "\n".join(lines).rstrip() or "No runtime status available."
 
-    def _runtime_status_show(self, workers: list[dict[str, Any]] | None = None, log_dir: str = "") -> dict[str, Any]:
+    @staticmethod
+    def _runtime_worker_summary(workers: list[dict[str, Any]] | None, log_dir: str) -> str:
+        """One line per worker for the Runtime Status header."""
+        lines = []
+        for worker in workers or []:
+            name = str(worker.get("name") or "worker")
+            pid = worker.get("pid")
+            alive = t("running") if worker.get("alive") else t("stopped")
+            lines.append(f"[{name}] {alive}  pid={pid or '-'}")
+        if log_dir:
+            lines.append(f"{t('Log directory')}: {log_dir}")
+        return "\n".join(lines)
+
+    def _runtime_status_add_event(self, tree: Any, event: dict[str, Any]) -> None:
+        """Append one aggregated runtime event to the diagnostics tree."""
+        from PySide6.QtGui import QBrush, QColor
+        from PySide6.QtWidgets import QTreeWidgetItem
+
+        from ui.shared.theme import is_dark_mode, theme_colors
+
+        colors = theme_colors(is_dark_mode())
+        severity = str(event.get("severity") or "info")
+        item = QTreeWidgetItem([_runtime_event_headline(event)])
+        if severity == "error":
+            item.setForeground(0, QBrush(QColor("#f2555a" if is_dark_mode() else "#c62828")))
+        elif severity == "warning":
+            item.setForeground(0, QBrush(QColor("#e5a50a" if is_dark_mode() else "#9a6700")))
+        detail = str(event.get("detail") or "").strip()
+        if detail:
+            dim = QBrush(QColor(colors["text_dim"]))
+            for line in detail.splitlines()[:200]:
+                child = QTreeWidgetItem([line])
+                child.setForeground(0, dim)
+                item.addChild(child)
+        tree.addTopLevelItem(item)
+        # Detail lines stay collapsed until the user expands the headline row.
+        item.setExpanded(False)
+        while tree.topLevelItemCount() > 600:
+            tree.takeTopLevelItem(0)
+
+    def _runtime_status_show(
+        self,
+        workers: list[dict[str, Any]] | None = None,
+        log_dir: str = "",
+        events: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Show or refresh the runtime status diagnostics window."""
         from PySide6.QtCore import Qt, QTimer
-        from PySide6.QtGui import QTextCursor
-        from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTextEdit, QVBoxLayout
+        from PySide6.QtWidgets import (
+            QDialog,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QTreeWidget,
+            QVBoxLayout,
+        )
 
-        body = self._runtime_status_text(workers, log_dir)
+        event_rows = [dict(event) for event in (events or []) if isinstance(event, dict)]
+        worker_rows = [dict(worker) for worker in (workers or []) if isinstance(worker, dict)]
 
         def _open() -> None:
+            from ui.shared.theme import is_dark_mode, theme_colors
+
             dialog = self._runtime_status_dialog
-            text = None
+            tree = None
+            summary = None
             if dialog is not None and dialog.isVisible():
-                text = dialog.findChild(QTextEdit)
-            if dialog is None or not dialog.isVisible() or text is None:
+                tree = dialog.findChild(QTreeWidget)
+                summary = dialog.findChild(QLabel, "runtimeWorkerSummary")
+            if dialog is None or not dialog.isVisible() or tree is None:
+                colors = theme_colors(is_dark_mode())
                 dialog = QDialog()
                 dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
                 dialog.setWindowTitle(t("Runtime Status"))
                 from ui.shared.window_utils import enable_standard_window_controls
                 enable_standard_window_controls(dialog)
+                dialog.setStyleSheet(
+                    f"""
+                    QLabel#runtimeWorkerSummary, QTreeWidget {{
+                        font-family: Consolas, "SF Mono", "DejaVu Sans Mono", monospace;
+                        font-size: 9pt;
+                    }}
+                    QTreeWidget {{
+                        background: {colors["surface"]};
+                        border: 1px solid {colors["border"]};
+                        border-radius: 8px;
+                    }}
+                    """
+                )
                 root = QVBoxLayout(dialog)
                 root.setContentsMargins(16, 16, 16, 16)
                 root.setSpacing(10)
-                text = QTextEdit()
-                text.setReadOnly(True)
-                text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-                root.addWidget(text, 1)
+                summary = QLabel()
+                summary.setObjectName("runtimeWorkerSummary")
+                summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                root.addWidget(summary)
+                tree = QTreeWidget()
+                tree.setHeaderHidden(True)
+                tree.setColumnCount(1)
+                tree.setRootIsDecorated(True)
+                tree.setUniformRowHeights(True)
+                tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
+                tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                tree.setTextElideMode(Qt.TextElideMode.ElideNone)
+                root.addWidget(tree, 1)
                 footer = QHBoxLayout()
                 refresh = QPushButton(t("Refresh"))
                 refresh.clicked.connect(lambda: self.emit("ui.runtime_status.open_requested", {}))
+                footer.addWidget(refresh)
+                copy_all = QPushButton(t("Copy all"))
+                copy_all.clicked.connect(lambda: self._runtime_status_copy_all())
+                footer.addWidget(copy_all)
+                if log_dir:
+                    open_logs = QPushButton(t("Open log folder"))
+                    open_logs.clicked.connect(lambda checked=False, path=log_dir: _open_folder(path))
+                    footer.addWidget(open_logs)
+                footer.addStretch()
                 close = QPushButton(t("Close"))
                 close.clicked.connect(dialog.close)
-                footer.addWidget(refresh)
-                footer.addStretch()
                 footer.addWidget(close)
                 root.addLayout(footer)
-                dialog.resize(760, 520)
-                dialog.destroyed.connect(lambda _obj=None: setattr(self, "_runtime_status_dialog", None))
+                dialog.resize(860, 560)
+
+                def _forget(_obj=None) -> None:
+                    self._runtime_status_dialog = None
+                    try:
+                        self.emit("ui.runtime_status.closed", {})
+                    except Exception:  # noqa: BLE001 - closing during shutdown
+                        pass
+
+                dialog.destroyed.connect(_forget)
                 self._runtime_status_dialog = dialog
-            text.setPlainText(body)
-            text.moveCursor(QTextCursor.MoveOperation.End)
+                self.emit("ui.runtime_status.opened", {})
+            if summary is not None:
+                summary.setText(self._runtime_worker_summary(worker_rows, log_dir))
+            tree.clear()
+            self._runtime_status_snapshot = {"workers": worker_rows, "log_dir": log_dir, "events": list(event_rows)}
+            for event in event_rows:
+                self._runtime_status_add_event(tree, event)
+            tree.scrollToBottom()
             dialog.show()
             dialog.raise_()
             dialog.activateWindow()
 
         QTimer.singleShot(0, _open)
-        return {"queued": True, "count": len(workers or [])}
+        return {"queued": True, "count": len(worker_rows), "events": len(event_rows)}
+
+    def _runtime_status_append(self, events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Stream new runtime events into the open Runtime Status window."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QTreeWidget
+
+        event_rows = [dict(event) for event in (events or []) if isinstance(event, dict)]
+        if not event_rows:
+            return {"appended": 0}
+
+        def _append() -> None:
+            dialog = self._runtime_status_dialog
+            if dialog is None or not dialog.isVisible():
+                return
+            tree = dialog.findChild(QTreeWidget)
+            if tree is None:
+                return
+            scrollbar = tree.verticalScrollBar()
+            pinned = scrollbar.value() >= scrollbar.maximum() - 4
+            snapshot = getattr(self, "_runtime_status_snapshot", None)
+            if isinstance(snapshot, dict):
+                snapshot.setdefault("events", []).extend(event_rows)
+                del snapshot["events"][:-600]
+            for event in event_rows:
+                self._runtime_status_add_event(tree, event)
+            if pinned:
+                tree.scrollToBottom()
+
+        QTimer.singleShot(0, _append)
+        return {"appended": len(event_rows)}
+
+    def _runtime_status_copy_all(self) -> None:
+        """Copy the full runtime status (workers + events + details) as text."""
+        from PySide6.QtWidgets import QApplication
+
+        snapshot = getattr(self, "_runtime_status_snapshot", None) or {}
+        text = self._runtime_status_text(
+            snapshot.get("workers") or [],
+            str(snapshot.get("log_dir") or ""),
+            snapshot.get("events") or [],
+        )
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
 
     def _health_show(self, rows: list[dict[str, Any]] | None = None, title: str = "") -> dict[str, Any]:
         """Show live setup/health rows in a dismissible window."""
@@ -5279,6 +5492,12 @@ def main() -> int:
 
     host = QtProtocolHost(app, real_out)
     app._wisp_runtime_ui_host = host
+    try:
+        from ui.runtime_log_bridge import set_emitter
+
+        set_emitter(lambda payload: host.emit("ui.log.event", payload))
+    except Exception:
+        traceback.print_exc()
     host.emit("ui.ready", {"repo": str(root)})
     exit_code = int(app.exec())
     host.finalize_after_exec()

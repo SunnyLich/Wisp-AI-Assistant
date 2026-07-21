@@ -13,7 +13,6 @@ pytestmark = pytest.mark.skipif(
 
 
 def _qapp():
-    """Verify qapp behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -21,14 +20,12 @@ def _qapp():
 
 
 def _form_layouts(widget):
-    """Verify form layouts behavior."""
     from PySide6.QtWidgets import QFormLayout, QWidget
 
     seen = set()
     found = []
 
     def visit_layout(layout):
-        """Verify visit layout behavior."""
         if layout is None or id(layout) in seen:
             return
         seen.add(id(layout))
@@ -50,7 +47,6 @@ def _form_layouts(widget):
 
 
 def test_agent_task_forms_expand_across_platform_styles():
-    """Verify agent task forms expand across platform styles behavior."""
     _qapp()
     from PySide6.QtWidgets import QFormLayout
 
@@ -91,7 +87,6 @@ def test_agent_task_title_field_uses_extra_window_width():
 
 
 def test_agent_communication_forms_expand_across_platform_styles():
-    """Verify agent communication forms expand across platform styles behavior."""
     _qapp()
     from PySide6.QtWidgets import QFormLayout
 
@@ -267,7 +262,6 @@ def test_agent_run_window_shows_prominent_finished_banner(tmp_path):
 
 
 def test_agent_communication_i18n_preserves_internal_values():
-    """Verify agent communication i18n preserves internal values behavior."""
     app = _qapp()
 
     import config
@@ -504,3 +498,101 @@ def test_agent_task_combos_ignore_passive_wheel_events():
             widget.close()
             widget.deleteLater()
         app.processEvents()
+
+
+def test_agent_run_folder_actions_use_controlled_reveal_helper(tmp_path, monkeypatch):
+    """Both user-facing folder actions route through the guarded OS boundary."""
+    app = _qapp()
+
+    from core.agent.task_spec import AgentTaskSpec
+    from ui.agent import task_window
+
+    spec = AgentTaskSpec(
+        title="Folder actions",
+        objective="Open folders safely.",
+        scope_folder=str(tmp_path / "scope"),
+        sandbox_mode="workspace-write: scope folder only",
+        approval_policy="ask before escalation",
+        provider="openai",
+        model="gpt-5.5",
+        reasoning_effort="medium",
+        max_runtime_minutes=5,
+        max_turns=3,
+        allow_shell=False,
+        allow_network=False,
+        allow_git=False,
+        allow_file_create=False,
+        allow_file_edit=False,
+        allow_file_delete=False,
+    )
+    window = task_window.AgentRunWindow(spec)
+    run_dir = tmp_path / "run"
+    window._run_dir = str(run_dir)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        task_window,
+        "_reveal_local_folder",
+        lambda _parent, _title, path: calls.append(str(path)) or True,
+    )
+    try:
+        window._open_result_folder()
+        window._open_scope_folder()
+
+        assert calls == [str(run_dir), spec.scope_folder]
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("failure_mode", "expected"),
+    [
+        ("missing", "no longer exists"),
+        ("denied", "access denied"),
+        ("unavailable", "file manager unavailable"),
+        ("unsupported", "could not reveal"),
+    ],
+)
+def test_agent_folder_reveal_failures_are_controlled(
+    tmp_path, monkeypatch, failure_mode, expected
+):
+    """Missing paths, permission errors, and desktop backend failures stay controlled."""
+    _qapp()
+
+    from PySide6.QtWidgets import QWidget
+
+    from ui.agent import task_window
+
+    notices: list[str] = []
+    monkeypatch.setattr(
+        task_window.QMessageBox,
+        "warning",
+        lambda _parent, _title, message: notices.append(str(message)),
+    )
+    if failure_mode == "missing":
+        monkeypatch.setattr(task_window.Path, "exists", lambda _path: False)
+    elif failure_mode == "denied":
+        monkeypatch.setattr(
+            task_window.Path,
+            "exists",
+            lambda _path: (_ for _ in ()).throw(PermissionError("access denied")),
+        )
+    elif failure_mode == "unavailable":
+        monkeypatch.setattr(task_window.Path, "exists", lambda _path: True)
+        monkeypatch.setattr(
+            task_window.QDesktopServices,
+            "openUrl",
+            lambda _url: (_ for _ in ()).throw(OSError("file manager unavailable")),
+        )
+    else:
+        monkeypatch.setattr(task_window.Path, "exists", lambda _path: True)
+        monkeypatch.setattr(task_window.QDesktopServices, "openUrl", lambda _url: False)
+
+    parent = QWidget()
+    try:
+        assert task_window._reveal_local_folder(parent, "Open Folder", tmp_path) is False
+        assert notices and expected in notices[-1].lower()
+    finally:
+        parent.close()
+        parent.deleteLater()

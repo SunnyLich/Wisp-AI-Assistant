@@ -747,6 +747,87 @@ def test_optional_tts_installer_can_reinstall_packages(monkeypatch, tmp_path):
     assert calls == [(["elevenlabs==2.55.0"], True)]
 
 
+def test_shared_speech_optional_installer_failure_matrix_is_persisted(monkeypatch, tmp_path):
+    """ElevenLabs and live voice share one fail-closed staged installer boundary."""
+    from scripts import optional_tts_installer
+
+    monkeypatch.setattr(optional_tts_installer, "_remove_artifacts", lambda *_args: None)
+    monkeypatch.setattr(optional_tts_installer, "_remove_stale_install_artifacts", lambda *_args: None)
+    monkeypatch.setattr(optional_tts_installer, "_remove_duplicate_dist_infos", lambda *_args: None)
+    monkeypatch.setattr(optional_tts_installer, "_warn_duplicate_dist_infos", lambda *_args: None)
+
+    package_failures = (
+        "Network access is unavailable.",
+        "The package source is unavailable.",
+        "Available disk space is insufficient.",
+        "Filesystem permission is insufficient.",
+        "Dependency versions conflict.",
+    )
+    installers = (
+        ("ElevenLabs", "elevenlabs==2.55.0"),
+        ("Live voice", "google-genai==1.0.0"),
+        ("Kokoro", "kokoro==0.9.4"),
+        ("STT", "faster-whisper==1.2.1"),
+    )
+    for display_name, package in installers:
+        for index, failure in enumerate(package_failures):
+            plan_path = tmp_path / f"{display_name.lower().replace(' ', '-')}-{index}.json"
+            log_path = plan_path.with_suffix(".log")
+            status_path = plan_path.with_suffix(".status.json")
+            plan_path.write_text(
+                json.dumps(
+                    {
+                        "display_name": display_name,
+                        "packages": [package],
+                        "log_path": str(log_path),
+                        "status_path": str(status_path),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            monkeypatch.setattr(sys, "argv", ["optional_tts_installer.py", "--plan", str(plan_path)])
+            monkeypatch.setattr(
+                optional_tts_installer,
+                "_run_install_phase",
+                lambda *_args, failure=failure, **_kwargs: (1, failure),
+            )
+
+            assert optional_tts_installer.main() == 1
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            assert status["ok"] is False
+            assert status["message"] == failure
+
+        verification_plan = tmp_path / f"{display_name.lower().replace(' ', '-')}-verification.json"
+        verification_status = verification_plan.with_suffix(".status.json")
+        verification_plan.write_text(
+            json.dumps(
+                {
+                    "display_name": display_name,
+                    "packages": [package],
+                    "log_path": str(verification_plan.with_suffix(".log")),
+                    "status_path": str(verification_status),
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["optional_tts_installer.py", "--plan", str(verification_plan)],
+        )
+        monkeypatch.setattr(optional_tts_installer, "_run_install_phase", lambda *_args, **_kwargs: (0, ""))
+        monkeypatch.setattr(
+            optional_tts_installer,
+            "_post_install_result",
+            lambda *_args: (False, "Verification fails."),
+        )
+
+        assert optional_tts_installer.main() == 1
+        status = json.loads(verification_status.read_text(encoding="utf-8"))
+        assert status["ok"] is False
+        assert status["message"] == "Verification fails."
+
+
 def test_optional_tts_installer_warns_about_duplicate_dist_infos(monkeypatch, tmp_path):
     """Installer logs should surface duplicate optional package metadata."""
     from core import optional_deps
@@ -1511,6 +1592,44 @@ def test_optional_install_staged_apply_failure_keeps_restart_apply_status(monkey
     assert status["ok"] is False
     assert status["restart_apply"] is True
     assert "retry at the next restart" in status["message"]
+
+
+def test_optional_install_staged_apply_records_restart_launch_failure(monkeypatch, tmp_path):
+    """A failed replacement launch remains visible after Wisp has closed."""
+    from core import updater
+    from scripts import optional_tts_installer
+
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    status_path = tmp_path / "status.json"
+    log_path = tmp_path / "install.log"
+    plan_path = tmp_path / "install.apply-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "display_name": "STT",
+                "log_path": str(log_path),
+                "status_path": str(status_path),
+                "staging_path": str(staging),
+                "target_path": str(tmp_path / "python_packages"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(updater, "wait_for_wisp_exit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(optional_tts_installer, "_launch_apply_status_window", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(optional_tts_installer, "_apply_staging", lambda *_args: (_ for _ in ()).throw(PermissionError("locked")))
+    monkeypatch.setattr(
+        optional_tts_installer,
+        "_restart_wisp",
+        lambda *_args: (_ for _ in ()).throw(OSError("replacement launch failed")),
+    )
+
+    assert optional_tts_installer._run_staged_apply(plan_path) == 1
+
+    text = log_path.read_text(encoding="utf-8")
+    assert "Failed to reopen Wisp" in text
+    assert "replacement launch failed" in text
 
 
 def test_optional_install_staged_apply_consumes_staging_and_plan_on_success(monkeypatch, tmp_path):

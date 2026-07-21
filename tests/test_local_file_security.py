@@ -79,3 +79,39 @@ def test_all_live_file_tools_reject_parent_root_escape(tmp_path, monkeypatch, to
     assert approvals == []
     assert outside_file.read_text(encoding="utf-8") == "outside"
     assert not (outside / "created.txt").exists()
+
+
+def test_live_file_missing_blocked_locked_and_os_denied_faults_are_in_band(tmp_path, monkeypatch):
+    """Shared live-file faults return tool failures instead of escaping the runtime."""
+    root = tmp_path / "allowed"
+    root.mkdir()
+    note = root / "note.txt"
+    note.write_text("hello", encoding="utf-8")
+    blocked = root / "private.env"
+    blocked.write_text("secret", encoding="utf-8")
+    monkeypatch.setattr(config, "TOOL_FILE_ROOTS", [str(root)])
+    monkeypatch.setattr(config, "TOOL_FILE_BLOCKED_GLOBS", ["*.env"])
+
+    missing = execute_live_file_tool(
+        "read_file", {"path": str(root / "missing.txt")}, access_mode="read"
+    )
+    assert "failed" in missing.lower() and "missing.txt" in missing
+
+    denied = execute_live_file_tool(
+        "read_file", {"path": str(blocked)}, access_mode="read"
+    )
+    assert "failed" in denied.lower() and "blocked by globs" in denied
+
+    real_read_text = type(note).read_text
+
+    def locked_read_text(path, *args, **kwargs):
+        if path == note:
+            raise PermissionError("OS access denied: target is locked")
+        return real_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(note), "read_text", locked_read_text)
+    locked = execute_live_file_tool(
+        "read_file", {"path": str(note)}, access_mode="read"
+    )
+    assert "failed" in locked.lower()
+    assert "OS access denied" in locked and "locked" in locked

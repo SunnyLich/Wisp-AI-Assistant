@@ -8,9 +8,7 @@ from unittest import mock
 
 
 class CaptureTests(unittest.TestCase):
-    """Test case for capture tests behavior."""
     def setUp(self):
-        """Verify set up behavior."""
         fake_pyperclip = types.ModuleType("pyperclip")
         fake_pyperclip.paste = lambda: ""
         fake_pyperclip.copy = lambda _text: None
@@ -43,11 +41,9 @@ class CaptureTests(unittest.TestCase):
         self.capture = capture_module
 
     def tearDown(self):
-        """Verify tear down behavior."""
         self._modules_patch.stop()
 
     def test_get_selected_text_returns_none_when_clipboard_fallback_raises(self):
-        """Verify get selected text returns none when clipboard fallback raises behavior."""
         with mock.patch.object(self.capture, "_get_selected_text_uia", return_value=None), \
              mock.patch.object(self.capture, "_IS_LINUX", False), \
              mock.patch.object(self.capture, "_get_selected_text_clipboard", side_effect=RuntimeError("boom")):
@@ -181,7 +177,6 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(self.capture._get_selected_text_uia(), "selected text")
 
     def test_macos_selected_text_uses_native_helper(self):
-        """Verify macos selected text uses native helper behavior."""
         with mock.patch.object(self.capture, "_get_selected_text_uia", return_value=None), \
              mock.patch.object(self.capture, "_IS_LINUX", False), \
              mock.patch.object(self.capture, "_IS_MAC", True), \
@@ -192,7 +187,6 @@ class CaptureTests(unittest.TestCase):
         selected.assert_called_once_with("cmd+c")
 
     def test_macos_clipboard_text_uses_native_helper(self):
-        """Verify macos clipboard text uses native helper behavior."""
         with mock.patch.object(self.capture, "_IS_MAC", True), \
              mock.patch("core.platform.macos_native.get_clipboard_text", return_value=" pasted \n"), \
              mock.patch.object(self.capture.pyperclip, "paste", side_effect=AssertionError("no pyperclip on macOS")):
@@ -372,9 +366,7 @@ class CaptureTests(unittest.TestCase):
         self.assertTrue(calls.get("destroyed"))
 
     def test_macos_screen_snippet_uses_native_helper(self):
-        """Verify macos screen snippet uses native helper behavior."""
         class FakeImage:
-            """Test case for fake image behavior."""
             def __enter__(self):
                 """Enter the context manager."""
                 return self
@@ -384,7 +376,6 @@ class CaptureTests(unittest.TestCase):
                 return None
 
             def convert(self, mode):
-                """Verify convert behavior."""
                 return ("image", mode)
 
         fake_image_module = types.SimpleNamespace(open=lambda _path: FakeImage())
@@ -400,14 +391,11 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(calls[0][1], {"left": 1, "top": 2, "width": 3, "height": 4})
 
     def test_non_macos_screen_snippet_uses_mss(self):
-        """Verify non macos screen snippet uses mss behavior."""
         class FakeRaw:
-            """Test case for fake raw behavior."""
             size = (2, 1)
             bgra = b"\x00\x00\x00\x00" * 2
 
         class FakeMss:
-            """Test case for fake mss behavior."""
             monitors = [None, {"left": 0, "top": 0, "width": 2, "height": 1}]
 
             def __enter__(self):
@@ -419,7 +407,6 @@ class CaptureTests(unittest.TestCase):
                 return None
 
             def grab(self, monitor):
-                """Verify grab behavior."""
                 return FakeRaw()
 
         fake_mss = types.ModuleType("mss")

@@ -1,4 +1,4 @@
-"""Tests for macos py test flows."""
+"""Tests for the supervisor FlowController's query, voice, and snip flows."""
 
 from __future__ import annotations
 
@@ -15,18 +15,16 @@ from typing import Any
 import pytest
 
 import config
-from runtime.supervisor import tool_modes
+from runtime.supervisor import flow_estimates, tool_modes
 from runtime.supervisor.flows import FlowController, PendingInvocation
 
 
 class FakeWorker:
-    """Test case for fake worker behavior."""
     def __init__(
         self,
         handlers: dict[str, Any] | None = None,
         stream_handlers: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize the fake worker instance."""
         self.handlers = handlers or {}
         self.stream_handlers = stream_handlers or {}
         self.calls: list[dict[str, Any]] = []
@@ -40,7 +38,6 @@ class FakeWorker:
         timeout: float = 30.0,
         wait: bool = True,
     ) -> Any:
-        """Verify call behavior."""
         payload = params or {}
         self.calls.append({"method": method, "params": payload, "timeout": timeout, "wait": wait})
         handler = self.handlers.get(method)
@@ -57,7 +54,6 @@ class FakeWorker:
         on_event,
         on_started=None,
     ) -> Any:
-        """Verify call with events behavior."""
         payload = params or {}
         request_id = len(self.calls) + 1
         self.calls.append(
@@ -71,20 +67,16 @@ class FakeWorker:
         return self.handlers.get(method, lambda _params: {})(payload)
 
     def on_event(self, event: str, handler) -> None:
-        """Verify on event behavior."""
         self.events.setdefault(event, []).append(handler)
 
     def emit(self, event: str, data: Any = None) -> None:
-        """Verify emit behavior."""
         for handler in list(self.events.get(event, [])):
             handler(data or {}, None)
 
     def calls_for(self, method: str) -> list[dict[str, Any]]:
-        """Verify calls for behavior."""
         return [call for call in self.calls if call["method"] == method]
 
     def last_call(self, method: str) -> dict[str, Any]:
-        """Verify last call behavior."""
         calls = self.calls_for(method)
         assert calls, f"expected call {method!r}"
         return calls[-1]
@@ -92,11 +84,15 @@ class FakeWorker:
 
 @contextmanager
 def caller_config(rows: list[dict[str, Any]]):
-    """Verify caller config behavior."""
     old_rows = list(config.CALLER_ROWS)
     old_tts = getattr(config, "TTS_PROVIDER", "none")
     old_tts_speak_replies = getattr(config, "TTS_SPEAK_REPLIES", False)
-    config.CALLER_ROWS[:] = rows
+    # Missing fields must resolve to product defaults, not to the developer's
+    # currently selected profile. Explicit values in a scenario still win.
+    config.CALLER_ROWS[:] = [
+        {"context_memory_mode": "off", **row}
+        for row in rows
+    ]
     config.TTS_PROVIDER = "none"
     config.TTS_SPEAK_REPLIES = False
     try:
@@ -109,13 +105,12 @@ def caller_config(rows: list[dict[str, Any]]):
 
 @contextmanager
 def voice_config(row: dict[str, Any]):
-    """Verify voice config behavior."""
     old_row = dict(getattr(config, "VOICE_CALLER", {}))
     old_tts = getattr(config, "TTS_PROVIDER", "none")
     old_tts_speak_replies = getattr(config, "TTS_SPEAK_REPLIES", False)
     old_voice_review_transcript = getattr(config, "VOICE_REVIEW_TRANSCRIPT", False)
     config.VOICE_CALLER.clear()
-    config.VOICE_CALLER.update(row)
+    config.VOICE_CALLER.update({"context_memory_mode": "off", **row})
     config.TTS_PROVIDER = "none"
     config.TTS_SPEAK_REPLIES = False
     config.VOICE_REVIEW_TRANSCRIPT = False
@@ -136,7 +131,7 @@ def snip_config(row: dict[str, Any]):
     old_tts = getattr(config, "TTS_PROVIDER", "none")
     old_tts_speak_replies = getattr(config, "TTS_SPEAK_REPLIES", False)
     config.SNIP_CALLER.clear()
-    config.SNIP_CALLER.update(row)
+    config.SNIP_CALLER.update({"context_memory_mode": "off", **row})
     config.TTS_PROVIDER = "none"
     config.TTS_SPEAK_REPLIES = False
     try:
@@ -155,7 +150,6 @@ def make_flow(
     brain: FakeWorker | None = None,
     audio: FakeWorker | None = None,
 ) -> tuple[FlowController, FakeWorker, FakeWorker, FakeWorker, FakeWorker]:
-    """Verify make flow behavior."""
     native = native or FakeWorker()
     ui = ui or FakeWorker()
     brain = brain or FakeWorker()
@@ -238,9 +232,7 @@ def context_handler(
     focus_token: int = 0,
     selected_paths: list[str] | None = None,
 ):
-    """Verify context handler behavior."""
     def handler(params: dict[str, Any]) -> dict[str, Any]:
-        """Verify handler behavior."""
         result = {
             "selected_text": selected,
             "clipboard_text": clipboard,
@@ -258,9 +250,7 @@ def context_handler(
 
 
 def browser_context_handler(selected: str = "selected"):
-    """Verify browser context handler behavior."""
     def handler(params: dict[str, Any]) -> dict[str, Any]:
-        """Verify handler behavior."""
         result = {
             "selected_text": selected,
             "clipboard_text": "",
@@ -307,9 +297,7 @@ def test_wayland_accessibility_text_falls_back_for_browser_content():
 
 
 def query_stream(reply: str = "reply"):
-    """Verify query stream behavior."""
     def handler(_params: dict[str, Any], on_event) -> dict[str, Any]:
-        """Verify handler behavior."""
         on_event("reply.chunk", {"text": reply}, 1)
         on_event("reply.done", {"text": reply}, 1)
         return {"text": reply}
@@ -318,9 +306,7 @@ def query_stream(reply: str = "reply"):
 
 
 def rewrite_stream(replacement: str = "replacement", visible: str = ""):
-    """Verify rewrite stream behavior."""
     def handler(_params: dict[str, Any], on_event) -> dict[str, Any]:
-        """Verify handler behavior."""
         if visible:
             on_event("reply.chunk", {"text": visible}, 1)
         on_event("reply.done", {"text": replacement, "visible_text": visible}, 1)
@@ -330,7 +316,6 @@ def rewrite_stream(replacement: str = "replacement", visible: str = ""):
 
 
 def test_caller_hotkey_collects_context_and_shows_intent():
-    """Verify caller hotkey collects context and shows intent behavior."""
     rows = [
         {
             "paste_back": False,
@@ -1240,7 +1225,6 @@ def test_intent_off_context_sources_keep_available_estimates():
 
 
 def test_begin_caller_reloads_supervisor_config_when_env_changed(monkeypatch):
-    """Verify begin caller reloads supervisor config when env changed behavior."""
     rows = [
         {
             "paste_back": False,
@@ -1258,7 +1242,6 @@ def test_begin_caller_reloads_supervisor_config_when_env_changed(monkeypatch):
     monkeypatch.setattr(FlowController, "_current_config_mtime", staticmethod(lambda: next(mtimes)))
 
     def reload_config() -> None:
-        """Verify reload config behavior."""
         reload_calls.append("reload")
         config.CALLER_ROWS[:] = updated_rows
 
@@ -1278,7 +1261,6 @@ def test_begin_caller_reloads_supervisor_config_when_env_changed(monkeypatch):
 
 
 def test_bubble_speed_event_forwards_to_audio_worker():
-    """Verify bubble speed event forwards to audio worker behavior."""
     _flow, _native, ui, _brain, audio = make_flow()
 
     ui.emit("ui.bubble.speed", {"enabled": True})
@@ -1308,7 +1290,6 @@ def test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue():
 
 
 def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
-    """Verify query flow streams reply and adds chat conversation with context behavior."""
     rows = [
         {
             "paste_back": False,
@@ -1393,6 +1374,7 @@ def test_query_flow_persists_image_only_assistant_result():
         "is_progress": True,
         "is_thought": False,
     }
+    assert ui.last_call("ui.reply.image")["params"] == {"attachments": [attachment]}
 
 
 def test_query_flow_streams_reply_into_open_chat_conversation():
@@ -1471,7 +1453,6 @@ def test_query_bubble_forwards_reply_text_annotations():
 
 
 def test_add_context_shows_panel_badge_not_bubble():
-    """Verify add context shows panel badge not bubble behavior."""
     native = FakeWorker({"native.context.snapshot": context_handler(selected="hello world selection")})
     with caller_config([{}]):
         flow, native, ui, brain, _audio = make_flow(native=native)
@@ -1486,7 +1467,6 @@ def test_add_context_shows_panel_badge_not_bubble():
 
 
 def test_add_context_without_text_falls_back_to_notice():
-    """Verify add context without text falls back to notice behavior."""
     native = FakeWorker({"native.context.snapshot": context_handler(selected="", clipboard="")})
     with caller_config([{}]):
         flow, native, ui, brain, _audio = make_flow(native=native)
@@ -1635,7 +1615,37 @@ def test_read_selection_aloud_without_selection_shows_notice(monkeypatch):
 
     assert not brain.calls_for("brain.query")
     assert not audio.calls_for("audio.tts.synthesize")
-    assert ui.last_call("ui.reply.notice")["params"]["text"] == "No selected text to read aloud."
+    assert ui.last_call("ui.reply.notice")["params"]["text"] == (
+        "No selected text to read aloud.\n\n"
+        "Recommendation: select the source text or enable a context source, then retry."
+    )
+
+
+def test_read_selection_aloud_selection_failure_matrix_is_controlled(monkeypatch):
+    """Accessibility selection faults stop before synthesis and show an error."""
+    monkeypatch.setattr(config, "TTS_PROVIDER", "kokoro", raising=False)
+    faults = (
+        RuntimeError("focus moved"),
+        RuntimeError("target control does not expose accessible text"),
+        PermissionError("OS permission is missing"),
+        RuntimeError("target application is unsupported"),
+        NotImplementedError("platform backend is unsupported"),
+    )
+    for fault in faults:
+        native = FakeWorker(
+            {
+                "native.context.snapshot": lambda _params, fault=fault: (
+                    _ for _ in ()
+                ).throw(fault)
+            }
+        )
+        flow, _native, ui, brain, audio = make_flow(native=native)
+        flow.read_selection_aloud()
+        assert not brain.calls_for("brain.query")
+        assert not audio.calls_for("audio.tts.synthesize")
+        notice = ui.last_call("ui.reply.notice")["params"]
+        assert notice["severity"] == "error"
+        assert "Could not read selected text" in notice["text"]
 
 
 def test_read_selection_aloud_native_hotkey_routes_to_tts(monkeypatch):
@@ -1657,7 +1667,6 @@ def test_read_selection_aloud_native_hotkey_routes_to_tts(monkeypatch):
 
 
 def test_clear_context_empties_panel_without_bubble():
-    """Verify clear context empties panel without bubble behavior."""
     native = FakeWorker({"native.context.snapshot": context_handler(selected="some text")})
     with caller_config([{}]):
         flow, native, ui, brain, _audio = make_flow(native=native)
@@ -1668,8 +1677,42 @@ def test_clear_context_empties_panel_without_bubble():
     assert flow._drop_context_items == []
 
 
+def test_clear_context_failure_matrix_always_clears_local_state():
+    """Missing state and UI/storage-style cleanup faults cannot retain context."""
+    failures = (
+        FileNotFoundError("target required by this function is missing"),
+        PermissionError("target required by this function is locked"),
+        PermissionError("required elevation is denied"),
+        PermissionError("storage access is denied"),
+        OSError("another process is using the files"),
+        OSError("cleanup only partly completes"),
+    )
+
+    # The clear action itself is the user's confirmation.  It must also be safe
+    # when there is nothing to remove.
+    empty_flow, _native, _ui, _brain, _audio = make_flow()
+    empty_flow.clear_context()
+    assert empty_flow._context_buffer == []
+    assert empty_flow._drop_context_items == []
+
+    for failure in failures:
+        def fail_clear(_params, error=failure):
+            raise error
+
+        ui = FakeWorker({"ui.context.clear": fail_clear})
+        flow, _native, _ui, _brain, _audio = make_flow(ui=ui)
+        flow._context_buffer.extend([{"type": "text", "content": "selected"}])
+        flow._drop_context_items.extend([{"type": "text", "content": "dropped"}])
+        flow._pending_context_capture = {"caller": 0}
+
+        flow.clear_context()
+
+        assert flow._context_buffer == []
+        assert flow._drop_context_items == []
+        assert flow._pending_context_capture is None
+
+
 def test_context_modes_map_to_auto_documents_and_allowed_tools():
-    """Verify context modes map to auto documents and allowed tools behavior."""
     rows = [
         {
             "paste_back": False,
@@ -1733,6 +1776,98 @@ def test_context_tool_off_overrides_suppress_context_mode_grants():
     assert tool_modes.screenshot_tool_allowed(caller) is False
 
 
+def test_context_policy_failure_contract_fails_closed_at_runtime_boundary():
+    """Exercise every shared context-policy cause through runtime-owned boundaries."""
+    from core.query_pipeline import (
+        MAX_CAPTURED_CONTEXT_CHARS,
+        ContextInputs,
+        build_context,
+    )
+
+    disabled = {
+        "context_ambient": False,
+        "context_documents_mode": "off",
+        "context_browser_mode": "off",
+        "context_github_mode": "off",
+        "context_memory_mode": "off",
+        "context_screenshot": "off",
+        "context_clipboard": False,
+        "file_access": "off",
+        "tools": {},
+    }
+    flow, native, _ui, _brain, _audio = make_flow()
+    assert flow._allowed_model_tools(disabled) == []
+    assert flow._screenshot_tool_allowed(disabled) is False
+    assert not native.calls_for("native.context.snapshot")
+
+    for failure in (
+        RuntimeError("context source unavailable"),
+        PermissionError("context capture permission missing"),
+    ):
+        def failed_snapshot(_params, failure=failure):
+            raise failure
+
+        native = FakeWorker({"native.context.snapshot": failed_snapshot})
+        with caller_config([disabled]):
+            flow, _native, ui, _brain, _audio = make_flow(native=native)
+            flow.begin_caller(0)
+        assert flow._pending is not None
+        assert not any(flow._pending.context.values())
+        assert ui.calls_for("ui.show_intent")
+
+    native = FakeWorker({"native.context.snapshot": lambda _params: {}})
+    with caller_config([disabled]):
+        flow, _native, ui, _brain, _audio = make_flow(native=native)
+        flow.begin_caller(0)
+    assert flow._pending is not None
+    assert not any(flow._pending.context.values())
+    assert ui.calls_for("ui.show_intent")
+
+    stale_snapshot = {
+        "selected_text": "",
+        "stale_selected_text": "selection from an earlier capture",
+        "clipboard_text": "",
+        "active_app": {"name": "Editor", "pid": 42},
+        "platform": "linux",
+    }
+    native = FakeWorker({"native.context.snapshot": lambda _params: dict(stale_snapshot)})
+    with caller_config([disabled]):
+        flow, _native, ui, _brain, _audio = make_flow(native=native)
+        flow.begin_caller(0)
+    selection = next(
+        item
+        for item in ui.last_call("ui.show_intent")["params"]["context_items"]
+        if item["id"] == "selection"
+    )
+    assert selection["state"] == "off"
+    assert selection["stale"] is True
+
+    invalid_policy = {
+        **disabled,
+        "context_documents_mode": "corrupt",
+        "context_browser_mode": {"not": "a mode"},
+        "context_github_mode": 17,
+        "tools": {"web_search": "unknown", "": "on"},
+    }
+    assert tool_modes.context_mode(invalid_policy, "documents") == "off"
+    assert tool_modes.context_mode(invalid_policy, "browser") == "off"
+    assert tool_modes.context_mode(invalid_policy, "github") == "off"
+    assert tool_modes.tool_overrides(invalid_policy) == {}
+    assert tool_modes.allowed_model_tools(invalid_policy) == []
+
+    built = build_context(
+        ContextInputs(
+            intent_prompt="summarize",
+            ambient_text="a" * MAX_CAPTURED_CONTEXT_CHARS,
+            clipboard_text="b" * MAX_CAPTURED_CONTEXT_CHARS,
+            selected="c" * MAX_CAPTURED_CONTEXT_CHARS,
+            trust_privacy_mode=False,
+        )
+    )
+    assert len(built.ambient_ctx) <= MAX_CAPTURED_CONTEXT_CHARS
+    assert built.ambient_ctx.endswith("[captured context truncated at safety limit]")
+
+
 def test_document_model_mode_preview_does_not_inject_active_document():
     """Verify model-mode document preview does not frontload document text."""
     rows = [
@@ -1768,7 +1903,6 @@ def test_document_model_mode_preview_does_not_inject_active_document():
 
 
 def test_context_modes_map_on_browser_and_git_to_frontloaded_context():
-    """Verify context modes map on browser and git to frontloaded context behavior."""
     rows = [
         {
             "paste_back": False,
@@ -1870,7 +2004,6 @@ def test_query_begins_chat_conversation_before_tool_enabled_brain_call():
 
 
 def test_browser_url_captured_at_hotkey_time_fetches_content_by_handle():
-    """Verify browser url captured at hotkey time fetches content by handle behavior."""
     rows = [
         {
             "paste_back": False,
@@ -1885,7 +2018,6 @@ def test_browser_url_captured_at_hotkey_time_fetches_content_by_handle():
     ]
 
     def snapshot_handler(params: dict[str, Any]) -> dict[str, Any]:
-        """Verify snapshot handler behavior."""
         result = {
             "selected_text": "",
             "clipboard_text": "",
@@ -1940,7 +2072,6 @@ def test_browser_url_captured_at_hotkey_time_fetches_content_by_handle():
 
 
 def test_browser_hwnd_without_url_fetches_content_by_handle():
-    """Verify browser hwnd without url fetches content by handle behavior."""
     rows = [
         {
             "paste_back": False,
@@ -2013,7 +2144,6 @@ def test_browser_app_captured_at_hotkey_time_fetches_text_via_applescript():
     ]
 
     def snapshot_handler(params: dict[str, Any]) -> dict[str, Any]:
-        """Verify snapshot handler behavior."""
         result = {
             "platform": "darwin",
             "selected_text": "",
@@ -2420,7 +2550,6 @@ def test_intent_app_preview_lists_multiple_active_document_sources():
 
 
 def test_context_priority_marks_browser_when_browser_was_active():
-    """Verify context priority marks browser when browser was active behavior."""
     rows = [
         {
             "paste_back": False,
@@ -2435,7 +2564,6 @@ def test_context_priority_marks_browser_when_browser_was_active():
     ]
 
     def snapshot_handler(params: dict[str, Any]) -> dict[str, Any]:
-        """Verify snapshot handler behavior."""
         result = {
             "selected_text": "",
             "clipboard_text": "",
@@ -2469,7 +2597,6 @@ def test_context_priority_marks_browser_when_browser_was_active():
 
 
 def test_context_priority_marks_document_when_browser_was_background_context():
-    """Verify context priority marks document when browser was background context behavior."""
     rows = [
         {
             "paste_back": False,
@@ -2484,7 +2611,6 @@ def test_context_priority_marks_document_when_browser_was_background_context():
     ]
 
     def snapshot_handler(params: dict[str, Any]) -> dict[str, Any]:
-        """Verify snapshot handler behavior."""
         result = {
             "selected_text": "",
             "clipboard_text": "",
@@ -2518,7 +2644,6 @@ def test_context_priority_marks_document_when_browser_was_background_context():
 
 
 def test_active_document_auto_fetches_before_query_and_summary():
-    """Verify active document auto fetches before query and summary behavior."""
     rows = [
         {
             "paste_back": False,
@@ -2558,7 +2683,6 @@ def test_active_document_auto_fetches_before_query_and_summary():
 
 
 def test_active_document_request_includes_hotkey_time_window():
-    """Verify active document request includes hotkey time window behavior."""
     rows = [
         {
             "paste_back": False,
@@ -2615,7 +2739,6 @@ def test_active_document_request_includes_hotkey_time_window():
 
 
 def test_active_document_request_prefers_captured_macos_window_title():
-    """Verify active document request prefers captured macos window title behavior."""
     rows = [
         {
             "paste_back": False,
@@ -2722,7 +2845,6 @@ def test_no_tts_reply_done_lets_wpm_reveal_drain():
     # With TTS off, reply.done must NOT flush the bubble: the WPM reveal keeps
     # pacing the text (flush=False), instead of the full reply slamming in the
     # moment the LLM finishes streaming.
-    """Verify no tts reply done lets wpm reveal drain behavior."""
     rows = [
         {
             "paste_back": False,
@@ -2990,7 +3112,6 @@ def test_thought_chunks_show_without_becoming_final_answer():
 
 
 def test_model_screenshot_mode_precaptures_through_native_worker():
-    """Verify model screenshot mode precaptures through native worker behavior."""
     image_bytes = b"fake screenshot"
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(image_bytes)
@@ -3027,8 +3148,38 @@ def test_model_screenshot_mode_precaptures_through_native_worker():
     assert query["screenshot_tool_b64"] == base64.b64encode(image_bytes).decode("ascii")
 
 
+def test_capture_worker_unavailable_does_not_escape_caller_workflow():
+    """A denied or dead capture worker must leave screenshot context empty."""
+    def denied(_params):
+        raise PermissionError("screen-recording permission missing")
+
+    rows = [
+        {
+            "paste_back": False,
+            "context_screenshot": "auto",
+            "context_documents_mode": "off",
+            "context_browser_mode": "off",
+            "context_github_mode": "off",
+            "context_memory_mode": "off",
+        }
+    ]
+    native = FakeWorker(
+        {
+            "native.context.snapshot": context_handler(selected=""),
+            "native.capture.fullscreen": denied,
+        }
+    )
+    with caller_config(rows):
+        flow, _native, ui, _brain, _audio = make_flow(native=native)
+        flow.begin_caller(0)
+
+    assert flow._pending is not None
+    assert flow._pending.screenshot_b64 is None
+    assert ui.calls_for("ui.show_intent")
+    assert flow._capture_model_tool_b64() == ""
+
+
 def test_auto_screenshot_mode_captures_even_with_selected_text():
-    """Verify auto screenshot mode captures even with selected text behavior."""
     image_bytes = b"selected plus screenshot"
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(image_bytes)
@@ -3582,22 +3733,18 @@ def test_caller_screenshot_precaptures_before_intent_overlay(monkeypatch):
     ]
 
     def context(_params: dict[str, Any]) -> dict[str, Any]:
-        """Verify context behavior."""
         order.append("context")
         return context_handler(selected="")(_params)
 
     def capture(_params: dict[str, Any]) -> dict[str, Any]:
-        """Verify capture behavior."""
         order.append("capture")
         return {"ok": True, "path": str(image_path)}
 
     def overlay_state(_params: dict[str, Any]) -> dict[str, Any]:
-        """Verify overlay behavior."""
         order.append("overlay_state")
         return {}
 
     def show_intent(_params: dict[str, Any]) -> dict[str, Any]:
-        """Verify picker behavior."""
         order.append("show_intent")
         return {}
 
@@ -3708,7 +3855,6 @@ def test_intent_cancel_stops_prefetch_before_browser_fetch():
 
 
 def test_query_failure_reports_notice_and_returns_idle():
-    """Verify query failure reports notice and returns idle behavior."""
     rows = [
         {
             "paste_back": False,
@@ -3721,7 +3867,6 @@ def test_query_failure_reports_notice_and_returns_idle():
     ]
 
     def fail_query(_params: dict[str, Any], _on_event) -> dict[str, Any]:
-        """Verify fail query behavior."""
         raise RuntimeError("ValueError: LLM route uses 'google', but its API key is not configured.")
 
     native = FakeWorker({"native.context.snapshot": context_handler()})
@@ -3738,8 +3883,95 @@ def test_query_failure_reports_notice_and_returns_idle():
     assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"
 
 
+def test_builtin_intent_actions_failure_matrix_is_controlled():
+    """All built-in answer actions share the same guarded request lifecycle."""
+    prompts = (
+        "What is this?",
+        "Explain simply",
+        "How do I fix this?",
+        "Fix grammar",
+        "Simplify",
+        "Improve tone",
+        "Custom prompt",
+    )
+    query_row = {
+        "paste_back": False,
+        "context_ambient": False,
+        "context_documents_mode": "off",
+        "context_browser_mode": "off",
+        "context_memory_mode": "off",
+        "context_screenshot": "off",
+        "context_clipboard": False,
+        "file_access": "off",
+        "tools": {},
+    }
+    rewrite_row = {**query_row, "paste_back": True}
+
+    for prompt in prompts:
+        # Empty user selection and empty optional context remain a valid,
+        # bounded request instead of crashing before the route boundary.
+        native = FakeWorker({"native.context.snapshot": context_handler(selected="", clipboard="")})
+        brain = FakeWorker(stream_handlers={"brain.query": query_stream("answer")})
+        with caller_config([query_row]):
+            flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+            flow.intent_chosen(prompt)
+        sent = brain.last_call("brain.query")["params"]
+        assert sent["intent_prompt"] == prompt
+        assert sent["selected"] == ""
+        assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"
+
+        for fault in (
+            RuntimeError("configured route fails"),
+            ConnectionError("network request fails"),
+        ):
+            def fail(_params: dict[str, Any], _on_event, fault=fault):
+                raise fault
+
+            brain = FakeWorker(stream_handlers={"brain.query": fail})
+            with caller_config([query_row]):
+                flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+                flow.intent_chosen(prompt)
+            assert str(fault) in ui.last_call("ui.reply.notice")["params"]["text"]
+            assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"
+
+        with caller_config([query_row]):
+            flow, _native, ui, brain, _audio = make_flow(native=native)
+            flow.begin_caller(0)
+            ui.emit("ui.intent.cancelled", {})
+        assert flow._pending is None
+        assert not brain.calls_for("brain.query")
+
+        def render_failure(_params: dict[str, Any]):
+            raise RuntimeError("result cannot be rendered")
+
+        ui = FakeWorker({"ui.reply.chunk": render_failure})
+        brain = FakeWorker(stream_handlers={"brain.query": query_stream("rendered answer")})
+        with caller_config([query_row]):
+            flow, _native, ui, _brain, _audio = make_flow(native=native, ui=ui, brain=brain)
+            flow.intent_chosen(prompt)
+        assert ui.last_call("ui.overlay.state")["params"]["state"] == "idle"
+
+        paste_native = FakeWorker(
+            {
+                "native.context.snapshot": context_handler(selected="rewrite me", pid=77, focus_token=8),
+                "native.paste_text": lambda _params: {
+                    "ok": False,
+                    "clipboard_ok": False,
+                    "error": "result cannot be pasted into target application",
+                },
+            }
+        )
+        brain = FakeWorker(
+            stream_handlers={"brain.rewrite": rewrite_stream("replacement", "Replacement pasted.")}
+        )
+        with caller_config([rewrite_row]):
+            flow, paste_native, _ui, _brain, _audio = make_flow(native=paste_native, brain=brain)
+            flow.intent_chosen(prompt)
+        notification = paste_native.last_call("native.notify")["params"]
+        assert "rewrite failed" in notification["title"].lower()
+
+
 def test_rewrite_flow_pastes_back_to_original_pid():
-    """Verify rewrite flow pastes back to original pid behavior."""
     rows = [
         {
             "paste_back": False,
@@ -3978,7 +4210,6 @@ def test_rewrite_does_not_treat_clipboard_only_paste_as_success():
 
 
 def test_rewrite_failure_reports_notice_and_returns_idle():
-    """Verify rewrite failure reports notice and returns idle behavior."""
     rows = [
         {
             "paste_back": True,
@@ -3991,7 +4222,6 @@ def test_rewrite_failure_reports_notice_and_returns_idle():
     ]
 
     def fail_rewrite(_params: dict[str, Any], _on_event) -> dict[str, Any]:
-        """Verify fail rewrite behavior."""
         raise RuntimeError("ValueError: LLM route uses 'google', but its API key is not configured.")
 
     native = FakeWorker({"native.context.snapshot": context_handler(selected="bad grammar")})
@@ -4009,7 +4239,6 @@ def test_rewrite_failure_reports_notice_and_returns_idle():
 
 
 def test_snip_region_captures_file_and_queries_with_image():
-    """Verify snip region captures file and queries with image behavior."""
     image_bytes = b"not really a png but enough for base64"
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(image_bytes)
@@ -4105,7 +4334,6 @@ def test_snip_region_uses_snip_context_without_extra_screenshot_tool():
 
 
 def test_voice_flow_records_transcribes_and_queries():
-    """Verify voice flow records transcribes and queries behavior."""
     rows = [
         {
             "paste_back": False,
@@ -4177,12 +4405,10 @@ def test_voice_review_transcript_opens_intent_overlay_before_query():
 
 
 def test_voice_start_starts_recording_before_context_capture():
-    """Verify voice start starts recording before context capture behavior."""
     audio = FakeWorker()
     native = FakeWorker()
 
     def snapshot(_params):
-        """Verify snapshot behavior."""
         assert audio.calls_for("audio.record.start")
         return context_handler(selected="")(_params)
 
@@ -4227,7 +4453,6 @@ def test_voice_start_does_not_show_recording_bubble_when_recorder_reports_false(
 
 
 def test_voice_start_key_repeat_is_ignored_until_release():
-    """Verify voice start key repeat is ignored until release behavior."""
     native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
     audio = FakeWorker({"audio.record.stop_transcribe": lambda _params: {"text": ""}})
     _flow, native, ui, _brain, audio = make_flow(native=native, audio=audio)
@@ -4260,11 +4485,9 @@ def test_voice_start_failure_ignores_key_repeat_until_release():
 
 
 def test_voice_stop_leaves_recording_bubble_before_transcribing():
-    """Verify voice stop leaves recording bubble before transcribing behavior."""
     ui = FakeWorker()
 
     def transcribe(_params):
-        """Verify transcribe behavior."""
         assert ui.last_call("ui.overlay.state")["params"]["state"] == "thinking"
         assert ui.calls_for("ui.reply.thinking")
         return {"text": ""}
@@ -4286,7 +4509,6 @@ def test_voice_stop_leaves_recording_bubble_before_transcribing():
 
 
 def test_voice_flow_uses_voice_caller_config():
-    """Verify voice flow uses voice caller config behavior."""
     voice_row = {
         "label": "Voice",
         "paste_back": False,
@@ -4446,7 +4668,6 @@ def test_dictation_transcript_confirmation_cancel_skips_paste(monkeypatch):
 
 
 def test_caller_tool_overrides_reach_brain_query():
-    """Verify caller tool overrides reach brain query behavior."""
     rows = [
         {
             "paste_back": False,
@@ -4619,7 +4840,6 @@ def test_settings_setup_check_uses_fast_static_rows(monkeypatch):
 
 
 def test_off_tool_override_beats_context_dropdown():
-    """Verify off tool override beats context dropdown behavior."""
     rows = [
         {
             "paste_back": False,
@@ -4661,7 +4881,6 @@ def test_off_tool_override_beats_context_dropdown():
 
 
 def test_chat_request_streams_through_brain_chat():
-    """Verify chat request streams through brain chat behavior."""
     brain = FakeWorker(stream_handlers={"brain.chat": query_stream("chat reply")})
     _flow, native, ui, brain, _audio = make_flow(brain=brain)
 
@@ -4675,6 +4894,34 @@ def test_chat_request_streams_through_brain_chat():
     done_params = ui.last_call("ui.chat.done")["params"]
     assert done_params["request_id"] == "chat-1"
     assert done_params["text"] == "chat reply"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("configured model failed"),
+        RuntimeError("configured tool failed"),
+    ],
+    ids=["model", "tool"],
+)
+def test_chat_runtime_model_and_tool_failures_end_as_controlled_errors(failure):
+    """The shared chat workflow closes failed model/tool turns without a false result."""
+
+    def fail(_params: dict[str, Any], _on_event):
+        raise failure
+
+    brain = FakeWorker(stream_handlers={"brain.chat": fail})
+    _flow, _native, ui, _brain, _audio = make_flow(brain=brain)
+
+    ui.emit(
+        "ui.chat.request",
+        {"request_id": "chat-failure", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    error = ui.last_call("ui.chat.error")["params"]
+    assert error["request_id"] == "chat-failure"
+    assert str(failure) in error["error"]
+    assert not ui.calls_for("ui.chat.done")
 
 
 def test_chat_request_forwards_remote_activity_transcript_to_chat_window():
@@ -4812,6 +5059,60 @@ def test_chat_context_preview_updates_token_estimates_before_send():
     }
 
 
+def test_context_estimate_failure_matrix_uses_fallbacks_and_refreshes_before_send():
+    """Exercise deferred, unknown-tokenizer, capture, and stale-preview faults."""
+    assert flow_estimates.deferred_token_label() == "? tok"
+    # Estimates deliberately use the local heuristic, so neither a tokenizer nor
+    # a provider/model identity is required for a safe preview.
+    assert flow_estimates.token_label("text without model metadata").startswith("~")
+
+    broken_native = FakeWorker(
+        {"native.context.snapshot": lambda _params: (_ for _ in ()).throw(OSError("capture failed"))}
+    )
+    _flow, _native, broken_ui, _brain, _audio = make_flow(native=broken_native)
+    broken_ui.emit(
+        "ui.chat.context_preview",
+        {"preview_id": "capture-failed", "context_policy": {"context_clipboard": True}},
+    )
+    assert broken_ui.last_call("ui.chat.context_preview")["params"]["preview_id"] == "capture-failed"
+
+    snapshots = iter(("stale preview text", "fresh send text"))
+    native = FakeWorker(
+        {
+            "native.context.snapshot": lambda _params: {
+                "selected_text": "",
+                "clipboard_text": next(snapshots),
+                "active_app": {},
+            }
+        }
+    )
+    brain = FakeWorker(stream_handlers={"brain.chat": query_stream("reply")})
+    _flow, _native, ui, brain, _audio = make_flow(native=native, brain=brain)
+    policy = {
+        "context_ambient": False,
+        "context_documents_mode": "off",
+        "context_browser_mode": "off",
+        "context_github_mode": "off",
+        "context_memory_mode": "off",
+        "context_screenshot": "off",
+        "context_clipboard": True,
+        "file_access": "off",
+        "tools": {},
+    }
+    ui.emit("ui.chat.context_preview", {"preview_id": "stale", "context_policy": policy})
+    ui.emit(
+        "ui.chat.request",
+        {
+            "request_id": "fresh-context",
+            "messages": [{"role": "user", "content": "send"}],
+            "context_policy": policy,
+        },
+    )
+    sent = "\n".join(str(item.get("content") or "") for item in brain.last_call("brain.chat")["params"]["messages"])
+    assert "fresh send text" in sent
+    assert "stale preview text" not in sent
+
+
 def test_chat_context_preview_treats_legacy_browser_on_as_enabled():
     """Verify legacy chat Browser/Web on mode refreshes token estimates."""
     native = FakeWorker(
@@ -4914,7 +5215,7 @@ def test_chat_context_preview_estimates_off_context_sources_without_capture():
     native = FakeWorker(
         {
             "native.context.snapshot": lambda _params: {
-                "selected_text": "api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+                "selected_text": "api_key = sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",  # secret-scan: allow
                 "clipboard_text": "password=supersecret",
                 "active_app": {"name": "Preview App", "pid": 42, "bundle_id": "com.preview"},
                 "screen_size": {"width": 1920, "height": 1080},
@@ -5278,7 +5579,6 @@ def test_chat_live_file_approval_routes_to_ui_and_brain():
 
 
 def test_icon_summon_routes_to_first_caller_like_default_hotkey():
-    """Verify icon summon routes to first caller like default hotkey behavior."""
     rows = [
         {
             "paste_back": False,
@@ -5396,7 +5696,6 @@ def test_hotkey_followup_keeps_current_tools_separate_from_active_chat_tools():
 
 
 def test_caller_memory_modes_map_to_injected_or_model_decided_access():
-    """Verify caller memory modes map to injected or model decided access behavior."""
     rows = [
         {
             "paste_back": False,
@@ -5447,7 +5746,6 @@ def test_caller_memory_modes_map_to_injected_or_model_decided_access():
 
 
 def test_memory_events_route_to_brain_and_seed_ui_viewer():
-    """Verify memory events route to brain and seed ui viewer behavior."""
     brain = FakeWorker({"brain.memory.list": lambda _params: {"facts": [{"id": "1", "text": "remember"}]}})
     _flow, native, ui, brain, _audio = make_flow(brain=brain)
 
@@ -5494,7 +5792,6 @@ def test_settings_open_includes_live_addon_tools():
 
 
 def test_addon_and_agent_tray_events_route_through_supervisor():
-    """Verify addon and agent tray events route through supervisor behavior."""
     brain = FakeWorker(
         {
             "brain.addons.list": lambda _params: {
@@ -5536,9 +5833,7 @@ def test_addon_and_agent_tray_events_route_through_supervisor():
 
 
 def test_agent_run_request_streams_through_brain_agent_run():
-    """Verify agent run request streams through brain agent run behavior."""
     def agent_stream(params: dict[str, Any], on_event) -> dict[str, Any]:
-        """Verify agent stream behavior."""
         assert params["spec"]["title"] == "demo task"
         on_event("agent.log", {"line": "started"}, 1)
         on_event("agent.trace", {"entry": "trace"}, 1)
@@ -5587,11 +5882,9 @@ def test_agent_approval_request_declines_when_ui_cannot_accept():
 
 
 def test_agent_approval_and_cancel_route_to_brain():
-    """Verify agent approval and cancel route to brain behavior."""
     held_on_event = {}
 
     def agent_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
-        """Verify agent stream behavior."""
         held_on_event["handler"] = on_event
         return {"run_dir": "/tmp/run", "cancelled": True}
 
@@ -5645,7 +5938,6 @@ def test_agent_pause_nudge_and_permissions_route_to_active_brain_run():
 
 
 def test_agent_history_routes_read_retry_and_continue_specs():
-    """Verify agent history routes read retry and continue specs behavior."""
     brain = FakeWorker(
         {
             "brain.agent.history.list": lambda _params: {
@@ -5677,7 +5969,6 @@ def test_agent_history_routes_read_retry_and_continue_specs():
 
 
 def test_settings_reload_refreshes_supervisor_brain_audio_and_hotkeys(monkeypatch):
-    """Verify settings reload refreshes supervisor brain audio and hotkeys behavior."""
     reload_calls: list[str] = []
     monkeypatch.setattr(config, "reload", lambda: reload_calls.append("supervisor"))
     _flow, native, ui, brain, audio = make_flow()
@@ -5741,7 +6032,6 @@ def test_settings_reload_prewarms_new_codex_execution_mode(monkeypatch):
 
 
 def test_start_hotkeys_surfaces_failed_registration_to_user():
-    """Verify start hotkeys surfaces failed registration to user behavior."""
     native = FakeWorker(
         {"native.hotkeys.start": lambda _params: {"started": False, "reason": "Carbon unavailable"}}
     )

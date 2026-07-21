@@ -22,6 +22,10 @@ from runtime import protocol
 from runtime.bootstrap import data_root, repo_root
 
 log = logging.getLogger("wisp.runtime.supervisor")
+# Worker stderr echoed into supervisor logging. Kept on its own logger so the
+# runtime event log can skip it — stderr lines already reach the event log via
+# on_stderr_line listeners, and double-ingesting them would duplicate entries.
+stderr_echo_log = logging.getLogger("wisp.worker_stderr")
 
 _STREAM_TOTAL_TIMEOUT_MULTIPLIER = 6.0
 
@@ -151,6 +155,7 @@ class WorkerClient:
         self._scoped_event_lock = threading.Lock()
         self._scoped_event_handlers: dict[int, Callable[[str, Any, Any], None]] = {}
         self._stderr_tail: deque[str] = deque(maxlen=80)
+        self._stderr_listeners: list[Callable[[str], None]] = []
         self._stderr_log_path: Path | None = None
         self._restart_count = 0
         self._shutting_down = False
@@ -261,6 +266,11 @@ class WorkerClient:
                         log_file.flush()
                     except Exception:
                         pass
+                for listener in list(self._stderr_listeners):
+                    try:
+                        listener(line)
+                    except Exception:  # noqa: BLE001 - listener bugs must not kill the reader
+                        pass
                 if (
                     line.startswith("[plugin]")
                     or line.startswith("[plugin:")
@@ -271,9 +281,9 @@ class WorkerClient:
                     or line.startswith("[audio] Kokoro warmup")
                     or ("warmup exceeded" in line and line.startswith("[audio]"))
                 ):
-                    log.info("[%s] %s", self.spec.name, line)
+                    stderr_echo_log.info("[%s] %s", self.spec.name, line)
                 else:
-                    log.debug("[%s] %s", self.spec.name, line)
+                    stderr_echo_log.debug("[%s] %s", self.spec.name, line)
         if log_file is not None:
             log_file.close()
 
@@ -322,6 +332,10 @@ class WorkerClient:
     def on_event(self, event: str, handler: Callable[[Any, Any], None]) -> None:
         """Handle event events."""
         self._event_handlers.setdefault(event, []).append(handler)
+
+    def on_stderr_line(self, listener: Callable[[str], None]) -> None:
+        """Register a callback invoked with every stderr line of this worker."""
+        self._stderr_listeners.append(listener)
 
     def on_exit(self, handler: Callable[[int | None], None]) -> None:
         """Handle exit events."""
@@ -584,8 +598,19 @@ class WispSupervisor:
             "audio": 45.0,
         }
         results: dict[str, Any] = {}
-        for name, worker in self.workers.items():
-            results[name] = worker.call(f"{name}.ping", {"value": name}, timeout=startup_timeouts.get(name, 30.0))
+        try:
+            for name, worker in self.workers.items():
+                results[name] = worker.call(
+                    f"{name}.ping",
+                    {"value": name},
+                    timeout=startup_timeouts.get(name, 30.0),
+                )
+        except Exception:
+            # A later worker may fail after earlier workers have spawned.  The
+            # caller cannot safely use a partial process set, so contain the
+            # startup transaction and leave no old workers or process locks.
+            self.shutdown()
+            raise
         return results
 
     def call(self, worker: str, method: str, params: dict[str, Any] | None = None, *, timeout: float = 30.0) -> Any:

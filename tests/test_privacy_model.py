@@ -128,3 +128,62 @@ def test_installer_uses_official_weights_and_verified_pinned_runtime(tmp_path, m
         "allow_patterns": list(privacy_model.MODEL_FILES),
     }
     assert json.loads(status_path.read_text(encoding="utf-8"))["ok"] is True
+
+
+def test_privacy_installer_failure_matrix_is_persisted(tmp_path, monkeypatch):
+    """All advanced-privacy install faults exit nonzero with durable status."""
+    from core import optional_deps
+    from runtime.workers import privacy_model_installer
+
+    target = tmp_path / "privacy-model"
+    monkeypatch.setattr(privacy_model, "model_dir", lambda: target)
+    monkeypatch.setattr(privacy_model, "runtime_dir", lambda path=None: (path or target) / "runtime")
+    monkeypatch.setattr(optional_deps, "pip_install_env", lambda: {})
+
+    faults = (
+        ConnectionError("Network access is unavailable."),
+        RuntimeError("The package source is unavailable."),
+        OSError("Available disk space is insufficient."),
+        PermissionError("Filesystem permission is insufficient."),
+        RuntimeError("Dependency versions conflict."),
+    )
+    for index, fault in enumerate(faults):
+        status_path = tmp_path / f"failure-{index}.json"
+        monkeypatch.setattr(
+            optional_deps,
+            "ensure_pip_available",
+            lambda fault=fault: (_ for _ in ()).throw(fault),
+        )
+
+        assert privacy_model_installer.install(status_path) == 1
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        assert status["ok"] is False
+        assert str(fault) in status["message"]
+
+    verification_status = tmp_path / "verification.json"
+    monkeypatch.setattr(optional_deps, "ensure_pip_available", lambda: None)
+    monkeypatch.setattr(
+        optional_deps,
+        "pip_install_command",
+        lambda *_args, **_kwargs: ["mock-pip"],
+    )
+    monkeypatch.setattr(
+        privacy_model_installer.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(snapshot_download=lambda **_kwargs: None),
+    )
+    monkeypatch.setattr(
+        privacy_model,
+        "model_status",
+        lambda _path=None: {"valid": False, "missing": ["model.safetensors"]},
+    )
+
+    assert privacy_model_installer.install(verification_status) == 1
+    status = json.loads(verification_status.read_text(encoding="utf-8"))
+    assert status["ok"] is False
+    assert "verification failed" in status["message"].lower()

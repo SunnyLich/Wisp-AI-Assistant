@@ -8,7 +8,6 @@ import pytest
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_macos_agent_dialogs_use_qt_catalog_chrome():
-    """Verify macos agent dialogs use qt catalog chrome behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -17,17 +16,13 @@ def test_macos_agent_dialogs_use_qt_catalog_chrome():
     from ui import i18n
 
     class FakeHost:
-        """Test case for fake host behavior."""
         def __init__(self) -> None:
-            """Initialize the fake host instance."""
             self.events = []
 
         def emit(self, event, data=None, req_id=None):
-            """Verify emit behavior."""
             self.events.append((event, data, req_id))
 
         def _agent_notify_approval(self, *args, **kwargs):
-            """Verify agent notify approval behavior."""
             self.events.append(("approval", args, kwargs))
 
     app = QApplication.instance() or QApplication(sys.argv)

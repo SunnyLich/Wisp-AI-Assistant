@@ -8,7 +8,6 @@ from core import context_fetcher, context_hotkey
 
 
 def test_fetch_and_save_uses_hotkey_time_hwnd(monkeypatch):
-    """Verify fetch and save uses hotkey time hwnd behavior."""
     calls: list[tuple[str, int | None]] = []
     hotkey_window = context_fetcher.WindowInfo(
         title="Example",
@@ -43,7 +42,6 @@ def test_fetch_and_save_uses_hotkey_time_hwnd(monkeypatch):
 
 
 def test_browser_context_text_reads_page_by_saved_hwnd(monkeypatch):
-    """Verify browser context text reads page by saved hwnd behavior."""
     calls: list[tuple[str, int]] = []
     monkeypatch.setattr(
         context_hotkey.context_fetcher,
@@ -63,7 +61,6 @@ def test_browser_context_text_reads_page_by_saved_hwnd(monkeypatch):
 
 
 def test_context_priority_source_prefers_active_browser():
-    """Verify context priority source prefers active browser behavior."""
     snapshot = SimpleNamespace(
         active_window=SimpleNamespace(
             url="https://example.test/page",
@@ -82,7 +79,6 @@ def test_context_priority_source_prefers_active_browser():
 
 
 def test_context_priority_source_prefers_document_when_browser_is_background():
-    """Verify context priority source prefers document when browser is background behavior."""
     snapshot = SimpleNamespace(
         active_window=SimpleNamespace(
             url="",
@@ -101,7 +97,6 @@ def test_context_priority_source_prefers_document_when_browser_is_background():
 
 
 def test_context_target_replaces_wisp_foreground_with_external_window(monkeypatch):
-    """Verify context target replaces wisp foreground with external window behavior."""
     pytest.importorskip("PySide6")
     import main
 

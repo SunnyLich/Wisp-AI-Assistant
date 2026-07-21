@@ -522,6 +522,49 @@ def test_auth_status_does_not_expose_tokens(monkeypatch):
     assert "gh-secret" not in repr(result)
 
 
+def test_auth_status_failure_matrix_is_controlled(monkeypatch):
+    """Exercise corrupt, expired, keychain, offline, and rate-limit status faults."""
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth
+    from core.auth import github as github_auth
+
+    monkeypatch.setattr(copilot_auth, "token_status", lambda: (False, "Not configured"))
+    monkeypatch.setattr(github_auth, "get_tokens", lambda: {"access": "ok", "user": {}})
+
+    monkeypatch.setattr(chatgpt_auth, "get_tokens", lambda: {"access": "ok", "expires": 0})
+    expired = handlers.HANDLERS["brain.auth.status"]()["providers"][0]
+    assert expired["configured"] is False
+    assert "expired" in expired["message"]
+
+    for provider, module in (("chatgpt", chatgpt_auth), ("github", github_auth)):
+        other = github_auth if provider == "chatgpt" else chatgpt_auth
+        monkeypatch.setattr(other, "get_tokens", lambda: {"access": "ok"})
+        monkeypatch.setattr(module, "get_tokens", lambda: {"refresh": "missing-access"})
+        corrupt = next(
+            item for item in handlers.HANDLERS["brain.auth.status"]()["providers"]
+            if item["name"] == provider
+        )
+        assert corrupt["configured"] is False
+        assert "invalid" in corrupt["message"]
+
+        for fault in (
+            OSError("credential store cannot be read"),
+            ConnectionError("provider status endpoint offline"),
+            RuntimeError("provider status request rate-limited"),
+        ):
+            monkeypatch.setattr(
+                module,
+                "get_tokens",
+                lambda fault=fault: (_ for _ in ()).throw(fault),
+            )
+            status = next(
+                item for item in handlers.HANDLERS["brain.auth.status"]()["providers"]
+                if item["name"] == provider
+            )
+            assert status["configured"] is False
+            assert str(fault) in status["message"]
+
+
 def test_auth_clear_handlers_call_shared_modules(monkeypatch):
     """Verify auth clear handlers call shared modules behavior."""
     from core.auth import chatgpt as chatgpt_auth
@@ -532,6 +575,9 @@ def test_auth_clear_handlers_call_shared_modules(monkeypatch):
     monkeypatch.setattr(chatgpt_auth, "clear_tokens", lambda: calls.append("chatgpt"))
     monkeypatch.setattr(github_auth, "clear_tokens", lambda: calls.append("github"))
     monkeypatch.setattr(copilot_auth, "clear_token", lambda: calls.append("copilot"))
+    monkeypatch.setattr(chatgpt_auth, "get_tokens", lambda: None)
+    monkeypatch.setattr(github_auth, "get_tokens", lambda: None)
+    monkeypatch.setattr(copilot_auth, "get_token", lambda: None)
     monkeypatch.setattr(copilot_auth, "token_status", lambda: (False, "Not configured"))
 
     assert handlers.HANDLERS["brain.auth.chatgpt.clear"]() == {"ok": True, "name": "chatgpt"}
@@ -544,6 +590,40 @@ def test_auth_clear_handlers_call_shared_modules(monkeypatch):
     assert calls == ["chatgpt", "github", "copilot"]
 
 
+def test_auth_clear_failure_matrix_is_controlled_and_verified(monkeypatch):
+    """Locked, unavailable, failed, and divergent sign-outs never claim success."""
+    from core.auth import chatgpt as chatgpt_auth
+    from core.auth import copilot_auth
+    from core.auth import github as github_auth
+
+    cases = (
+        ("brain.auth.chatgpt.clear", chatgpt_auth, "clear_tokens", "get_tokens"),
+        ("brain.auth.github.clear", github_auth, "clear_tokens", "get_tokens"),
+        ("brain.auth.copilot.clear", copilot_auth, "clear_token", "get_token"),
+    )
+    faults = (
+        RuntimeError("local credential store is locked"),
+        OSError("local credential store is unavailable"),
+        PermissionError("local token cannot be removed"),
+    )
+    for method, module, clear_name, read_name in cases:
+        for fault in faults:
+            monkeypatch.setattr(
+                module,
+                clear_name,
+                lambda fault=fault: (_ for _ in ()).throw(fault),
+            )
+            result = handlers.HANDLERS[method]()
+            assert result["ok"] is False
+            assert str(fault) in result["message"]
+
+        monkeypatch.setattr(module, clear_name, lambda: None)
+        monkeypatch.setattr(module, read_name, lambda: {"access": "still-present"})
+        result = handlers.HANDLERS[method]()
+        assert result["ok"] is False
+        assert "still exists" in result["message"]
+
+
 def test_auth_github_device_login_streams_code_and_success(monkeypatch):
     """Verify auth github device login streams code and success behavior."""
     import config
@@ -552,7 +632,7 @@ def test_auth_github_device_login_streams_code_and_success(monkeypatch):
     events = []
     monkeypatch.setattr(github_auth, "has_configured_client_id", lambda: True)
 
-    def start_device_login(on_code, on_success, on_error):
+    def start_device_login(on_code, on_success, on_error, **_kwargs):
         """Verify start device login behavior."""
         on_code("https://github.com/login/device", "ABCD-1234")
         on_success({"user": {"login": "octo"}})
@@ -734,6 +814,47 @@ def test_auth_chatgpt_browser_login_streams_error(monkeypatch):
         "provider": "chatgpt",
         "message": "browser failed",
     }
+
+
+def test_auth_chatgpt_browser_login_failure_matrix_is_in_band(monkeypatch):
+    """All OAuth launch/callback failures return through auth.error or cancellation."""
+    from core.auth import chatgpt as chatgpt_auth
+
+    failures = (
+        "browser cannot open",
+        "authentication flow expires",
+        "provider service is unavailable",
+        "network access is unavailable",
+        "requested scopes are rejected",
+    )
+    for failure in failures:
+        monkeypatch.setattr(
+            chatgpt_auth,
+            "start_browser_login",
+            lambda on_success, on_error, failure=failure: on_error(failure),
+        )
+        events = []
+        ctx = handlers.StreamContext(
+            lambda name, data, req_id: events.append((name, data, req_id)),
+            req_id=9,
+        )
+        result = handlers.HANDLERS["brain.auth.chatgpt.browser_login"](
+            ctx,
+            timeout_seconds=1,
+        )
+        assert result["ok"] is False
+        assert failure in result["message"]
+        assert events[-1][0] == "auth.error"
+
+    monkeypatch.setattr(chatgpt_auth, "start_browser_login", lambda on_success, on_error: None)
+    cancelled = handlers.StreamContext(lambda *_args: None, req_id=10)
+    cancelled.cancelled = True
+    result = handlers.HANDLERS["brain.auth.chatgpt.browser_login"](
+        cancelled,
+        timeout_seconds=1,
+    )
+    assert result["cancelled"] is True
+    assert "cancelled" in result["message"].lower()
 
 
 def test_settings_reset_credentials_clears_secrets_auth_and_env(monkeypatch, tmp_path):

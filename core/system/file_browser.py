@@ -9,6 +9,8 @@ from pathlib import Path
 def reveal_path(path: str | Path, *, platform: str | None = None):
     """Reveal *path* in Explorer/Finder, or open its folder on Linux."""
     target = Path(path).expanduser().resolve()
+    if not target.exists():
+        raise FileNotFoundError(f"Cannot reveal missing path: {target}")
     current_platform = platform or sys.platform
     is_file = target.is_file()
 

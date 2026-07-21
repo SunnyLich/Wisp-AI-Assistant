@@ -1,4 +1,4 @@
-"""Tests for macos py test architecture boundaries."""
+"""Static import-boundary checks for the supervisor and worker processes."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _top_level_imports(path: str) -> set[str]:
-    """Verify top level imports behavior."""
     tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
     names: set[str] = set()
     for node in tree.body:
@@ -23,12 +22,10 @@ def _top_level_imports(path: str) -> set[str]:
 
 
 def test_boundary_roles_are_defined_for_all_workers():
-    """Verify boundary roles are defined for all workers behavior."""
     assert {"supervisor", "native", "ui", "brain", "audio"} <= set(ROLE_FORBIDDEN_PREFIXES)
 
 
 def test_ui_host_does_not_import_native_audio_or_ml_at_module_top():
-    """Verify ui host does not import native audio or ml at module top behavior."""
     imports = _top_level_imports("runtime/workers/ui_host.py")
     forbidden = [
         "appkit",
@@ -52,7 +49,6 @@ def test_ui_boundary_forbids_pynput_native_keyboard_hooks():
 
 
 def test_overlay_does_not_import_core_audio():
-    """Verify overlay does not import core audio behavior."""
     source = (ROOT / "ui/overlay.py").read_text(encoding="utf-8")
 
     assert "from core import audio" not in source
@@ -61,7 +57,6 @@ def test_overlay_does_not_import_core_audio():
 
 
 def test_native_host_does_not_import_qt_audio_or_ml_at_module_top():
-    """Verify native host does not import qt audio or ml at module top behavior."""
     imports = _top_level_imports("runtime/workers/native_host.py")
     forbidden = [
         "pyside6",
@@ -75,7 +70,6 @@ def test_native_host_does_not_import_qt_audio_or_ml_at_module_top():
 
 
 def test_audio_host_does_not_import_qt_or_appkit_at_module_top():
-    """Verify audio host does not import qt or appkit at module top behavior."""
     imports = _top_level_imports("runtime/workers/audio_host.py")
     forbidden = [
         "pyside6",
@@ -88,7 +82,6 @@ def test_audio_host_does_not_import_qt_or_appkit_at_module_top():
 
 
 def test_audio_speed_boost_handler_does_not_import_core_audio():
-    """Verify audio speed boost handler does not import core audio behavior."""
     source = (ROOT / "runtime/workers/audio_host.py").read_text(encoding="utf-8")
 
     assert "from core import audio\n" not in source
@@ -97,7 +90,6 @@ def test_audio_speed_boost_handler_does_not_import_core_audio():
 
 
 def test_supervisor_does_not_import_worker_stacks():
-    """Verify supervisor does not import worker stacks behavior."""
     imports = _top_level_imports("runtime/supervisor/ipc.py")
     forbidden = [
         "pyside6",

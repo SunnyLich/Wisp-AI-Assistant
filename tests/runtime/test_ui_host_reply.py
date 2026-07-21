@@ -342,12 +342,17 @@ class _Bubble:
         self.chunks: list[tuple[str, bool]] = []
         self.progress: list[str] = []
         self.labeled: list[tuple[str, str, int, bool]] = []
+        self.images: list[str] = []
 
     def append_chunk(self, text: str, is_thought: bool = False, annotations=None) -> None:
         self.chunks.append((text, is_thought))
 
     def show_progress(self, text: str) -> None:
         self.progress.append(text)
+
+    def show_image(self, image_base64: str) -> bool:
+        self.images.append(image_base64)
+        return True
 
     def show_labeled_text(
         self,
@@ -391,6 +396,30 @@ def test_reply_chunk_keeps_provider_action_in_thought_transcript() -> None:
     assert result == {"appended": len("Claude started Read"), "is_progress": True}
     assert bubble.progress == []
     assert bubble.chunks == [("Claude started Read", True)]
+
+
+def test_reply_image_loads_generated_attachment_for_speech_bubble(tmp_path) -> None:
+    """Generated image paths are size-checked and forwarded to the bubble."""
+    from runtime.workers.ui_host import QtProtocolHost
+
+    image_path = tmp_path / "generated.png"
+    image_path.write_bytes(b"small-image-payload")
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = _Bubble()
+    host._ensure_bubble = lambda: bubble  # type: ignore[attr-defined]
+
+    result = host._reply_image(
+        attachments=[
+            {
+                "kind": "image",
+                "source": "codex_image_generation",
+                "path": str(image_path),
+            }
+        ]
+    )
+
+    assert result == {"shown": True}
+    assert bubble.images == [__import__("base64").b64encode(image_path.read_bytes()).decode("ascii")]
 
 
 def test_reply_labeled_text_keeps_label_out_of_reply_content() -> None:

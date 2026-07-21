@@ -75,9 +75,23 @@ class DummySpec:
 
 
 class ScopedWorkspaceTests(unittest.TestCase):
-    """Test case for scoped workspace tests behavior."""
+    def test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_scope = Path(tmp) / "missing-scope"
+            logs = Path(tmp) / "logs"
+            spec = DummySpec(scope_folder=str(missing_scope))
+
+            run_dir = AgentTaskRunner(
+                log_root=logs,
+                model_callback=lambda _prompt: self.fail("model should not be called"),
+            ).run(spec)
+
+            self.assertTrue((run_dir / "error.txt").exists())
+            run_log = (run_dir / "run.log").read_text(encoding="utf-8")
+            self.assertIn("Invalid scope folder", run_log)
+            self.assertIn("agent run failed", run_log)
+
     def test_resolve_rejects_path_escape(self):
-        """Verify resolve rejects path escape behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "scope"
             root.mkdir()
@@ -86,7 +100,6 @@ class ScopedWorkspaceTests(unittest.TestCase):
                 ws.resolve(root / ".." / "outside.txt")
 
     def test_blocked_globs_hide_and_reject_files(self):
-        """Verify blocked globs hide and reject files behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "ok.txt").write_text("ok", encoding="utf-8")
@@ -100,7 +113,6 @@ class ScopedWorkspaceTests(unittest.TestCase):
                 ws.read_text("private/secret.txt")
 
     def test_write_respects_create_and_edit_permissions(self):
-        """Verify write respects create and edit permissions behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ws = ScopedWorkspace(root)
@@ -115,9 +127,7 @@ class ScopedWorkspaceTests(unittest.TestCase):
 
 
 class AgentToolboxTests(unittest.TestCase):
-    """Test case for agent toolbox tests behavior."""
     def test_toolbox_create_patch_and_read_are_scoped_and_logged(self):
-        """Verify toolbox create patch and read are scoped and logged behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             logs: list[str] = []
             tools = AgentToolbox(
@@ -139,7 +149,6 @@ class AgentToolboxTests(unittest.TestCase):
             self.assertEqual(tools.read_file("note.txt").data, "hello builder")
 
     def test_toolbox_rejects_edit_without_permission(self):
-        """Verify toolbox rejects edit without permission behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "note.txt").write_text("hello", encoding="utf-8")
@@ -152,7 +161,6 @@ class AgentToolboxTests(unittest.TestCase):
                 tools.patch_file("note.txt", "hello", "bye")
 
     def test_toolbox_delete_requires_permission(self):
-        """Verify toolbox delete requires permission behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "note.txt").write_text("hello", encoding="utf-8")
@@ -165,7 +173,6 @@ class AgentToolboxTests(unittest.TestCase):
                 tools.delete_file("note.txt")
 
     def test_toolbox_command_allowlist_and_shell_permission(self):
-        """Verify toolbox command allowlist and shell permission behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "ok.py").write_text("x = 1\n", encoding="utf-8")
@@ -181,7 +188,6 @@ class AgentToolboxTests(unittest.TestCase):
                 tools.run_command(["python", "-c", "print('not allowlisted')"])
 
     def test_project_verification_commands_are_gated_by_manifest_files(self):
-        """Verify project verification commands are gated by manifest files behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             tools = AgentToolbox(ScopedWorkspace(root), AgentPermissions(allow_shell=True))
@@ -207,7 +213,6 @@ class AgentToolboxTests(unittest.TestCase):
             self.assertNotIn(["python", "-m", "py_compile", "notes.txt"], commands)
 
     def test_additional_static_verification_commands_are_allowlisted(self):
-        """Verify additional static verification commands are allowlisted behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions(allow_shell=True))
 
@@ -216,7 +221,6 @@ class AgentToolboxTests(unittest.TestCase):
             self.assertTrue(tools._is_command_allowed(["node", "--check", "index.js"]))
 
     def test_approval_callback_can_decline_mutating_tools(self):
-        """Verify approval callback can decline mutating tools behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "note.txt").write_text("hello", encoding="utf-8")
@@ -235,7 +239,6 @@ class AgentToolboxTests(unittest.TestCase):
             self.assertEqual(requests[0]["action"], "patch_file")
 
     def test_git_status_and_diff_use_git_permission_without_shell_permission(self):
-        """Verify git status and diff use git permission without shell permission behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             subprocess_result = AgentToolbox(
@@ -246,7 +249,6 @@ class AgentToolboxTests(unittest.TestCase):
             self.assertIn(subprocess_result.tool, {"run_command"})
 
     def test_git_tools_short_circuit_outside_worktree(self):
-        """Verify git tools short circuit outside worktree behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             logs: list[str] = []
             approvals: list[dict] = []
@@ -314,7 +316,6 @@ class AgentToolboxTests(unittest.TestCase):
             self.assertFalse(tools._is_command_allowed(["git", "add", "."]))
 
     def test_run_command_timeout_returns_tool_result(self):
-        """Verify run command timeout returns tool result behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(
                 ScopedWorkspace(tmp),
@@ -333,9 +334,7 @@ class AgentToolboxTests(unittest.TestCase):
 
 
 class AgentBoundaryAttackTests(unittest.TestCase):
-    """Test case for agent boundary attack tests behavior."""
     def test_absolute_path_escape_is_rejected(self):
-        """Verify absolute path escape is rejected behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "scope"
             outside = Path(tmp) / "outside.txt"
@@ -359,7 +358,6 @@ class AgentBoundaryAttackTests(unittest.TestCase):
             self.assertEqual(outside.read_text(encoding="utf-8"), "do not touch")
 
     def test_relative_path_traversal_is_rejected(self):
-        """Verify relative path traversal is rejected behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "scope"
             outside = Path(tmp) / "outside.txt"
@@ -383,7 +381,6 @@ class AgentBoundaryAttackTests(unittest.TestCase):
             self.assertEqual(outside.read_text(encoding="utf-8"), "safe")
 
     def test_blocked_secret_patterns_cannot_be_read_or_written(self):
-        """Verify blocked secret patterns cannot be read or written behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".env").write_text("TOKEN=secret", encoding="utf-8")
@@ -408,7 +405,6 @@ class AgentBoundaryAttackTests(unittest.TestCase):
             self.assertFalse((root / "api.key").exists())
 
     def test_dangerous_shell_commands_are_rejected_even_when_shell_allowed(self):
-        """Verify dangerous shell commands are rejected even when shell allowed behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(
                 ScopedWorkspace(tmp),
@@ -434,7 +430,6 @@ class AgentBoundaryAttackTests(unittest.TestCase):
                     self.assertIn("not allowlisted", result.message)
 
     def test_agent_loop_logs_denied_attack_and_preserves_files(self):
-        """Verify agent loop logs denied attack and preserves files behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             outside = Path(tmp) / "outside.txt"
@@ -462,7 +457,6 @@ class AgentBoundaryAttackTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -474,9 +468,7 @@ class AgentBoundaryAttackTests(unittest.TestCase):
 
 
 class AgentRunnerTests(unittest.TestCase):
-    """Test case for agent runner tests behavior."""
     def test_runner_executes_autonomous_tool_loop_and_writes_artifacts(self):
-        """Verify runner executes autonomous tool loop and writes artifacts behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -518,7 +510,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -537,7 +528,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("agent run finished", (run_dir / "run.log").read_text(encoding="utf-8"))
 
     def test_runner_routes_agents_and_records_messages(self):
-        """Verify runner routes agents and records messages behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -578,7 +568,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(prompt: str) -> str:
-                """Verify fake model behavior."""
                 prompts.append(prompt)
                 return json.dumps(responses.pop(0))
 
@@ -597,7 +586,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual((run_dir / "final.md").read_text(encoding="utf-8"), "Reviewer received Planner's message.")
 
     def test_prompt_lists_only_tools_allowed_by_permissions(self):
-        """Verify prompt lists only tools allowed by permissions behavior."""
         spec = DummySpec(
             allow_shell=False,
             allow_git=False,
@@ -692,7 +680,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("-hello", requests[0]["diff"])
 
     def test_read_only_prompt_omits_write_and_shell_tools_even_when_enabled(self):
-        """Verify read only prompt omits write and shell tools even when enabled behavior."""
         spec = DummySpec(
             allow_shell=True,
             allow_git=True,
@@ -712,7 +699,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertNotIn("- run_command args:", prompt)
 
     def test_runner_honors_next_agent_for_multiple_builder_turns(self):
-        """Verify runner honors next agent for multiple builder turns behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -732,7 +718,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -742,7 +727,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual((run_dir / "final.md").read_text(encoding="utf-8"), "Reviewed.")
 
     def test_non_coordinator_final_routes_to_coordinator_for_completion(self):
-        """Verify non coordinator final routes to coordinator for completion behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -759,7 +743,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -787,7 +770,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -799,7 +781,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("completion deferred", (run_dir / "run.log").read_text(encoding="utf-8"))
 
     def test_non_reviewer_final_routes_to_reviewer_when_no_coordinator(self):
-        """Verify non reviewer final routes to reviewer when no coordinator behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -815,7 +796,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -825,7 +805,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual((run_dir / "final.md").read_text(encoding="utf-8"), "Reviewer final.")
 
     def test_reviewer_final_reports_to_coordinator_message_board(self):
-        """Verify reviewer final reports to coordinator message board behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -842,7 +821,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -854,7 +832,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual((run_dir / "final.md").read_text(encoding="utf-8"), "Final accepted.")
 
     def test_coordinator_final_waits_for_pending_review(self):
-        """Verify coordinator final waits for pending review behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -873,7 +850,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -883,7 +859,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual((run_dir / "final.md").read_text(encoding="utf-8"), "Done.")
 
     def test_directed_message_recipient_gets_next_turn_without_explicit_handoff(self):
-        """Verify directed message recipient gets next turn without explicit handoff behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -905,7 +880,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -915,7 +889,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("routing by latest directed message", (run_dir / "run.log").read_text(encoding="utf-8"))
 
     def test_silent_handoff_creates_message(self):
-        """Verify silent handoff creates message behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -931,7 +904,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -942,7 +914,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(messages[0]["source"], "auto_handoff")
 
     def test_role_scoped_tools_deny_coordinator_shell(self):
-        """Verify role scoped tools deny coordinator shell behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions(allow_shell=True))
             result = AgentTaskRunner()._execute_agent_tool_call(
@@ -959,7 +930,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("not allowed for Coordinator", result.message)
 
     def test_role_scoped_tools_deny_coordinator_file_read(self):
-        """Verify role scoped tools deny coordinator file read behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "snake_game.py").write_text("print('hi')\n", encoding="utf-8")
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions())
@@ -987,7 +957,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("- list_files args:", prompt)
 
     def test_run_command_accepts_command_string(self):
-        """Verify run command accepts command string behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions(allow_shell=True))
             result = AgentTaskRunner()._execute_agent_tool_call(
@@ -1004,7 +973,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("python -m py_compile missing.py", result.message)
 
     def test_run_command_schema_error_includes_correction(self):
-        """Verify run command schema error includes correction behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions(allow_shell=True))
             result = AgentTaskRunner()._execute_agent_tool_call(
@@ -1022,7 +990,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(result.data["correction"], {"args": ["python", "-m", "pytest"]})
 
     def test_coordinator_cannot_assign_install_work(self):
-        """Verify coordinator cannot assign install work behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             result = AgentTaskRunner()._execute_agent_tool_call(
                 AgentToolbox(ScopedWorkspace(tmp), AgentPermissions()),
@@ -1040,7 +1007,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertIn("available verification", result.data["correction"])
 
     def test_send_message_log_marks_truncated_text(self):
-        """Verify send message log marks truncated text behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             logs: list[str] = []
             long_message = "Build the app. " * 80
@@ -1060,7 +1026,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertIn("... [truncated]", logs[0])
 
     def test_duplicate_successful_verification_is_skipped(self):
-        """Verify duplicate successful verification is skipped behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1076,7 +1041,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -1086,7 +1050,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(turns[-1]["task_state"]["tests"]["pytest"], "passed")
 
     def test_parallel_read_only_briefing_converts_invalid_repair_into_tool_result(self):
-        """Verify parallel read only briefing converts invalid repair into tool result behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             scope.mkdir()
@@ -1313,7 +1276,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("tool run_command failed: schema_error", run_log)
 
     def test_developer_alias_routes_to_implementer(self):
-        """Verify developer alias routes to implementer behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1335,7 +1297,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -1344,7 +1305,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual([turn["agent"] for turn in turns], ["Coordinator", "Builder"])
 
     def test_broadcast_message_routes_to_next_agent(self):
-        """Verify broadcast message routes to next agent behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1365,7 +1325,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -1375,7 +1334,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("routing by broadcast message", (run_dir / "run.log").read_text(encoding="utf-8"))
 
     def test_repeated_tool_failure_guard_routes_away(self):
-        """Verify repeated tool failure guard routes away behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1411,7 +1369,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -1421,7 +1378,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("repeated failure guard", (run_dir / "run.log").read_text(encoding="utf-8"))
 
     def test_explicit_next_agent_overrides_directed_message_recipient(self):
-        """Verify explicit next agent overrides directed message recipient behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1444,7 +1400,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return json.dumps(responses.pop(0))
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -1454,7 +1409,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("routing by explicit next_agent", (run_dir / "run.log").read_text(encoding="utf-8"))
 
     def test_runner_keeps_persistent_history_per_agent(self):
-        """Verify runner keeps persistent history per agent behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1467,7 +1421,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(prompt: str) -> str:
-                """Verify fake model behavior."""
                 prompts.append(prompt)
                 return json.dumps(responses.pop(0))
 
@@ -1480,7 +1433,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("Thought: Remember this private note.", states["Solo"]["history"])
 
     def test_delta_prompt_clips_repeated_conversation_state(self):
-        """Verify delta prompt clips repeated conversation state behavior."""
         spec = DummySpec()
         spec.visible_files_delta_limit = 4
         long_message = "Please audit snake_game.py, snake_gui.py, and test_snake_game.py. " * 8
@@ -1500,7 +1452,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertIn("Continue as the active agent", prompt)
 
     def test_runner_injects_manual_nudge_before_next_prompt(self):
-        """Verify runner injects manual nudge before next prompt behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1514,7 +1465,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(prompt: str) -> str:
-                """Verify fake model behavior."""
                 prompts.append(prompt)
                 if len(prompts) == 1:
                     control.add_nudge("Solo", "Please focus on tests.")
@@ -1527,7 +1477,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("Please focus on tests.", prompts[1])
 
     def test_manual_nudge_dedupes_identical_recent_message(self):
-        """Verify manual nudge dedupes identical recent message behavior."""
         messages = [{"from": "User", "to": "ALL", "message": "Please inspect.", "source": "manual_nudge"}]
         control = AgentRunControl()
         control.add_nudge("ALL", "Please inspect.")
@@ -1539,7 +1488,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertEqual(logs, [])
 
     def test_control_pause_and_resume(self):
-        """Verify control pause and resume behavior."""
         control = AgentRunControl()
         control.pause_after_turn()
         self.assertTrue(control.is_pause_requested())
@@ -1662,7 +1610,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("permissions updated", logs[-1])
 
     def test_parallel_read_only_round_allows_messages_but_denies_writes(self):
-        """Verify parallel read only round allows messages but denies writes behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             scope.mkdir()
@@ -1673,7 +1620,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(prompt: str) -> str:
-                """Verify fake model behavior."""
                 if "Active agent: Scout" in prompt:
                     return json.dumps({
                         "thought": "I will brief Builder.",
@@ -1720,7 +1666,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertTrue(any("tool create_file failed" in line for line in logs))
 
     def test_tool_results_are_compacted_for_followup_prompts(self):
-        """Verify tool results are compacted for followup prompts behavior."""
         huge = "a" * 20000
         prompt_context = AgentTaskRunner._tool_results_for_prompt([
             {"tool": "read_file", "ok": True, "message": "big.py", "data": huge},
@@ -1735,7 +1680,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertIn("truncated 30 item", prompt_context)
 
     def test_runner_uses_smaller_read_only_token_budget(self):
-        """Verify runner uses smaller read only token budget behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             scope.mkdir()
@@ -1747,7 +1691,6 @@ class AgentRunnerTests(unittest.TestCase):
             calls: list[int] = []
 
             def fake_call_model(_prompt, _log, *, provider=None, model=None, fallbacks=None, max_tokens=4096, temperature=0.0):
-                """Verify fake call model behavior."""
                 calls.append(max_tokens)
                 return json.dumps({"thought": "Brief.", "tool_calls": [], "final": None})
 
@@ -1770,14 +1713,12 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(calls, [3072])
 
     def test_mutating_tools_run_under_write_lock(self):
-        """Verify mutating tools run under write lock behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             runner = AgentTaskRunner()
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions(allow_file_create=True))
             observed = []
 
             def fake_unlocked(_tools, tool, _args):
-                """Verify fake unlocked behavior."""
                 observed.append((tool, runner._write_lock.locked()))
                 return ToolResult(tool, True, "ok")
 
@@ -1789,7 +1730,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(observed, [("create_file", True), ("read_file", False)])
 
     def test_placeholder_file_path_returns_actionable_error(self):
-        """Verify placeholder file path returns actionable error behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions())
             result = AgentTaskRunner()._execute_tool_call(
@@ -1802,7 +1742,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("actual relative filename", result.message)
 
     def test_tool_call_accepts_function_alias(self):
-        """Verify tool call accepts function alias behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "note.txt").write_text("hello", encoding="utf-8")
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions())
@@ -1816,7 +1755,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(result.data, "hello")
 
     def test_tool_call_accepts_nested_function_arguments(self):
-        """Verify tool call accepts nested function arguments behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "note.txt").write_text("hello", encoding="utf-8")
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions())
@@ -1830,7 +1768,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(result.data, "hello")
 
     def test_base64_file_tools_avoid_large_json_quoting(self):
-        """Verify base64 file tools avoid large json quoting behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             content = "line one\n'quoted' and \"quoted\"\nline three"
             encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
@@ -1851,7 +1788,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(Path(tmp, "note.txt").read_text(encoding="utf-8"), content)
 
     def test_runner_resolves_agent_provider_and_model_route(self):
-        """Verify runner resolves agent provider and model route behavior."""
         spec = DummySpec(provider="copilot", model="gpt-5.3-codex")
         runner = AgentTaskRunner()
 
@@ -1869,7 +1805,6 @@ class AgentRunnerTests(unittest.TestCase):
         )
 
     def test_runner_repairs_invalid_json_once(self):
-        """Verify runner repairs invalid json once behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1881,7 +1816,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return responses.pop(0)
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -1890,7 +1824,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("model_response_repaired", (run_dir / "turns.json").read_text(encoding="utf-8"))
 
     def test_json_repair_uses_compact_excerpt_and_small_budget(self):
-        """Verify json repair uses compact excerpt and small budget behavior."""
         runner = AgentTaskRunner()
         # A complete protocol object (balanced braces, protocol keys) that is still
         # unparseable (unquoted key) and large enough to force excerpting: the case
@@ -1903,7 +1836,6 @@ class AgentRunnerTests(unittest.TestCase):
         budgets: list[int] = []
 
         def fake_call_model(prompt, _log, *, provider=None, model=None, fallbacks=None, max_tokens=4096, temperature=0.0):
-            """Verify fake call model behavior."""
             prompts.append(prompt)
             budgets.append(max_tokens)
             return json.dumps({"thought": "fixed", "tool_calls": [], "final": "ok"})
@@ -1918,7 +1850,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertIn("middle truncated", prompts[0])
 
     def test_runner_emits_live_trace_entries(self):
-        """Verify runner emits live trace entries behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1940,7 +1871,6 @@ class AgentRunnerTests(unittest.TestCase):
             )
 
     def test_runner_requests_large_json_response_budget(self):
-        """Verify runner requests large json response budget behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1955,7 +1885,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(stream_response.call_args.kwargs["temperature"], 0.0)
 
     def test_zero_token_budget_passes_through_as_no_cap(self):
-        """Verify zero token budget passes through as no cap behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1971,7 +1900,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(stream_response.call_args.kwargs["max_tokens"], 0)
 
     def test_llm_call_failure_retries_instead_of_finishing(self):
-        """Verify llm call failure retries instead of finishing behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -1981,7 +1909,6 @@ class AgentRunnerTests(unittest.TestCase):
             calls = 0
 
             def fake_stream_response(*_args, **_kwargs):
-                """Verify fake stream response behavior."""
                 nonlocal calls
                 calls += 1
                 if calls == 1:
@@ -2030,8 +1957,55 @@ class AgentRunnerTests(unittest.TestCase):
                 (run_dir / "run.log").read_text(encoding="utf-8"),
             )
 
+    def test_invalid_selected_model_stops_as_a_controlled_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            logs = Path(tmp) / "logs"
+            scope.mkdir()
+            spec = DummySpec(
+                scope_folder=str(scope),
+                provider="openai",
+                model="definitely-not-a-real-model",
+                max_turns=5,
+                approval_policy="never",
+            )
+
+            with patch(
+                "core.llm_clients.client.stream_response",
+                side_effect=RuntimeError("invalid model: definitely-not-a-real-model"),
+            ) as stream_response:
+                run_dir = AgentTaskRunner(log_root=logs).run(spec)
+
+            self.assertEqual(stream_response.call_count, 1)
+            self.assertIn(
+                "selected model route is not available",
+                (run_dir / "final.md").read_text(encoding="utf-8"),
+            )
+            turns = json.loads((run_dir / "turns.json").read_text(encoding="utf-8"))
+            self.assertEqual(turns[0]["routing"]["status"], "model_blocked")
+
+    def test_unexpected_agent_runtime_exit_writes_failure_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope"
+            logs = Path(tmp) / "logs"
+            scope.mkdir()
+            spec = DummySpec(scope_folder=str(scope), approval_policy="never")
+            agent_runner = AgentTaskRunner(log_root=logs)
+
+            with patch.object(
+                agent_runner,
+                "_run_agent_loop",
+                side_effect=RuntimeError("agent worker exited unexpectedly"),
+            ):
+                run_dir = agent_runner.run(spec)
+
+            error = (run_dir / "error.txt").read_text(encoding="utf-8")
+            run_log = (run_dir / "run.log").read_text(encoding="utf-8")
+            self.assertIn("agent worker exited unexpectedly", error)
+            self.assertIn("ERROR: agent worker exited unexpectedly", run_log)
+            self.assertIn("agent run failed", run_log)
+
     def test_runner_extracts_fenced_json_after_model_prose(self):
-        """Verify runner extracts fenced json after model prose behavior."""
         response = (
             "<thought>I should not have written this prose with {example} braces.</thought>\n"
             "```json\n"
@@ -2046,7 +2020,6 @@ class AgentRunnerTests(unittest.TestCase):
     def test_runner_extracts_json_after_unfenced_prose_with_braces(self):
         # Gemini/Gemma emit a <thought> preamble (no fence) that contains code
         # snippets with stray braces; the naive first-{/last-} slice grabbed those.
-        """Verify runner extracts json after unfenced prose with braces behavior."""
         response = (
             "<thought>The user wants a label like f\"score {n}\" rendered each frame.\n"
             "I will read the file and patch it.</thought>\n"
@@ -2062,7 +2035,6 @@ class AgentRunnerTests(unittest.TestCase):
     def test_runner_selects_protocol_object_over_embedded_fragment(self):
         # A reasoning preamble that quotes a lone tool-call fragment must not be
         # mistaken for the real protocol object (which carries the protocol keys).
-        """Verify runner selects protocol object over embedded fragment behavior."""
         response = (
             "I plan to message the builder, e.g. "
             '{"name": "send_message", "arguments": {"to": "Builder"}}.\n'
@@ -2078,7 +2050,6 @@ class AgentRunnerTests(unittest.TestCase):
     def test_truncated_response_routes_to_local_fallback_without_model_call(self):
         # A response cut off mid-JSON (unbalanced braces) must retry cheaply rather
         # than spend a model repair call that can only guess the lost content.
-        """Verify truncated response routes to local fallback without model call behavior."""
         runner = AgentTaskRunner()
         truncated = (
             '{"thought": "writing", "tool_calls": [{"tool": "create_file", '
@@ -2087,7 +2058,6 @@ class AgentRunnerTests(unittest.TestCase):
         called = False
 
         def fake_call_model(*_args, **_kwargs):
-            """Verify fake call model behavior."""
             nonlocal called
             called = True
             return "{}"
@@ -2099,7 +2069,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertEqual(AgentTaskRunner._parse_agent_response(repaired or "")["status"], "retry")
 
     def test_runner_accepts_parameters_tool_call_alias(self):
-        """Verify runner accepts parameters tool call alias behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             tools = AgentToolbox(ScopedWorkspace(tmp), AgentPermissions(allow_file_create=True))
 
@@ -2115,7 +2084,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertEqual(Path(tmp, "random_utility.py").read_text(encoding="utf-8"), "print('ok')\n")
 
     def test_runner_repairs_python_literal_response_locally(self):
-        """Verify runner repairs python literal response locally behavior."""
         repaired = AgentTaskRunner._locally_repair_agent_response(
             "{'thought': 'ok', 'tool_calls': [], 'final': 'Done.'}"
         )
@@ -2124,7 +2092,6 @@ class AgentRunnerTests(unittest.TestCase):
         self.assertEqual(AgentTaskRunner._parse_agent_response(repaired or "")["final"], "Done.")
 
     def test_runner_repairs_literal_newline_in_json_string_locally(self):
-        """Verify runner repairs literal newline in json string locally behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -2150,7 +2117,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("repaired invalid JSON locally", run_log)
 
     def test_runner_skips_model_repair_for_truncated_file_content(self):
-        """Verify runner skips model repair for truncated file content behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -2159,7 +2125,6 @@ class AgentRunnerTests(unittest.TestCase):
             calls = 0
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 nonlocal calls
                 calls += 1
                 return (
@@ -2176,7 +2141,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("using local fallback for invalid JSON response", run_log)
 
     def test_runner_falls_back_when_json_repair_is_invalid(self):
-        """Verify runner falls back when json repair is invalid behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -2188,7 +2152,6 @@ class AgentRunnerTests(unittest.TestCase):
             ]
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 return responses.pop(0)
 
             run_dir = AgentTaskRunner(log_root=logs, model_callback=fake_model).run(spec)
@@ -2199,7 +2162,6 @@ class AgentRunnerTests(unittest.TestCase):
             self.assertIn("using local fallback for invalid JSON response", run_log)
 
     def test_runner_can_be_cancelled_before_first_turn(self):
-        """Verify runner can be cancelled before first turn behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             logs = Path(tmp) / "logs"
@@ -2218,9 +2180,7 @@ class AgentRunnerTests(unittest.TestCase):
 
 
 class FileLeaseRegistryTests(unittest.TestCase):
-    """Test case for file lease registry tests behavior."""
     def test_exclusive_acquire_blocks_other_agents_only(self):
-        """Verify exclusive acquire blocks other agents only behavior."""
         leases = FileLeaseRegistry()
 
         self.assertIsNone(leases.acquire("Alpha", "a.py"))
@@ -2232,7 +2192,6 @@ class FileLeaseRegistryTests(unittest.TestCase):
         self.assertIsNone(leases.acquire("Beta", "b.py"))
 
     def test_release_returns_file_to_the_pool(self):
-        """Verify release returns file to the pool behavior."""
         leases = FileLeaseRegistry()
         leases.acquire("Alpha", "a.py")
         leases.release("Alpha", ["a.py"])
@@ -2241,7 +2200,6 @@ class FileLeaseRegistryTests(unittest.TestCase):
         self.assertIsNone(leases.acquire("Beta", "a.py"))
 
     def test_release_only_affects_caller_owned_leases(self):
-        """Verify release only affects caller owned leases behavior."""
         leases = FileLeaseRegistry()
         leases.acquire("Alpha", "a.py")
         # Beta cannot release Alpha's lease.
@@ -2250,7 +2208,6 @@ class FileLeaseRegistryTests(unittest.TestCase):
         self.assertEqual(leases.holder("a.py"), "Alpha")
 
     def test_claim_partitions_granted_and_denied(self):
-        """Verify claim partitions granted and denied behavior."""
         leases = FileLeaseRegistry()
         leases.acquire("Alpha", "shared.py")
         granted, denied = leases.claim("Beta", ["shared.py", "own.py"])
@@ -2261,16 +2218,13 @@ class FileLeaseRegistryTests(unittest.TestCase):
 
 
 class ParallelWorkRoundTests(unittest.TestCase):
-    """Test case for parallel work round tests behavior."""
     def _workers(self):
-        """Verify workers behavior."""
         return [
             {"name": "Alpha", "role": "Implementer", "provider": "same as task", "model": "same as task", "responsibility": ""},
             {"name": "Beta", "role": "Implementer", "provider": "same as task", "model": "same as task", "responsibility": ""},
         ]
 
     def _run_round(self, scope, fake_model):
-        """Verify run round behavior."""
         spec = DummySpec(scope_folder=str(scope), parallel_execution=True)
         spec.agents = self._workers()
         runner = AgentTaskRunner(model_callback=fake_model)
@@ -2286,13 +2240,11 @@ class ParallelWorkRoundTests(unittest.TestCase):
         return turns
 
     def test_disjoint_files_are_written_in_parallel(self):
-        """Verify disjoint files are written in parallel behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             scope.mkdir()
 
             def fake_model(prompt: str) -> str:
-                """Verify fake model behavior."""
                 if "Active agent: Alpha" in prompt:
                     return json.dumps({"thought": "build alpha", "tool_calls": [{"tool": "create_file", "args": {"path": "alpha.txt", "content": "alpha"}}], "final": None})
                 return json.dumps({"thought": "build beta", "tool_calls": [{"tool": "create_file", "args": {"path": "beta.txt", "content": "beta"}}], "final": None})
@@ -2306,13 +2258,11 @@ class ParallelWorkRoundTests(unittest.TestCase):
             self.assertTrue(all(r["ok"] for turn in turns for r in turn["tool_results"]))
 
     def test_same_file_write_is_leased_to_exactly_one_agent(self):
-        """Verify same file write is leased to exactly one agent behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             scope.mkdir()
 
             def fake_model(prompt: str) -> str:
-                """Verify fake model behavior."""
                 content = "alpha" if "Active agent: Alpha" in prompt else "beta"
                 return json.dumps({"thought": "edit shared", "tool_calls": [{"tool": "write_file", "args": {"path": "shared.txt", "content": content}}], "final": None})
 
@@ -2328,7 +2278,6 @@ class ParallelWorkRoundTests(unittest.TestCase):
             self.assertIn((scope / "shared.txt").read_text(encoding="utf-8"), {"alpha", "beta"})
 
     def test_round_is_skipped_with_fewer_than_two_workers(self):
-        """Verify round is skipped with fewer than two workers behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope"
             scope.mkdir()
@@ -2337,7 +2286,6 @@ class ParallelWorkRoundTests(unittest.TestCase):
             called = False
 
             def fake_model(_prompt: str) -> str:
-                """Verify fake model behavior."""
                 nonlocal called
                 called = True
                 return json.dumps({"thought": "x", "tool_calls": [], "final": None})

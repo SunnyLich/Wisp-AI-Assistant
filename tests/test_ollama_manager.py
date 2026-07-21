@@ -44,6 +44,52 @@ def test_ensure_ollama_running_explains_when_not_installed(monkeypatch):
         ollama_manager.ensure_ollama_running()
 
 
+def test_ollama_runtime_failure_matrix_is_controlled(monkeypatch, tmp_path):
+    """Server, endpoint, model, RAM, and VRAM faults all return bounded diagnostics."""
+    executable = tmp_path / "ollama"
+    executable.touch()
+    monkeypatch.setattr(ollama_manager, "ollama_is_running", lambda base_url=None: False)
+    monkeypatch.setattr(ollama_manager, "find_ollama_executable", lambda: executable)
+    monkeypatch.setattr(ollama_manager.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(ollama_manager, "_start_ollama", lambda _path: None)
+
+    with pytest.raises(RuntimeError, match="did not become ready"):
+        ollama_manager.ensure_ollama_running(timeout_seconds=0)
+
+    monkeypatch.setattr(
+        ollama_manager,
+        "_start_ollama",
+        lambda _path: (_ for _ in ()).throw(OSError("server cannot be started")),
+    )
+    with pytest.raises(RuntimeError, match="could not start Ollama"):
+        ollama_manager.ensure_ollama_running()
+
+    for url in ("http://wrong-host.invalid:11434/v1", "http://192.0.2.1:65500/v1"):
+        with pytest.raises(RuntimeError, match="only auto-starts a local"):
+            ollama_manager.ensure_ollama_running(base_url=url)
+
+    from core.llm_clients import client
+
+    probe_failures = (
+        "requested Ollama model is not installed",
+        "available RAM is insufficient for the model",
+        "available VRAM is insufficient for the model",
+    )
+    for failure in probe_failures:
+        with monkeypatch.context() as scoped:
+            scoped.setattr(client, "_check_route_config", lambda *_args: None)
+            scoped.setattr(
+                client,
+                "_probe_openai_compat_route",
+                lambda *_args, failure=failure, **_kwargs: (_ for _ in ()).throw(
+                    RuntimeError(failure)
+                ),
+            )
+            ok, message = client.test_route_connection("ollama", "local-model", "LLM")
+        assert ok is False
+        assert failure in message
+
+
 def test_ensure_ollama_running_does_not_start_a_server_for_remote_urls(monkeypatch):
     monkeypatch.setattr(ollama_manager, "ollama_is_running", lambda base_url=None: False)
     monkeypatch.setattr(

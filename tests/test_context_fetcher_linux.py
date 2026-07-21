@@ -11,7 +11,6 @@ import pytest
 
 @pytest.fixture()
 def linux_context_fetcher():
-    """Verify linux context fetcher behavior."""
     import core.context_fetcher as context_fetcher
 
     platform_patch = patch.object(sys, "platform", "linux")
@@ -25,7 +24,6 @@ def linux_context_fetcher():
 
 
 def test_kwrite_window_resolves_open_file_by_pid(linux_context_fetcher, monkeypatch):
-    """Verify kwrite window resolves open file by pid behavior."""
     cf = linux_context_fetcher
     path = "/home/sampleuser/Documents/Summary.txt"
     win = cf.WindowInfo(
@@ -42,7 +40,6 @@ def test_kwrite_window_resolves_open_file_by_pid(linux_context_fetcher, monkeypa
 
 
 def test_kate_process_title_resolves_open_file_by_pid(linux_context_fetcher, monkeypatch):
-    """Verify kate process title resolves open file by pid behavior."""
     cf = linux_context_fetcher
     path = "/home/sampleuser/Documents/Notes.md"
     win = cf.WindowInfo(title="Notes.md", process_name="kate", pid=202)

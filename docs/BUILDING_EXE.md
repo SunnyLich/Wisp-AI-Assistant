@@ -64,8 +64,11 @@ Notes:
   launchers.
 - Packaged no-console runs keep runtime logs under `build_logs/`; the latest
   folder is written to `build_logs/latest_wisp_runtime.txt`. From the tray menu,
-  open `Runtime Status` to see worker pids, running/stopped state, and recent
-  worker stderr without launching from a terminal.
+  open `Runtime Status` to see worker pids and running/stopped state plus the
+  live aggregated event log: worker stderr (tracebacks grouped into one
+  expandable "encountered an error" entry), supervisor logs, bubble notices,
+  setup-check results, and optional-installer outcomes — all without launching
+  from a terminal.
 - Runtime package installs in packaged builds require `uv`. This includes addon
   dependency environments and Settings > Voice installs for optional speech
   packages such as STT/faster-whisper, Kokoro, or ElevenLabs. The Windows build script stages

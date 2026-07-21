@@ -9,9 +9,7 @@ from core.tool_registry import ToolRegistry, ToolSpec
 
 
 class ToolRegistryTests(unittest.TestCase):
-    """Test case for tool registry tests behavior."""
     def test_registers_builtin_schema_and_executes_callback(self):
-        """Verify registers builtin schema and executes callback behavior."""
         registry = ToolRegistry(plugin_dir=Path("does-not-exist"))
         registry.register_builtin(
             ToolSpec(
@@ -30,7 +28,6 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertEqual(registry.schemas()[0]["name"], "echo_builtin")
 
     def test_discovers_and_executes_script_tool(self):
-        """Verify discovers and executes script tool behavior."""
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             tool_dir = root / "echo"
@@ -80,7 +77,6 @@ class ToolRegistryTests(unittest.TestCase):
             )
 
     def test_ignores_disabled_script_tool(self):
-        """Verify ignores disabled script tool behavior."""
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             tool_dir = root / "disabled"
@@ -99,7 +95,6 @@ class ToolRegistryTests(unittest.TestCase):
             self.assertEqual(registry.schemas(include_server_tools=False), [])
 
     def test_script_tool_manifest_accepts_cp1252_punctuation(self):
-        """Verify script tool manifest accepts cp1252 punctuation behavior."""
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             tool_dir = root / "legacy"

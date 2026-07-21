@@ -11,16 +11,13 @@ from core.assistant_text import (
 
 
 class AssistantTextTests(unittest.TestCase):
-    """Test case for assistant text tests behavior."""
     def test_split_tagged_text_separates_thoughts_and_reply(self):
-        """Verify split tagged text separates thoughts and reply behavior."""
         self.assertEqual(
             split_tagged_text("<think>plan</think>Answer"),
             [("plan", True), ("Answer", False)],
         )
 
     def test_stream_parser_handles_split_tags_across_chunks(self):
-        """Verify stream parser handles split tags across chunks behavior."""
         parser = ThoughtStreamParser()
         segments = []
         for chunk in ("<th", "ink>plan", "</thi", "nk>Ans", "wer"):
@@ -31,7 +28,6 @@ class AssistantTextTests(unittest.TestCase):
         self.assertEqual(segments, [("plan", True), ("Answer", False)])
 
     def test_extract_reply_text_removes_thought_blocks(self):
-        """Verify extract reply text removes thought blocks behavior."""
         self.assertEqual(
             extract_reply_text("<think>internal\nnotes</think>Visible reply"),
             "Visible reply",

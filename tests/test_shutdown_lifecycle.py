@@ -12,30 +12,23 @@ pytest.importorskip("PySide6", reason="PySide6 not installed")
 
 
 class _Counter:
-    """Test case for counter behavior."""
     def __init__(self) -> None:
-        """Initialize the counter instance."""
         self.calls = 0
 
     def next(self) -> None:
-        """Verify next behavior."""
         self.calls += 1
 
     def stop(self) -> None:
-        """Verify stop behavior."""
         self.calls += 1
 
     def on_shutdown(self) -> None:
-        """Verify on shutdown behavior."""
         self.calls += 1
 
     def shutdown(self) -> None:
-        """Verify shutdown behavior."""
         self.calls += 1
 
 
 def test_app_shutdown_is_idempotent(monkeypatch):
-    """Verify app shutdown is idempotent behavior."""
     import main
 
     fake = types.SimpleNamespace(
@@ -60,16 +53,13 @@ def test_app_shutdown_is_idempotent(monkeypatch):
 
 
 def test_windows_console_handler_ignores_synthetic_ctrl_c(monkeypatch):
-    """Verify windows console handler ignores synthetic ctrl c behavior."""
     import main
     from core import platform_utils
 
     stored = {}
 
     class FakeKernel32:
-        """Test case for fake kernel32 behavior."""
         def SetConsoleCtrlHandler(self, handler, add):
-            """Verify set console ctrl handler behavior."""
             stored["handler"] = handler
             stored["add"] = add
             return True
@@ -96,16 +86,13 @@ def test_windows_console_handler_ignores_synthetic_ctrl_c(monkeypatch):
 
 
 def test_windows_console_handler_requests_shutdown_for_real_ctrl_c(monkeypatch):
-    """Verify windows console handler requests shutdown for real ctrl c behavior."""
     import main
     from core import platform_utils
 
     stored = {}
 
     class FakeKernel32:
-        """Test case for fake kernel32 behavior."""
         def SetConsoleCtrlHandler(self, handler, add):
-            """Verify set console ctrl handler behavior."""
             stored["handler"] = handler
             return True
 
@@ -130,7 +117,6 @@ def test_windows_console_handler_requests_shutdown_for_real_ctrl_c(monkeypatch):
 
 
 def test_windows_send_keys_marks_synthetic_ctrl_c(monkeypatch):
-    """Verify windows send keys marks synthetic ctrl c behavior."""
     from core import platform_utils
 
     sent = []

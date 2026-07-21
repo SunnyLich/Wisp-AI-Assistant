@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Wisp GitHub social preview — 1280 × 640
+
+  This is the editable source of truth. The matching PNG is generated with:
+      powershell -ExecutionPolicy Bypass -File scripts/render_social_preview.ps1
+
+  All artwork is native SVG: no linked files, generated imagery, or web fonts.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
+  <title id="title">Wisp — the open-source desktop AI assistant</title>
+  <desc id="description">GitHub social preview for Wisp, an open-source desktop AI assistant with MCP and ChatGPT or Claude account sign-in.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1118"/>
+      <stop offset="0.58" stop-color="#080b10"/>
+      <stop offset="1" stop-color="#07090d"/>
+    </linearGradient>
+    <radialGradient id="blue-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#1684ff" stop-opacity=".32"/>
+      <stop offset=".48" stop-color="#126fe5" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#0b4bb7" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="brand-blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2ba4ff"/>
+      <stop offset="1" stop-color="#0667ed"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151a22"/>
+      <stop offset="1" stop-color="#0e1218"/>
+    </linearGradient>
+    <linearGradient id="selection" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1684ff" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#1684ff" stop-opacity=".06"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#93a4ba" stroke-opacity=".055"/>
+    </pattern>
+    <filter id="panel-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#000" flood-opacity=".55"/>
+    </filter>
+    <filter id="icon-shadow" x="-40%" y="-40%" width="180%" height="190%">
+      <feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#0066ea" flood-opacity=".36"/>
+    </filter>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="190%">
+      <feDropShadow dx="0" dy="7" stdDeviation="10" flood-color="#000" flood-opacity=".42"/>
+    </filter>
+    <clipPath id="panel-clip">
+      <rect x="795" y="96" width="413" height="448" rx="28"/>
+    </clipPath>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1280" height="640" fill="url(#background)"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+  <ellipse cx="1004" cy="309" rx="388" ry="370" fill="url(#blue-glow)"/>
+  <path d="M0 1H1280M0 639H1280" stroke="#fff" stroke-opacity=".08"/>
+
+  <!-- Brand lockup -->
+  <g transform="translate(72 64)">
+    <g filter="url(#icon-shadow)">
+      <rect width="54" height="54" rx="15" fill="url(#brand-blue)"/>
+      <path d="M27 11.2c-10.1 0-18.3 7.2-18.3 16.1 0 8.8 8.2 16 18.3 16 2.6 0 5.1-.5 7.3-1.4l6.4 3.2c1 .5 2.1-.4 1.8-1.5l-1.9-6.2c2.9-2.8 4.7-6.3 4.7-10.1 0-8.9-8.2-16.1-18.3-16.1Z" fill="#f8fbff"/>
+      <rect x="16.3" y="20.3" width="21.4" height="14" rx="7" fill="#0d48b4"/>
+      <rect x="20.5" y="24" width="3.8" height="6.5" rx="1.9" fill="#7dc7ff"/>
+      <rect x="29.7" y="24" width="3.8" height="6.5" rx="1.9" fill="#7dc7ff"/>
+    </g>
+    <text x="72" y="39" fill="#f5f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="700" letter-spacing="-.8">Wisp</text>
+    <rect x="170" y="13" width="132" height="31" rx="15.5" fill="#151a22" stroke="#2b3440"/>
+    <circle cx="189" cy="28.5" r="4" fill="#56c98a"/>
+    <text x="201" y="33" fill="#aeb7c5" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1.25">OPEN SOURCE</text>
+  </g>
+
+  <!-- Positioning copy -->
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="72" y="223" fill="#f6f8fb" font-size="64" font-weight="750" letter-spacing="-2.3">
+      <tspan x="72" dy="0">Your desktop AI,</tspan>
+      <tspan x="72" dy="76">right where you work.</tspan>
+    </text>
+    <text x="75" y="356" fill="#a7b0bd" font-size="22" font-weight="450" letter-spacing="-.25">
+      <tspan x="75" dy="0">Call Wisp up anywhere. Connect context through MCP.</tspan>
+      <tspan x="75" dy="34">Sign in with ChatGPT or Claude. Keep your flow.</tspan>
+    </text>
+  </g>
+
+  <!-- Integration rail: the repo's highest-signal capabilities -->
+  <g transform="translate(72 457)" font-family="Segoe UI, Arial, sans-serif">
+    <g>
+      <rect width="154" height="42" rx="21" fill="#102033" stroke="#23629c"/>
+      <circle cx="24" cy="21" r="9" fill="#1684ff" fill-opacity=".2" stroke="#4ca7ff"/>
+      <circle cx="20.5" cy="18" r="1.7" fill="#8ed0ff"/>
+      <circle cx="27.5" cy="18" r="1.7" fill="#8ed0ff"/>
+      <circle cx="24" cy="25" r="1.7" fill="#8ed0ff"/>
+      <path d="m21.8 19.5 1.2 3.4m4.2-3.4-2 3.4" fill="none" stroke="#8ed0ff" stroke-width="1.2"/>
+      <text x="43" y="27" fill="#f0f6ff" font-size="14" font-weight="750">MCP built in</text>
+    </g>
+    <g transform="translate(166)">
+      <rect width="226" height="42" rx="21" fill="#111b19" stroke="#28584b"/>
+      <circle cx="23" cy="21" r="10" fill="#56c98a" fill-opacity=".16"/>
+      <path d="M19 21.5a4 4 0 1 1 7.6 1.7M27 19.5l-.4 3.7-3.6-.7" fill="none" stroke="#69dda0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="41" y="27" fill="#e7f7ef" font-size="14" font-weight="700">ChatGPT + Claude sign-in</text>
+    </g>
+    <g transform="translate(404)">
+      <rect width="142" height="42" rx="21" fill="#171721" stroke="#3b3d55"/>
+      <circle cx="23" cy="21" r="10" fill="#9e9cff" fill-opacity=".14"/>
+      <path d="M23 13.5 31 17v6c0 5.2-3.4 8.6-8 10-4.6-1.4-8-4.8-8-10v-6Zm-2.8 9.2 2 2 4-4.5" fill="none" stroke="#aaa9ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="41" y="27" fill="#ececff" font-size="14" font-weight="700">Privacy first</text>
+    </g>
+  </g>
+
+  <!-- Platform line -->
+  <g transform="translate(75 552)" font-family="Segoe UI, Arial, sans-serif" fill="#788394">
+    <text y="0" font-size="12" font-weight="700" letter-spacing="1.8">WINDOWS</text>
+    <circle cx="86" cy="-4" r="2" fill="#3f4956"/>
+    <text x="101" y="0" font-size="12" font-weight="700" letter-spacing="1.8">MACOS</text>
+    <circle cx="166" cy="-4" r="2" fill="#3f4956"/>
+    <text x="181" y="0" font-size="12" font-weight="700" letter-spacing="1.8">LINUX</text>
+    <circle cx="245" cy="-4" r="2" fill="#3f4956"/>
+    <text x="260" y="0" font-size="12" font-weight="700" letter-spacing="1.8">BRING YOUR MODEL</text>
+  </g>
+
+  <!-- The real Wisp interaction model: a global, summonable intent picker -->
+  <g transform="translate(952 67)" font-family="Segoe UI, Arial, sans-serif">
+    <circle cx="-14" cy="-4" r="4" fill="#56c98a"/>
+    <text x="0" y="0" fill="#8d9aab" font-size="11" font-weight="750" letter-spacing="1.5">GLOBAL OVERLAY</text>
+  </g>
+  <g filter="url(#panel-shadow)">
+    <rect x="795" y="96" width="413" height="448" rx="28" fill="url(#panel)" stroke="#303946"/>
+  </g>
+  <g clip-path="url(#panel-clip)" font-family="Segoe UI, Arial, sans-serif">
+    <!-- Provider and conversation controls -->
+    <rect x="795" y="96" width="413" height="66" fill="#171b24"/>
+    <rect x="813" y="113" width="224" height="34" rx="9" fill="#10141b" stroke="#242b36"/>
+    <circle cx="832" cy="130" r="10" fill="url(#brand-blue)"/>
+    <rect x="826" y="126" width="12" height="8" rx="4" fill="#fff"/>
+    <circle cx="830" cy="130" r="1.2" fill="#0d55c7"/>
+    <circle cx="834" cy="130" r="1.2" fill="#0d55c7"/>
+    <text x="851" y="134" fill="#e5e9f0" font-size="12" font-weight="650">ChatGPT / Codex &#183; General</text>
+    <path d="m1023 127 4 5 4-5Z" fill="#7d8795"/>
+    <rect x="1047" y="113" width="143" height="34" rx="9" fill="#121720" stroke="#242b36"/>
+    <text x="1118.5" y="134" text-anchor="middle" fill="#8490a0" font-size="11" font-weight="650">New conversation</text>
+
+    <!-- Context toggles -->
+    <g font-size="9.5" font-weight="650" text-anchor="middle">
+      <g transform="translate(813 174)">
+        <rect width="67" height="54" rx="10" fill="#29303b" stroke="#647080"/>
+        <text x="33.5" y="23" fill="#f0f3f8">App</text><text x="33.5" y="39" fill="#8d98a7" font-size="8">ON</text>
+      </g>
+      <g transform="translate(888 174)">
+        <rect width="67" height="54" rx="10" fill="#252a34" stroke="#58616f"/>
+        <text x="33.5" y="23" fill="#e5e9ef">Browser</text><text x="33.5" y="39" fill="#8d98a7" font-size="8">OFF</text>
+      </g>
+      <g transform="translate(963 174)">
+        <rect width="67" height="54" rx="10" fill="#252a34" stroke="#58616f"/>
+        <text x="33.5" y="23" fill="#e5e9ef">Selection</text><text x="33.5" y="39" fill="#8d98a7" font-size="8">OFF</text>
+      </g>
+      <g transform="translate(1038 174)">
+        <rect width="67" height="54" rx="10" fill="#252a34" stroke="#58616f"/>
+        <text x="33.5" y="23" fill="#e5e9ef">Screen</text><text x="33.5" y="39" fill="#8d98a7" font-size="8">OFF</text>
+      </g>
+      <g transform="translate(1113 174)">
+        <rect width="67" height="54" rx="10" fill="#252a34" stroke="#58616f"/>
+        <text x="33.5" y="23" fill="#e5e9ef">Files</text><text x="33.5" y="39" fill="#8d98a7" font-size="8">OFF</text>
+      </g>
+    </g>
+
+    <!-- Intent choices -->
+    <g>
+      <path d="M813 251H1190M813 306H1190M813 361H1190" stroke="#242b35"/>
+      <g transform="translate(813 241)">
+        <rect width="36" height="36" rx="10" fill="#10141b"/>
+        <text x="18" y="24" text-anchor="middle" fill="#8e8cff" font-size="17" font-weight="750">W</text>
+        <text x="49" y="17" fill="#edf0f5" font-size="13" font-weight="650">What is this?</text>
+        <text x="49" y="34" fill="#737e8d" font-size="9.5">A clear explanation in plain English</text>
+      </g>
+      <g transform="translate(813 296)">
+        <rect width="36" height="36" rx="10" fill="#10141b"/>
+        <text x="18" y="24" text-anchor="middle" fill="#8e8cff" font-size="17" font-weight="750">A</text>
+        <text x="49" y="17" fill="#edf0f5" font-size="13" font-weight="650">Explain simply</text>
+        <text x="49" y="34" fill="#737e8d" font-size="9.5">No technical background needed</text>
+      </g>
+      <g transform="translate(813 351)">
+        <rect width="36" height="36" rx="10" fill="#10141b"/>
+        <text x="18" y="24" text-anchor="middle" fill="#8e8cff" font-size="17" font-weight="750">D</text>
+        <text x="49" y="17" fill="#edf0f5" font-size="13" font-weight="650">How do I fix this?</text>
+        <text x="49" y="34" fill="#737e8d" font-size="9.5">Concise, actionable steps</text>
+      </g>
+    </g>
+
+    <!-- Custom prompt and keyboard-first input -->
+    <rect x="813" y="408" width="377" height="52" rx="12" fill="#25283f" stroke="#3f4370"/>
+    <rect x="825" y="418" width="32" height="32" rx="9" fill="#4b4e91"/>
+    <text x="841" y="440" text-anchor="middle" fill="#b9b8ff" font-size="16" font-weight="750">S</text>
+    <text x="870" y="430" fill="#f1f2f7" font-size="12.5" font-weight="650">Custom prompt</text>
+    <text x="870" y="447" fill="#838c9a" font-size="9.5">Ask anything</text>
+    <rect x="813" y="473" width="377" height="43" rx="10" fill="#0d1118" stroke="#8e8cff" stroke-width="1.5"/>
+    <text x="829" y="499" fill="#9aa4b2" font-size="12">Type your prompt, press Enter...</text>
+    <text x="1001.5" y="534" text-anchor="middle" fill="#626c79" font-size="9" font-weight="600">ESC TO CANCEL</text>
+  </g>
+
+  <!-- Decorative focus brackets -->
+  <g fill="none" stroke="#3699ff" stroke-width="2" stroke-linecap="round" opacity=".7">
+    <path d="M771 117v-18h18M1186 76h18v18M1229 516v18h-18"/>
+  </g>
+</svg>

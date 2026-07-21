@@ -40,7 +40,6 @@ from ui.text_annotations import annotation_tooltip_anchor, normalize_range_annot
 
 
 def test_truncate_for_display_caps_large_text():
-    """Verify truncate for display caps large text behavior."""
     text = "x" * (_CHAT_RENDER_CHAR_LIMIT + 50)
 
     result = _truncate_for_display(text, _CHAT_RENDER_CHAR_LIMIT, "chat display")
@@ -51,7 +50,6 @@ def test_truncate_for_display_caps_large_text():
 
 
 def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
-    """Verify truncate segments preserves visible prefix and adds marker behavior."""
     segments = [
         ("thought:" + "a" * 20, True),
         ("reply:" + "b" * 20, False),
@@ -62,6 +60,132 @@ def test_truncate_segments_preserves_visible_prefix_and_adds_marker():
     assert result[0] == ("thought:" + "a" * 16, True)
     assert result[1][1] is False
     assert "chat display truncated" in result[1][0]
+
+
+def test_conversation_rename_failure_matrix_rejects_or_rolls_back(monkeypatch):
+    """Rename validation and persistence faults never leave a false in-memory title."""
+    from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow.__new__(ChatWindow)
+    original = {
+        "title_override": "Original",
+        "messages": [{"role": "user", "content": "first"}],
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    other = {
+        "title_override": "Existing",
+        "messages": [{"role": "user", "content": "second"}],
+    }
+    window._conversations = [original, other]
+    warnings = []
+    rebuilds = []
+    monkeypatch.setattr(ChatWindow, "_rebuild_sidebar", lambda self: rebuilds.append(True))
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args: warnings.append(str(_args[-1])) or QMessageBox.StandardButton.Ok,
+    )
+
+    for proposed, expected in (
+        ("   ", "empty"),
+        ("bad\nname", "invalid"),
+        ("existing", "already uses"),
+    ):
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_args, proposed=proposed, **_kwargs: (proposed, True))
+        window._persist_fn = lambda: pytest.fail("invalid name reached persistence")
+        ChatWindow._rename_conversation(window, 0)
+        assert original["title_override"] == "Original"
+        assert expected in warnings[-1].lower()
+
+    storage_failures = (
+        PermissionError("backing store is read-only"),
+        BlockingIOError("backing store is locked"),
+        ValueError("backing store is corrupt"),
+        OSError("write was interrupted"),
+    )
+    for failure in storage_failures:
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("Renamed", True))
+
+        def fail_persist(failure=failure):
+            raise failure
+
+        window._persist_fn = fail_persist
+        ChatWindow._rename_conversation(window, 0)
+        assert original["title_override"] == "Original"
+        assert str(failure) in warnings[-1]
+
+    assert len(rebuilds) == len(storage_failures) * 2
+    app.processEvents()
+
+
+def test_conversation_delete_failure_matrix_preserves_history(monkeypatch):
+    """Missing, locked, cancelled, and storage-failed deletes preserve history."""
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow.__new__(ChatWindow)
+    conversation = {"id": "keep-me", "messages": []}
+    window._conversations = [conversation]
+    window._active_idx = 0
+    window._streaming = False
+    warnings = []
+    questions = {"answer": QMessageBox.StandardButton.Yes}
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: questions["answer"],
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args: warnings.append(str(_args[-1])) or QMessageBox.StandardButton.Ok,
+    )
+    monkeypatch.setattr(
+        ChatWindow,
+        "_rebuild_stack",
+        lambda self: pytest.fail("failed delete rebuilt the conversation stack"),
+    )
+    monkeypatch.setattr(
+        ChatWindow,
+        "_rebuild_sidebar",
+        lambda self: pytest.fail("failed delete rebuilt the conversation sidebar"),
+    )
+
+    window._persist_fn = lambda: pytest.fail("missing target reached persistence")
+    ChatWindow._delete_conversation(window, 4)
+    assert window._conversations == [conversation]
+
+    window._streaming = True
+    window._persist_fn = lambda: pytest.fail("locked target reached persistence")
+    ChatWindow._delete_conversation(window, 0)
+    assert window._conversations == [conversation]
+    window._streaming = False
+
+    questions["answer"] = QMessageBox.StandardButton.No
+    window._persist_fn = lambda: pytest.fail("cancelled delete reached persistence")
+    ChatWindow._delete_conversation(window, 0)
+    assert window._conversations == [conversation]
+    questions["answer"] = QMessageBox.StandardButton.Yes
+
+    storage_failures = (
+        PermissionError("required elevation is denied"),
+        PermissionError("storage access is denied"),
+        BlockingIOError("another process is using the files"),
+        OSError("cleanup only partly completes"),
+    )
+    for failure in storage_failures:
+        def fail_persist(failure=failure):
+            raise failure
+
+        window._persist_fn = fail_persist
+        ChatWindow._delete_conversation(window, 0)
+        assert window._conversations == [conversation]
+        assert window._active_idx == 0
+        assert str(failure) in warnings[-1]
+
+    app.processEvents()
 
 
 def test_merged_annotations_hides_disabled_sources_and_rebuilds_ui_lab(monkeypatch):
@@ -252,8 +376,25 @@ def test_chat_window_is_not_always_on_top():
 
 
 @pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_application_event_filter_ignores_non_qobject_model_items():
+    """Global chat filtering must tolerate Qt model-item action events."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QStandardItem
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow([{"messages": []}], lambda _messages: iter(()))
+    try:
+        event = QEvent(QEvent.Type.ActionChanged)
+        assert window.eventFilter(QStandardItem("provider"), event) is False
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
 def test_chat_window_opens_large_last_chat_without_render_freeze():
-    """Verify chat window opens large last chat without render freeze behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -283,7 +424,6 @@ def test_chat_window_opens_large_last_chat_without_render_freeze():
 
 @pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
 def test_chat_sidebar_options_button_stays_visible_for_long_titles():
-    """Verify chat sidebar options button stays visible for long titles behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -725,7 +865,6 @@ def test_chat_window_selection_notice_names_continued_chat():
 
 @pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
 def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
-    """Verify chat sidebar options menu anchors to button behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
@@ -737,7 +876,6 @@ def test_chat_sidebar_options_menu_anchors_to_button(monkeypatch):
     captured = []
 
     def fake_popup(self, pos):
-        """Verify fake popup behavior."""
         captured.append(pos)
         return None
 
@@ -1117,6 +1255,54 @@ def test_chat_rewind_current_chat_requires_confirmation(monkeypatch):
 
         assert [m["content"] for m in conversations[0]["messages"]] == ["first"]
         assert conversations[0]["context"] == "first context"
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PYSIDE6_AVAILABLE, reason="PySide6 not installed")
+def test_chat_stale_records_and_active_stream_are_rejected_without_mutation():
+    """Stale selections and mid-stream actions cannot alter conversation state."""
+    from copy import deepcopy
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    conversations = [
+        {
+            "id": "current",
+            "project_id": "general",
+            "messages": [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "done"},
+            ],
+        }
+    ]
+    persisted = []
+    window = ChatWindow(
+        conversations,
+        lambda _messages: iter(()),
+        persist_fn=lambda: persisted.append(True),
+    )
+    try:
+        before = deepcopy(conversations)
+
+        # Stale conversation, project, and message records all fail closed.
+        window._toggle_pin(99)
+        window._assign_project(0, "deleted-project")
+        window._branch_from_message(0, 99)
+        window._rewind_to_message(0, 99)
+        assert conversations == before
+        assert persisted == []
+
+        # A valid but currently streaming conversation is equally immutable.
+        window._streaming = True
+        window._streaming_idx = 0
+        window._branch_from_message(0, 0)
+        window._rewind_to_message(0, 0)
+        window._delete_conversation(0)
+        window._send("second request")
+        assert conversations == before
+        assert persisted == []
     finally:
         window.close()
         app.processEvents()

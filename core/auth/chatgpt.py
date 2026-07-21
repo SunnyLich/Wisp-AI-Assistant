@@ -30,6 +30,7 @@ import html
 import json
 import logging
 import secrets
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -52,6 +53,14 @@ _REDIRECT_URI = f"http://localhost:{_OAUTH_PORT}/auth/callback"
 
 _KEYRING_SERVICE = "python-ai-overlay"
 _KEYRING_ACCOUNT = "chatgpt-oauth"
+_KEYRING_CHUNK_SIZE = 900
+_KEYRING_MAX_CHUNKS = 32
+_USE_CHUNKED_KEYRING = sys.platform == "win32"
+_CHUNK_MANIFEST_KEY = "_wisp_oauth_chunks"
+
+# Keep reads, rewrites, and deletes consecutive inside this process. Windows
+# Credential Manager exposes individual credential operations, not a batch API.
+_token_storage_lock = threading.RLock()
 
 # ---------------------------------------------------------------------------
 # PKCE helpers
@@ -74,11 +83,15 @@ def _generate_state() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Token storage — keyring with fallback to a local file
+# Token storage — OS keychain only
 # ---------------------------------------------------------------------------
 
 _TOKEN_FILE = Path(__file__).parent.parent / "private" / ".chatgpt_tokens.json"
 _APP_ICON_FILE = Path(__file__).resolve().parents[2] / "assets" / "app.ico"
+
+
+class OAuthTokenStorageError(RuntimeError):
+    """Raised when reusable OAuth tokens cannot be stored securely."""
 
 
 def _app_icon_data_uri() -> str:
@@ -89,46 +102,149 @@ def _app_icon_data_uri() -> str:
         return ""
 
 
-def _keyring_get() -> str | None:
+def _keyring_get(account: str = _KEYRING_ACCOUNT) -> str | None:
     """Handle keyring get for auth chatgpt."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
-            return keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+            return keyring.get_password(_KEYRING_SERVICE, account)
     except Exception:
         return None
 
 
-def _keyring_set(value: str) -> bool:
+def _keyring_set(value: str, account: str = _KEYRING_ACCOUNT) -> bool:
     """Handle keyring set for auth chatgpt."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
-            keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, value)
+            keyring.set_password(_KEYRING_SERVICE, account, value)
         return True
-    except Exception:
+    except Exception as exc:
+        log.error("Could not write ChatGPT OAuth credential %s: %s", account, exc)
         return False
 
 
-def _keyring_delete() -> None:
+def _keyring_delete(account: str = _KEYRING_ACCOUNT) -> None:
     """Handle keyring delete for auth chatgpt."""
     try:
         with keychain_lock():
             import keyring  # type: ignore
-            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+            keyring.delete_password(_KEYRING_SERVICE, account)
     except Exception:
         pass
 
 
-def get_tokens() -> dict | None:
+def _chunk_account(index: int) -> str:
+    """Return the keyring account used for one OAuth payload chunk."""
+    return f"{_KEYRING_ACCOUNT}-chunk-{index}"
+
+
+def _chunk_manifest(raw: str | None) -> dict | None:
+    """Parse and validate a chunk manifest stored in the primary account."""
+    if not raw:
+        return None
+    try:
+        manifest = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(manifest, dict) or manifest.get(_CHUNK_MANIFEST_KEY) != 1:
+        return None
+    count = manifest.get("count")
+    length = manifest.get("length")
+    digest = manifest.get("sha256")
+    if not isinstance(count, int) or not 1 <= count <= _KEYRING_MAX_CHUNKS:
+        return None
+    if not isinstance(length, int) or length < 1 or not isinstance(digest, str):
+        return None
+    return manifest
+
+
+def _read_keyring_payload() -> str | None:
+    """Read either the legacy single-item payload or the current chunked form."""
+    primary = _keyring_get()
+    manifest = _chunk_manifest(primary)
+    if manifest is None:
+        return primary
+
+    parts: list[str] = []
+    for index in range(manifest["count"]):
+        chunk = _keyring_get(_chunk_account(index))
+        if chunk is None:
+            log.warning("ChatGPT OAuth keychain chunk %d is missing", index)
+            return None
+        parts.append(chunk)
+
+    payload = "".join(parts)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    if len(payload) != manifest["length"] or digest != manifest["sha256"]:
+        log.warning("ChatGPT OAuth keychain chunks failed verification")
+        return None
+    return payload
+
+
+def _write_keyring_payload(payload: str) -> bool:
+    """Write and verify an OAuth payload, chunking it on Windows."""
+    if not _USE_CHUNKED_KEYRING:
+        return _keyring_set(payload) and _keyring_get() == payload
+
+    chunks = [payload[start : start + _KEYRING_CHUNK_SIZE] for start in range(0, len(payload), _KEYRING_CHUNK_SIZE)]
+    if not chunks or len(chunks) > _KEYRING_MAX_CHUNKS:
+        log.error("ChatGPT OAuth payload requires too many keychain chunks: %d", len(chunks))
+        return False
+
+    previous_manifest = _chunk_manifest(_keyring_get())
+    previous_count = previous_manifest["count"] if previous_manifest else 0
+
+    for index, chunk in enumerate(chunks):
+        account = _chunk_account(index)
+        if not _keyring_set(chunk, account) or _keyring_get(account) != chunk:
+            return False
+
+    manifest = json.dumps(
+        {
+            _CHUNK_MANIFEST_KEY: 1,
+            "count": len(chunks),
+            "length": len(payload),
+            "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+        },
+        separators=(",", ":"),
+    )
+    if not _keyring_set(manifest) or _keyring_get() != manifest:
+        return False
+
+    for index in range(len(chunks), previous_count):
+        _keyring_delete(_chunk_account(index))
+    return _read_keyring_payload() == payload
+
+
+def _delete_keyring_payload() -> None:
+    """Delete the primary OAuth entry and every possible Windows chunk."""
+    _keyring_delete()
+    if _USE_CHUNKED_KEYRING:
+        for index in range(_KEYRING_MAX_CHUNKS):
+            _keyring_delete(_chunk_account(index))
+
+
+def _get_tokens_unlocked() -> dict | None:
     """Return stored OAuth tokens dict or None if the user is not logged in."""
-    # Try keyring first, then fall back to local file
-    raw = _keyring_get()
+    raw = _read_keyring_payload()
     if not raw and _TOKEN_FILE.exists():
+        # Versions before 0.10.2 could fall back to this plaintext file. Migrate
+        # it once when the keychain is available, and remove it either way so a
+        # failed keychain can never leave reusable credentials on disk.
         try:
-            raw = _TOKEN_FILE.read_text(encoding="utf-8")
-        except Exception:
-            pass
+            legacy_raw = _TOKEN_FILE.read_text(encoding="utf-8")
+            if legacy_raw and _write_keyring_payload(legacy_raw):
+                raw = legacy_raw
+            elif legacy_raw:
+                log.error("Discarded legacy plaintext ChatGPT OAuth tokens because the OS keychain is unavailable")
+        except Exception as exc:
+            log.warning("Could not migrate legacy ChatGPT OAuth tokens: %s", exc)
+        finally:
+            try:
+                _TOKEN_FILE.unlink(missing_ok=True)
+            except Exception as exc:
+                log.warning("Could not remove legacy plaintext ChatGPT OAuth token file: %s", exc)
     if raw:
         try:
             return json.loads(raw)
@@ -137,25 +253,42 @@ def get_tokens() -> dict | None:
     return None
 
 
-def save_tokens(tokens: dict) -> None:
-    """Persist tokens — keyring preferred, local file as fallback."""
-    serialised = json.dumps(tokens)
-    if not _keyring_set(serialised):
-        print(
-            "[chatgpt_auth] Warning: keyring unavailable — "
-            f"OAuth tokens stored in plaintext file: {_TOKEN_FILE}"
+def get_tokens() -> dict | None:
+    """Return stored OAuth tokens while keeping chunk operations consecutive."""
+    with _token_storage_lock:
+        return _get_tokens_unlocked()
+
+
+def _save_tokens_unlocked(tokens: dict) -> None:
+    """Persist tokens in the OS keychain, or fail without storing them."""
+    serialised = json.dumps(tokens, separators=(",", ":"))
+    if not _write_keyring_payload(serialised):
+        raise OAuthTokenStorageError(
+            "ChatGPT sign-in succeeded, but its OAuth tokens could not be saved "
+            "to the OS keychain. The tokens were not stored. Check your system "
+            "keychain and try signing in again."
         )
-        _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TOKEN_FILE.write_text(serialised, encoding="utf-8")
 
 
-def clear_tokens() -> None:
+def save_tokens(tokens: dict) -> None:
+    """Persist tokens while keeping chunk operations consecutive."""
+    with _token_storage_lock:
+        _save_tokens_unlocked(tokens)
+
+
+def _clear_tokens_unlocked() -> None:
     """Remove stored tokens."""
-    _keyring_delete()
+    _delete_keyring_payload()
     try:
         _TOKEN_FILE.unlink(missing_ok=True)
     except Exception:
         pass
+
+
+def clear_tokens() -> None:
+    """Remove all stored token chunks and legacy fallback data."""
+    with _token_storage_lock:
+        _clear_tokens_unlocked()
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +544,16 @@ def start_browser_login(
             on_error(f"Cannot bind to port {_OAUTH_PORT}: {exc}")
             return
 
-        webbrowser.open(auth_url)
+        try:
+            opened = bool(webbrowser.open(auth_url))
+        except Exception as exc:
+            server.server_close()
+            on_error(f"The browser cannot open: {type(exc).__name__}: {exc}")
+            return
+        if not opened:
+            server.server_close()
+            on_error("The browser cannot open the ChatGPT sign-in page.")
+            return
         server.timeout = 300   # 5-minute timeout
         deadline = time.time() + 300
         while not done.is_set() and time.time() < deadline:
@@ -490,6 +632,9 @@ def start_device_login(
                 tokens = _tokens_from_raw(raw)
                 save_tokens(tokens)
                 on_success(tokens)
+                return
+            except OAuthTokenStorageError as exc:
+                on_error(str(exc))
                 return
             except Exception:
                 # 403/404 == still pending; keep polling

@@ -1,0 +1,296 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "rule": "Declare A -> B only when A changes B's behavior or result.",
+    "coverage": "Every source-state by relevant target-state case must be present. Use pairwise coverage across independent sources and full Cartesian coverage only for compound branches."
+  },
+  "interactions": [
+    {
+      "interaction_id": "I001",
+      "source_function_id": "F420",
+      "target_function_id": "F425",
+      "description": "The active custom profile determines which profile receives saved Settings changes.",
+      "source_states": ["first_profile", "second_profile"],
+      "target_states": ["save_and_reopen"],
+      "cases": [
+        {"source_state": "first_profile", "target_state": "save_and_reopen", "expected_result": "Only the first profile changes and reloads."},
+        {"source_state": "second_profile", "target_state": "save_and_reopen", "expected_result": "Only the second profile changes and reloads."}
+      ],
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_switch_save_reopen_and_edit_only_the_selected_custom_profile"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I002",
+      "source_function_id": "F418",
+      "target_function_id": "F417",
+      "description": "Settings search controls which navigation destinations remain available.",
+      "source_states": ["one_page_match", "no_match", "cleared"],
+      "target_states": ["navigation_visibility"],
+      "cases": [
+        {"source_state": "one_page_match", "target_state": "navigation_visibility", "expected_result": "Only Advanced remains visible."},
+        {"source_state": "no_match", "target_state": "navigation_visibility", "expected_result": "No page remains visible and no unrelated page is selected as a result."},
+        {"source_state": "cleared", "target_state": "navigation_visibility", "expected_result": "All eight navigation destinations return."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_navigation_search_and_cancel_are_real_user_workflows"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I003",
+      "source_function_id": "F426",
+      "target_function_id": "F425",
+      "description": "Cancel must prevent the Settings save behavior in both clean and dirty states.",
+      "source_states": ["clean_cancel", "dirty_cancel"],
+      "target_states": ["reopen"],
+      "cases": [
+        {"source_state": "clean_cancel", "target_state": "reopen", "expected_result": "The settings file is byte-for-byte unchanged."},
+        {"source_state": "dirty_cancel", "target_state": "reopen", "expected_result": "The edited value was not serialized and the old value reloads."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_navigation_search_and_cancel_are_real_user_workflows"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I004",
+      "source_function_id": "F429",
+      "target_function_id": "F425",
+      "description": "The selected Theme mode changes what Settings saves and the application applies.",
+      "source_states": ["system", "light", "dark"],
+      "target_states": ["save_and_reopen"],
+      "cases": [
+        {"source_state": "system", "target_state": "save_and_reopen", "expected_result": "System persists, applies, and reloads."},
+        {"source_state": "light", "target_state": "save_and_reopen", "expected_result": "Light persists, applies, and reloads."},
+        {"source_state": "dark", "target_state": "save_and_reopen", "expected_result": "Dark persists, applies, and reloads."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_every_theme_mode_saves_applies_and_reopens"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I005",
+      "source_function_id": "F045",
+      "target_function_id": "F044",
+      "description": "The configured zero/positive timeout changes whether auto-close occurs.",
+      "source_states": ["positive_timeout", "zero_timeout"],
+      "target_states": ["abandoned_picker"],
+      "cases": [
+        {"source_state": "positive_timeout", "target_state": "abandoned_picker", "expected_result": "The timer cancels the picker once."},
+        {"source_state": "zero_timeout", "target_state": "abandoned_picker", "expected_result": "The picker stays visible until a manual action."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I006",
+      "source_function_id": "F272",
+      "target_function_id": "F273",
+      "description": "The automatic-speech setting changes whether a completed model reply enters TTS playback.",
+      "source_states": ["automatic_speech_disabled", "automatic_speech_enabled"],
+      "target_states": ["completed_streamed_reply"],
+      "cases": [
+        {"source_state": "automatic_speech_disabled", "target_state": "completed_streamed_reply", "expected_result": "No reply synthesis or playback occurs; manual read-aloud remains usable."},
+        {"source_state": "automatic_speech_enabled", "target_state": "completed_streamed_reply", "expected_result": "Stable reply segments synthesize and play in order."}
+      ],
+      "test_node_ids": ["tests/runtime/test_flows.py::test_configured_tts_provider_does_not_auto_speak_replies_without_opt_in", "tests/runtime/test_flows.py::test_tts_speaks_completed_segments_before_full_reply_done"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I007",
+      "source_function_id": "F296",
+      "target_function_id": "F297",
+      "description": "Transcript-review mode changes whether voice input pauses in the picker before querying.",
+      "source_states": ["review_enabled", "review_disabled"],
+      "target_states": ["valid_voice_transcript"],
+      "cases": [
+        {"source_state": "review_enabled", "target_state": "valid_voice_transcript", "expected_result": "The picker opens and no query is sent until the reviewed transcript is accepted."},
+        {"source_state": "review_disabled", "target_state": "valid_voice_transcript", "expected_result": "The transcript is queried immediately and the reply is stored."}
+      ],
+      "test_node_ids": ["tests/runtime/test_flows.py::test_voice_review_transcript_opens_intent_overlay_before_query", "tests/runtime/test_flows.py::test_voice_flow_records_transcribes_and_queries"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I008",
+      "source_function_ids": ["F109", "F110", "F111", "F112"],
+      "target_function_ids": ["F341", "F342", "F343", "F344", "F345"],
+      "description": "Every local-file access mode changes the availability of every local-file tool.",
+      "source_states": ["off", "read", "ask", "auto"],
+      "target_states": ["list_files", "read_file", "create_file", "edit_file", "write_file"],
+      "cases": [
+        {"source_state": "off", "target_state": "list_files", "expected_result": "Not granted."},
+        {"source_state": "off", "target_state": "read_file", "expected_result": "Not granted."},
+        {"source_state": "off", "target_state": "create_file", "expected_result": "Not granted."},
+        {"source_state": "off", "target_state": "edit_file", "expected_result": "Not granted."},
+        {"source_state": "off", "target_state": "write_file", "expected_result": "Not granted."},
+        {"source_state": "read", "target_state": "list_files", "expected_result": "Granted and executable."},
+        {"source_state": "read", "target_state": "read_file", "expected_result": "Granted and executable."},
+        {"source_state": "read", "target_state": "create_file", "expected_result": "Not granted."},
+        {"source_state": "read", "target_state": "edit_file", "expected_result": "Not granted."},
+        {"source_state": "read", "target_state": "write_file", "expected_result": "Not granted."},
+        {"source_state": "ask", "target_state": "list_files", "expected_result": "Granted and executable."},
+        {"source_state": "ask", "target_state": "read_file", "expected_result": "Granted and executable."},
+        {"source_state": "ask", "target_state": "create_file", "expected_result": "Granted; mutation requires the approval path."},
+        {"source_state": "ask", "target_state": "edit_file", "expected_result": "Granted; mutation requires the approval path."},
+        {"source_state": "ask", "target_state": "write_file", "expected_result": "Granted; mutation requires the approval path."},
+        {"source_state": "auto", "target_state": "list_files", "expected_result": "Granted and executable."},
+        {"source_state": "auto", "target_state": "read_file", "expected_result": "Granted and executable."},
+        {"source_state": "auto", "target_state": "create_file", "expected_result": "Granted and executes without an approval prompt."},
+        {"source_state": "auto", "target_state": "edit_file", "expected_result": "Granted and executes without an approval prompt."},
+        {"source_state": "auto", "target_state": "write_file", "expected_result": "Granted and executes without an approval prompt."}
+      ],
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_every_file_access_mode_saves_reloads_and_changes_runtime_tool_grants", "tests/test_app_user_workflows.py::test_every_file_access_mode_controls_every_live_file_tool"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I009",
+      "source_function_id": "F430",
+      "target_function_id": "F429",
+      "description": "The active Dark theme determines which saved custom palette is applied to the running application.",
+      "source_states": ["compact_palette", "roomy_palette", "scroll_palette", "snap_palette"],
+      "target_states": ["dark_live_apply"],
+      "cases": [
+        {"source_state": "compact_palette", "target_state": "dark_live_apply", "expected_result": "The compact profile palette persists and its background is present in the live application stylesheet."},
+        {"source_state": "roomy_palette", "target_state": "dark_live_apply", "expected_result": "The roomy profile palette persists and its background is present in the live application stylesheet."},
+        {"source_state": "scroll_palette", "target_state": "dark_live_apply", "expected_result": "The scroll profile palette persists and its background is present in the live application stylesheet."},
+        {"source_state": "snap_palette", "target_state": "dark_live_apply", "expected_result": "The snap profile palette persists and its background is present in the live application stylesheet."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I010",
+      "source_function_id": "F431",
+      "target_function_id": "F017",
+      "description": "The saved icon-size value changes both dimensions of the already-running floating icon.",
+      "source_states": ["48_px", "64_px", "72_px", "96_px"],
+      "target_states": ["visible_live_icon"],
+      "cases": [
+        {"source_state": "48_px", "target_state": "visible_live_icon", "expected_result": "The visible icon resizes to 48 x 48 without restarting."},
+        {"source_state": "64_px", "target_state": "visible_live_icon", "expected_result": "The visible icon resizes to 64 x 64 without restarting."},
+        {"source_state": "72_px", "target_state": "visible_live_icon", "expected_result": "The visible icon resizes to 72 x 72 without restarting."},
+        {"source_state": "96_px", "target_state": "visible_live_icon", "expected_result": "The visible icon resizes to 96 x 96 without restarting."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I011",
+      "source_function_ids": ["F432", "F433", "F434", "F435", "F436"],
+      "target_function_id": "F425",
+      "description": "Compound bubble appearance and timing states must all survive Save and update the existing bubble together.",
+      "source_states": ["compact_no_scroll_no_snap", "roomy_no_scroll_with_snap", "scroll_without_snap", "scroll_with_snap"],
+      "target_states": ["save_reload_live_apply"],
+      "cases": [
+        {"source_state": "compact_no_scroll_no_snap", "target_state": "save_reload_live_apply", "expected_result": "Compact geometry, colors, low timing values, and both disabled flags persist and apply live."},
+        {"source_state": "roomy_no_scroll_with_snap", "target_state": "save_reload_live_apply", "expected_result": "Roomy geometry, colors, high timing values, disabled scrolling, and enabled snap persist and apply live."},
+        {"source_state": "scroll_without_snap", "target_state": "save_reload_live_apply", "expected_result": "Midrange geometry, colors, enabled scrolling, and disabled snap persist and apply live."},
+        {"source_state": "scroll_with_snap", "target_state": "save_reload_live_apply", "expected_result": "Large geometry, colors, enabled scrolling, and enabled snap persist and apply live."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_settings_appearance_matrix_updates_the_live_overlay"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I012",
+      "source_function_id": "F437",
+      "target_function_id": "F417",
+      "description": "Every supported app language must leave every Settings page navigable after the live translator changes.",
+      "source_states": ["system", "english", "chinese_simplified", "chinese_traditional", "spanish", "french"],
+      "target_states": ["general", "connections", "model_routing", "voice_audio", "shortcuts", "prompts_context", "advanced", "about"],
+      "cases": [
+        {"source_state": "system", "target_state": "general", "expected_result": "General opens under the system language."},
+        {"source_state": "system", "target_state": "connections", "expected_result": "Connections opens under the system language."},
+        {"source_state": "system", "target_state": "model_routing", "expected_result": "Model routing opens under the system language."},
+        {"source_state": "system", "target_state": "voice_audio", "expected_result": "Voice and audio opens under the system language."},
+        {"source_state": "system", "target_state": "shortcuts", "expected_result": "Shortcuts opens under the system language."},
+        {"source_state": "system", "target_state": "prompts_context", "expected_result": "Prompts and context opens under the system language."},
+        {"source_state": "system", "target_state": "advanced", "expected_result": "Advanced opens under the system language."},
+        {"source_state": "system", "target_state": "about", "expected_result": "About opens under the system language."},
+        {"source_state": "english", "target_state": "general", "expected_result": "General opens under English."},
+        {"source_state": "english", "target_state": "connections", "expected_result": "Connections opens under English."},
+        {"source_state": "english", "target_state": "model_routing", "expected_result": "Model routing opens under English."},
+        {"source_state": "english", "target_state": "voice_audio", "expected_result": "Voice and audio opens under English."},
+        {"source_state": "english", "target_state": "shortcuts", "expected_result": "Shortcuts opens under English."},
+        {"source_state": "english", "target_state": "prompts_context", "expected_result": "Prompts and context opens under English."},
+        {"source_state": "english", "target_state": "advanced", "expected_result": "Advanced opens under English."},
+        {"source_state": "english", "target_state": "about", "expected_result": "About opens under English."},
+        {"source_state": "chinese_simplified", "target_state": "general", "expected_result": "General opens under Simplified Chinese."},
+        {"source_state": "chinese_simplified", "target_state": "connections", "expected_result": "Connections opens under Simplified Chinese."},
+        {"source_state": "chinese_simplified", "target_state": "model_routing", "expected_result": "Model routing opens under Simplified Chinese."},
+        {"source_state": "chinese_simplified", "target_state": "voice_audio", "expected_result": "Voice and audio opens under Simplified Chinese."},
+        {"source_state": "chinese_simplified", "target_state": "shortcuts", "expected_result": "Shortcuts opens under Simplified Chinese."},
+        {"source_state": "chinese_simplified", "target_state": "prompts_context", "expected_result": "Prompts and context opens under Simplified Chinese."},
+        {"source_state": "chinese_simplified", "target_state": "advanced", "expected_result": "Advanced opens under Simplified Chinese."},
+        {"source_state": "chinese_simplified", "target_state": "about", "expected_result": "About opens under Simplified Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "general", "expected_result": "General opens under Traditional Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "connections", "expected_result": "Connections opens under Traditional Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "model_routing", "expected_result": "Model routing opens under Traditional Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "voice_audio", "expected_result": "Voice and audio opens under Traditional Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "shortcuts", "expected_result": "Shortcuts opens under Traditional Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "prompts_context", "expected_result": "Prompts and context opens under Traditional Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "advanced", "expected_result": "Advanced opens under Traditional Chinese."},
+        {"source_state": "chinese_traditional", "target_state": "about", "expected_result": "About opens under Traditional Chinese."},
+        {"source_state": "spanish", "target_state": "general", "expected_result": "General opens under Spanish."},
+        {"source_state": "spanish", "target_state": "connections", "expected_result": "Connections opens under Spanish."},
+        {"source_state": "spanish", "target_state": "model_routing", "expected_result": "Model routing opens under Spanish."},
+        {"source_state": "spanish", "target_state": "voice_audio", "expected_result": "Voice and audio opens under Spanish."},
+        {"source_state": "spanish", "target_state": "shortcuts", "expected_result": "Shortcuts opens under Spanish."},
+        {"source_state": "spanish", "target_state": "prompts_context", "expected_result": "Prompts and context opens under Spanish."},
+        {"source_state": "spanish", "target_state": "advanced", "expected_result": "Advanced opens under Spanish."},
+        {"source_state": "spanish", "target_state": "about", "expected_result": "About opens under Spanish."},
+        {"source_state": "french", "target_state": "general", "expected_result": "General opens under French."},
+        {"source_state": "french", "target_state": "connections", "expected_result": "Connections opens under French."},
+        {"source_state": "french", "target_state": "model_routing", "expected_result": "Model routing opens under French."},
+        {"source_state": "french", "target_state": "voice_audio", "expected_result": "Voice and audio opens under French."},
+        {"source_state": "french", "target_state": "shortcuts", "expected_result": "Shortcuts opens under French."},
+        {"source_state": "french", "target_state": "prompts_context", "expected_result": "Prompts and context opens under French."},
+        {"source_state": "french", "target_state": "advanced", "expected_result": "Advanced opens under French."},
+        {"source_state": "french", "target_state": "about", "expected_result": "About opens under French."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_every_app_language_saves_and_applies_through_the_real_settings_button"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I013",
+      "source_function_id": "F419",
+      "target_function_id": "F425",
+      "description": "Selecting the built-in profile changes the model routes and profile identity that Save persists and reloads.",
+      "source_states": ["low_setup"],
+      "target_states": ["save_and_reopen"],
+      "cases": [
+        {"source_state": "low_setup", "target_state": "save_and_reopen", "expected_result": "Low setup persists on the default runtime profile and all three routes reopen on ChatGPT gpt-5.5."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_builtin_profile_action_saves_and_reopens_as_the_active_runtime_profile"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I014",
+      "source_function_id": "F425",
+      "target_function_id": "F424",
+      "description": "The clean or dirty Settings state determines whether guided profile setup may open.",
+      "source_states": ["clean_settings", "dirty_unsaved_settings"],
+      "target_states": ["run_profile_setup"],
+      "cases": [
+        {"source_state": "clean_settings", "target_state": "run_profile_setup", "expected_result": "The real guided profile wizard opens and is usable."},
+        {"source_state": "dirty_unsaved_settings", "target_state": "run_profile_setup", "expected_result": "The wizard stays closed and Settings asks the user to save or discard first."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_profile_setup_button_opens_real_wizard_and_dirty_settings_block_it"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I015",
+      "source_function_id": "F417",
+      "target_function_id": "F427",
+      "description": "The selected Settings page determines the exact state Reset Page is allowed to remove.",
+      "source_states": ["app", "connections", "model_routing", "voice_audio", "shortcuts", "prompts_context", "advanced", "about"],
+      "target_states": ["confirm_reset_and_reload"],
+      "cases": [
+        {"source_state": "app", "target_state": "confirm_reset_and_reload", "expected_result": "App state resets while every other page sentinel survives."},
+        {"source_state": "connections", "target_state": "confirm_reset_and_reload", "expected_result": "Connection state resets while every other page sentinel survives."},
+        {"source_state": "model_routing", "target_state": "confirm_reset_and_reload", "expected_result": "Model-routing state resets while every other page sentinel survives."},
+        {"source_state": "voice_audio", "target_state": "confirm_reset_and_reload", "expected_result": "Voice/audio state resets and the STT refresh path runs while every other page sentinel survives."},
+        {"source_state": "shortcuts", "target_state": "confirm_reset_and_reload", "expected_result": "Shortcut state resets while every other page sentinel survives."},
+        {"source_state": "prompts_context", "target_state": "confirm_reset_and_reload", "expected_result": "Prompt state resets while every other page sentinel survives."},
+        {"source_state": "advanced", "target_state": "confirm_reset_and_reload", "expected_result": "Advanced state resets while every other page sentinel survives."},
+        {"source_state": "about", "target_state": "confirm_reset_and_reload", "expected_result": "The no-setting About branch succeeds without removing any other page sentinel."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"],
+      "status": "accepted"
+    }
+  ]
+}

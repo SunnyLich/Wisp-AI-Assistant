@@ -1,4 +1,4 @@
-"""Tests for macos py test native context."""
+"""Tests for native-worker paste and context-snapshot platform behavior."""
 
 from __future__ import annotations
 
@@ -6,9 +6,54 @@ import sys
 
 import pytest
 
+from core import capture
 from core import context_fetcher
 from core.platform import linux_atspi
 from runtime.workers import native_host
+
+
+def test_capture_worker_failure_matrix_is_in_band(tmp_path, monkeypatch):
+    """Capture permission, backend, stale-target, and empty-region faults stay controlled."""
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    calls: list[dict | None] = []
+
+    def fail_capture(region=None):
+        calls.append(region)
+        raise PermissionError("screen-recording permission missing")
+
+    monkeypatch.setattr(capture, "get_screen_snippet", fail_capture)
+    fullscreen = native_host.capture_fullscreen(str(tmp_path / "permission.png"))
+    region = native_host.capture_region(
+        str(tmp_path / "region.png"),
+        {"left": 10, "top": 20, "width": 30, "height": 40},
+    )
+    assert fullscreen["ok"] is False
+    assert region["ok"] is False
+    assert "PermissionError" in fullscreen["error"]
+    assert "PermissionError" in region["error"]
+
+    calls.clear()
+    for invalid in (
+        None,
+        {},
+        {"left": 0, "top": 0, "width": 0, "height": 10},
+        {"left": 0, "top": 0, "width": "bad", "height": 10},
+    ):
+        result = native_host.capture_region(str(tmp_path / "empty.png"), invalid)
+        assert result["ok"] is False
+        assert "empty or invalid" in result["error"]
+    assert calls == []
+
+    def vanished_target(_region=None):
+        raise OSError("target window disappeared")
+
+    monkeypatch.setattr(capture, "get_screen_snippet", vanished_target)
+    vanished = native_host.capture_region(
+        str(tmp_path / "vanished.png"),
+        {"left": 10, "top": 20, "width": 30, "height": 40},
+    )
+    assert vanished["ok"] is False
+    assert "target window disappeared" in vanished["error"]
 
 
 def test_paste_text_can_restore_clipboard(monkeypatch):
@@ -101,6 +146,68 @@ def test_paste_text_refuses_windows_unanchored_fallback_when_focus_token_fails(m
     assert result["error"] == "stale range"
     assert result["confirmed"] is False
     assert result["keystroke_sent"] is False
+
+
+def test_paste_failure_matrix_is_controlled_at_native_boundary(monkeypatch):
+    """Clipboard, focus, synthetic-input, overwrite, and AX faults stay in band."""
+    import core.platform_utils as platform_utils
+
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(native_host.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(native_host, "clipboard_get", lambda: {"text": "original"})
+    monkeypatch.setattr(platform_utils, "set_foreground_window", lambda _wid: None)
+
+    sent: list[str] = []
+    monkeypatch.setattr(platform_utils, "send_keys", sent.append)
+    monkeypatch.setattr(native_host, "clipboard_set", lambda _text="": {"ok": False})
+    locked = native_host.paste_text("reply", target_pid=777)
+    assert locked["ok"] is False
+    assert locked["clipboard_ok"] is False
+    assert sent == []
+
+    monkeypatch.setattr(native_host, "clipboard_set", lambda _text="": {"ok": True})
+
+    def focus_moved(_wid):
+        raise OSError("focus changed before completion")
+
+    monkeypatch.setattr(platform_utils, "set_foreground_window", focus_moved)
+    moved = native_host.paste_text("reply", target_pid=777)
+    assert moved["ok"] is False
+    assert "focus changed" in moved["error"]
+
+    monkeypatch.setattr(platform_utils, "set_foreground_window", lambda _wid: None)
+
+    def synthetic_blocked(_combo):
+        raise PermissionError("target blocks synthetic input")
+
+    monkeypatch.setattr(platform_utils, "send_keys", synthetic_blocked)
+    blocked = native_host.paste_text("reply", target_pid=777)
+    assert blocked["ok"] is False
+    assert "target blocks synthetic input" in blocked["error"]
+
+    monkeypatch.setattr(platform_utils, "send_keys", lambda _combo: None)
+    writes = iter(({"ok": True}, {"ok": False}))
+    monkeypatch.setattr(native_host, "clipboard_set", lambda _text="": next(writes))
+    overwritten = native_host.paste_text("reply", target_pid=777, restore_clipboard=True)
+    assert overwritten["ok"] is True
+    assert overwritten["clipboard_restored"] is False
+
+    monkeypatch.setattr(native_host, "IS_WIN", True)
+    monkeypatch.setattr(
+        native_host,
+        "_win_uia_apply_selected_text",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "method": "uia-range",
+            "error": "accessibility permission missing",
+        },
+    )
+    inaccessible = native_host.paste_text("reply", target_pid=777, focus_token=9)
+    assert inaccessible["ok"] is False
+    assert inaccessible["confirmed"] is False
+    assert inaccessible["keystroke_sent"] is False
+    assert "accessibility permission missing" in inaccessible["error"]
 
 
 def test_context_snapshot_explorer_selection_uses_paths_not_text(monkeypatch):
@@ -394,7 +501,6 @@ def test_selected_text_dedupes_repeated_x11_primary_acquisition(monkeypatch):
 
 
 def test_selected_text_dedupe_fails_open_without_identity(monkeypatch):
-    """Verify unknown selection identity keeps the old auto-fill behavior."""
     import core.capture as capture
 
     monkeypatch.setattr(native_host, "IS_MAC", False)
@@ -428,9 +534,55 @@ def test_selected_text_without_dedupe_key_skips_identity_lookup(monkeypatch):
     assert native_host._selected_text_and_stale(**kwargs) == ("picked text", "")
 
 
+def test_selection_capture_failure_matrix_returns_no_stale_text(monkeypatch):
+    """Selection absence, focus, accessibility, permission, app, and backend faults fail closed."""
+    import core.capture as capture_module
+
+    monkeypatch.setattr(native_host, "IS_MAC", False)
+    monkeypatch.setattr(native_host, "IS_WIN", True)
+    monkeypatch.setattr(capture_module, "_get_selected_text_uia", lambda: "")
+    assert native_host._selected_text_and_stale(
+        allow_clipboard_fallback=False,
+        require_active_owner=True,
+    ) == ("", "")
+
+    monkeypatch.setattr(
+        capture_module,
+        "_get_selected_text_uia",
+        lambda: (_ for _ in ()).throw(PermissionError("OS accessibility permission missing")),
+    )
+    assert native_host._selected_text_and_stale(
+        allow_clipboard_fallback=False,
+        require_active_owner=True,
+    ) == ("", "")
+
+    monkeypatch.setattr(native_host, "IS_WIN", False)
+    monkeypatch.setattr(
+        capture_module,
+        "_get_primary_selection_linux",
+        lambda **_kwargs: (_ for _ in ()).throw(NotImplementedError("platform backend unsupported")),
+    )
+    assert native_host._selected_text_and_stale(
+        allow_clipboard_fallback=False,
+        require_active_owner=True,
+    ) == ("", "")
+
+    monkeypatch.setattr(native_host, "_active_app", lambda: {"name": "Unsupported", "pid": 99})
+    monkeypatch.setattr(native_host, "_screen_size", lambda: {"width": 0, "height": 0})
+    monkeypatch.setattr(native_host, "_capture_focus", lambda: 0)
+    monkeypatch.setattr(native_host, "_selection_source_kind", lambda _active: "text")
+    snapshot = native_host.context_snapshot(
+        include_clipboard=False,
+        include_selection=True,
+        capture_focus=True,
+    )
+    assert snapshot["focus_token"] == 0
+    assert snapshot["selected_text"] == ""
+    assert snapshot["stale_selected_text"] == ""
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
 def test_win_context_window_skips_wisp_foreground(monkeypatch):
-    """Verify win context window skips wisp foreground behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", True)
     monkeypatch.setattr(native_host, "_win_is_external_context_window", lambda hwnd: hwnd == 777)
     monkeypatch.setattr(native_host, "_win_find_external_context_window", lambda _hwnd: 777)
@@ -441,7 +593,6 @@ def test_win_context_window_skips_wisp_foreground(monkeypatch):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
 def test_context_snapshot_reads_browser_url_from_corrected_window(monkeypatch):
-    """Verify context snapshot reads browser url from corrected window behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", True)
     monkeypatch.setattr(native_host, "IS_MAC", False)
     monkeypatch.setattr(context_fetcher, "_IS_WIN", True)
@@ -457,7 +608,6 @@ def test_context_snapshot_reads_browser_url_from_corrected_window(monkeypatch):
     calls: list[int] = []
 
     def fake_fetch_window(hwnd: int):
-        """Verify fake fetch window behavior."""
         calls.append(hwnd)
         return context_fetcher.WindowInfo(
             title="Example",
@@ -481,7 +631,6 @@ def test_context_snapshot_reads_browser_url_from_corrected_window(monkeypatch):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native context behavior is tested on Windows")
 def test_context_snapshot_reads_background_browser_when_foreground_is_document(monkeypatch):
-    """Verify context snapshot reads background browser when foreground is document behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", True)
     monkeypatch.setattr(native_host, "IS_MAC", False)
     monkeypatch.setattr(context_fetcher, "_IS_WIN", True)
@@ -607,7 +756,6 @@ def test_macos_context_snapshot_separates_document_and_browser(monkeypatch):
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux native context behavior is tested on Linux")
 def test_linux_active_app_includes_real_process_name(monkeypatch):
-    """Verify linux active app includes real process name behavior."""
     monkeypatch.setattr(native_host, "IS_WIN", False)
     monkeypatch.setattr(native_host, "IS_MAC", False)
 
@@ -618,13 +766,10 @@ def test_linux_active_app_includes_real_process_name(monkeypatch):
     monkeypatch.setattr(platform_utils, "get_window_pid", lambda _wid: 1651464)
 
     class FakeProcess:
-        """Test case for fake process behavior."""
         def __init__(self, pid):
-            """Initialize the fake process instance."""
             self.pid = pid
 
         def name(self):
-            """Verify name behavior."""
             return "kwrite"
 
     psutil = pytest.importorskip("psutil")
@@ -655,13 +800,10 @@ def test_linux_active_app_skips_wisp_own_window(monkeypatch):
     monkeypatch.setattr(native_host, "_linux_is_own_window_pid", lambda pid: pid == 999)
 
     class FakeProcess:
-        """Test case for fake process behavior."""
         def __init__(self, pid):
-            """Initialize the fake process instance."""
             self.pid = pid
 
         def name(self):
-            """Verify name behavior."""
             return {999: "python", 1234: "firefox"}.get(self.pid, "")
 
     psutil = pytest.importorskip("psutil")
@@ -699,13 +841,10 @@ def test_linux_get_browser_window_scans_stacking(monkeypatch):
     )
 
     class FakeProcess:
-        """Test case for fake process behavior."""
         def __init__(self, pid):
-            """Initialize the fake process instance."""
             self.pid = pid
 
         def name(self):
-            """Verify name behavior."""
             return {10: "nautilus", 20: "firefox"}.get(self.pid, "")
 
     psutil = pytest.importorskip("psutil")
@@ -740,13 +879,10 @@ def test_linux_get_browser_window_prefers_hotkey_window(monkeypatch):
     )
 
     class FakeProcess:
-        """Test case for fake process behavior."""
         def __init__(self, pid):
-            """Initialize the fake process instance."""
             self.pid = pid
 
         def name(self):
-            """Verify name behavior."""
             return "firefox"
 
     psutil = pytest.importorskip("psutil")

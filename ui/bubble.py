@@ -7,7 +7,9 @@ Auto-hides a few seconds after the response finishes.
 """
 from __future__ import annotations
 
+import base64
 import html
+import logging
 from collections.abc import Callable
 
 from PySide6.QtCore import QElapsedTimer, QRect, Qt, QTimer
@@ -19,9 +21,10 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
     QTextCursor,
 )
-from PySide6.QtWidgets import QApplication, QFrame, QMenu, QTextBrowser, QTextEdit, QToolTip, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QMenu, QTextBrowser, QTextEdit, QToolTip, QWidget
 
 import config
 from ui.chat_rendering import _compact_markdown_tables
@@ -62,6 +65,11 @@ _STATIC_TEXT_EXTRA_LINE_MS = 1_200
 _STATIC_TEXT_EXTRA_CHARS_MS = 1_000
 _STATIC_TEXT_TIMEOUT_MARGIN_MS = 2_500
 _STATIC_TEXT_TIMEOUT_CAP_MS = 45_000
+_IMAGE_MAX_HEIGHT = 300
+_IMAGE_SCREEN_FRACTION = 0.36
+_IMAGE_BASE64_CHAR_LIMIT = 16_000_000
+
+_bubble_log = logging.getLogger(__name__)
 
 
 def _color(value: str, fallback: QColor) -> QColor:
@@ -305,6 +313,11 @@ class SpeechBubble(QWidget):
         self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
         self._text_view = _BubbleTextView(self)
         self._text_view.hide()
+        self._image_pixmap = QPixmap()
+        self._image_label = QLabel(self)
+        self._image_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._image_label.hide()
         self._sync_text_view_geometry()
 
         # Position: left of icon, vertically centered with it
@@ -318,24 +331,24 @@ class SpeechBubble(QWidget):
         # Dot animation (while thinking)
         self._dot_timer = QTimer(self)
         self._dot_timer.setInterval(450)
-        self._dot_timer.timeout.connect(self._tick_dots)
+        self._dot_timer.timeout.connect(self._on_dot_timer)
 
         # Auto-hide after response finishes
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(self._hide_delay_ms())
-        self._hide_timer.timeout.connect(self.hide)
+        self._hide_timer.timeout.connect(self._on_hide_timer)
 
         # Word-reveal timer
         self._reveal_timer = QTimer(self)
         self._apply_reveal_speed()
-        self._reveal_timer.timeout.connect(self._reveal_next_word)
+        self._reveal_timer.timeout.connect(self._on_reveal_timer)
 
         # Manual wheel scrolling while speech is active; snaps back to the
         # current highlight after a short configurable delay.
         self._scroll_snap_timer = QTimer(self)
         self._scroll_snap_timer.setSingleShot(True)
-        self._scroll_snap_timer.timeout.connect(self._snap_scroll_to_highlight)
+        self._scroll_snap_timer.timeout.connect(self._on_scroll_snap_timer)
 
         # Drag support
         self._drag_offset = None          # QPoint while dragging
@@ -397,6 +410,27 @@ class SpeechBubble(QWidget):
         """
         self._anchor_callback = fn
 
+    def _invoke_runtime_callback(self, label: str, callback, *args) -> None:
+        """Run an external/timer callback without leaking into Qt's event loop."""
+        if callback is None:
+            return
+        try:
+            callback(*args)
+        except Exception:  # noqa: BLE001 - UI must remain usable after callback failure
+            _bubble_log.exception("Speech bubble %s callback failed", label)
+
+    def _on_dot_timer(self) -> None:
+        self._invoke_runtime_callback("dot timer", self._tick_dots)
+
+    def _on_hide_timer(self) -> None:
+        self._invoke_runtime_callback("hide timer", self.hide)
+
+    def _on_reveal_timer(self) -> None:
+        self._invoke_runtime_callback("reveal timer", self._reveal_next_word)
+
+    def _on_scroll_snap_timer(self) -> None:
+        self._invoke_runtime_callback("scroll snap timer", self._snap_scroll_to_highlight)
+
     def apply_config(self):
         """Apply live bubble size/line/speed settings after config.reload()."""
         self._apply_font()
@@ -414,6 +448,8 @@ class SpeechBubble(QWidget):
             self._scroll_snap_timer.stop()
         if self._full_text:
             self._rewrap()
+        if not self._image_pixmap.isNull():
+            self._layout_image()
         self._sync_text_view_geometry()
         self._sync_text_view()
         self.update()
@@ -436,14 +472,14 @@ class SpeechBubble(QWidget):
     def showEvent(self, event):  # noqa: N802
         """Re-anchor next to the icon before the bubble becomes visible."""
         if self._anchor_callback:
-            self._anchor_callback()
+            self._invoke_runtime_callback("anchor", self._anchor_callback)
         super().showEvent(event)
 
     def hideEvent(self, event):  # noqa: N802
         """Hide event."""
         super().hideEvent(event)
         if self._hide_callback:
-            self._hide_callback()
+            self._invoke_runtime_callback("hide", self._hide_callback)
 
     def enterEvent(self, event):  # noqa: N802
         """Pause auto-hide while the user is inspecting the bubble."""
@@ -514,7 +550,7 @@ class SpeechBubble(QWidget):
                 new_pos = point + self._drag_offset
                 self.move(new_pos)
                 if self._companion_callback:
-                    self._companion_callback(new_pos)
+                    self._invoke_runtime_callback("companion", self._companion_callback, new_pos)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -527,7 +563,7 @@ class SpeechBubble(QWidget):
                 if should_trigger and action_idx < len(self._notice_actions):
                     callback = self._notice_actions[action_idx][1]
                     self.start_thinking()
-                    callback()
+                    self._invoke_runtime_callback("notice action", callback)
                 event.accept()
                 self.update()
                 return
@@ -536,7 +572,7 @@ class SpeechBubble(QWidget):
                 self._close_pressed = False
                 if should_stop:
                     if self._close_cancels and self._stop_callback:
-                        self._stop_callback()
+                        self._invoke_runtime_callback("stop", self._stop_callback)
                     self.clear()
                 event.accept()
                 self.update()
@@ -564,18 +600,18 @@ class SpeechBubble(QWidget):
             self._press_pos = None
             self._system_move_active = False
             if was_click and self._click_callback and self._can_open_chat_from_click():
-                self._click_callback()
+                self._invoke_runtime_callback("click", self._click_callback)
         super().mouseReleaseEvent(event)
 
     def moveEvent(self, event):  # noqa: N802
         """Keep the icon alongside a compositor-driven Wayland bubble drag."""
         super().moveEvent(event)
         if self._system_move_active and self._companion_callback:
-            self._companion_callback(self.pos())
+            self._invoke_runtime_callback("companion", self._companion_callback, self.pos())
 
     def _can_open_chat_from_click(self) -> bool:
         """Only actual reply text should be a chat-open target."""
-        return (
+        return not self._image_pixmap.isNull() or (
             self._reply_chunk_count > 0
             and not self._thinking
             and not self._transcript_preview
@@ -629,6 +665,7 @@ class SpeechBubble(QWidget):
         """Show a static status indicator while the app waits for user input."""
         self._reset_user_engagement()
         message = str(text or "Recording - release to send").strip()
+        self._clear_image()
         self._restore_base_size()
         self._full_text = ""
         self._thought_text = ""
@@ -665,6 +702,7 @@ class SpeechBubble(QWidget):
         """Show animated dots while waiting for the first LLM token."""
         self._reset_user_engagement()
         self._clear_notice_actions()
+        self._clear_image()
         self._restore_base_size()
         self._full_text = ""
         self._thought_text = ""
@@ -799,7 +837,7 @@ class SpeechBubble(QWidget):
 
     def append_chunk(self, chunk: str, is_thought: bool = False, annotations: object = None):
         """Buffer incoming LLM chunk. Starts WPM reveal on first token if not already active."""
-        if not chunk:
+        if not isinstance(chunk, str) or not chunk:
             return
         if is_thought and not self._thought_text:
             # Harness progress entries use leading newlines to separate them
@@ -927,6 +965,51 @@ class SpeechBubble(QWidget):
             self._start_hide_timer()
             self._emit_highlight(finished=True)
 
+    def show_image(self, image_base64: str) -> bool:
+        """Show a generated-image thumbnail scaled to the floating bubble."""
+        encoded = str(image_base64 or "").strip()
+        if not encoded or len(encoded) > _IMAGE_BASE64_CHAR_LIMIT:
+            return False
+        if encoded.startswith("data:"):
+            _header, separator, encoded = encoded.partition(",")
+            if not separator:
+                return False
+        try:
+            image_bytes = base64.b64decode(encoded, validate=False)
+        except (TypeError, ValueError):
+            return False
+        pixmap = QPixmap()
+        if not image_bytes or not pixmap.loadFromData(image_bytes) or pixmap.isNull():
+            return False
+
+        if self._transcript_preview:
+            # Replace transient statuses such as "Image generated." with the
+            # actual result instead of reserving text rows above the thumbnail.
+            self._transcript_preview = False
+            self._full_text = ""
+            self._thought_text = ""
+            self._display_segments = []
+            self._lines = []
+            self._all_line_segments = []
+            self._line_segments = []
+            self._pending_words = []
+            self._revealed_count = 0
+            self._reply_annotations = []
+            self._sync_text_view()
+
+        self._thinking = False
+        self._dot_timer.stop()
+        self._hide_timer.stop()
+        self._auto_hide_pending_ms = None
+        self._image_pixmap = pixmap
+        self._layout_image()
+        if self._anchor_callback:
+            self._invoke_runtime_callback("anchor", self._anchor_callback)
+        self.show()
+        self.raise_()
+        self.update()
+        return True
+
     def clear(self):
         """Hard reset — hide immediately."""
         self._user_engaged = False
@@ -964,6 +1047,7 @@ class SpeechBubble(QWidget):
         self._line_segments = []
         self._reply_annotations = []
         self._clear_notice_actions()
+        self._clear_image()
         self._restore_base_size()
         self._close_cancels = True
         self._sync_text_view()
@@ -1040,7 +1124,7 @@ class SpeechBubble(QWidget):
 
     def show_transcript(self, text: str):
         """Show what push-to-talk transcription heard before the answer starts."""
-        text = (text or "").strip()
+        text = text.strip() if isinstance(text, str) else ""
         if not text:
             return
         self.show_labeled_text(t("Heard"), text, timeout_ms=0, cancel_on_close=False)
@@ -1059,10 +1143,10 @@ class SpeechBubble(QWidget):
         cancel_on_close: bool = True,
     ) -> None:
         """Show ``Label: text`` while excluding the label from reply/highlight counts."""
-        body = (text or "").strip()
+        body = text.strip() if isinstance(text, str) else ""
         if not body:
             return
-        label_text = (label or "").strip()
+        label_text = label.strip() if isinstance(label, str) else ""
         prefix = f"{label_text}: " if label_text else ""
         self._show_static_text(
             f"{prefix}{body}",
@@ -1077,7 +1161,7 @@ class SpeechBubble(QWidget):
         Marked as a preview so the first real reply token replaces it instead of
         appending after it — otherwise the bubble would read "Using tools... hi".
         """
-        text = (text or "").strip()
+        text = text.strip() if isinstance(text, str) else ""
         if not text:
             return
         self._show_static_text(text, timeout_ms=0, cancel_on_close=True)
@@ -1098,6 +1182,7 @@ class SpeechBubble(QWidget):
         if not text:
             return
         self._reset_user_engagement()
+        self._clear_image()
         self._hide_timer.stop()
         self._auto_hide_pending_ms = None
         self._dot_timer.stop()
@@ -1172,7 +1257,13 @@ class SpeechBubble(QWidget):
         """Emit highlight."""
         if self._highlight_callback:
             text = self._highlight_callback_text or self._full_text
-            self._highlight_callback(text, self._revealed_count, finished)
+            self._invoke_runtime_callback(
+                "highlight",
+                self._highlight_callback,
+                text,
+                self._revealed_count,
+                finished,
+            )
 
     def _sync_full_text_from_pending_words(self) -> None:
         """Rebuild visible text from reveal units without counting the display prefix."""
@@ -1369,9 +1460,12 @@ class SpeechBubble(QWidget):
 
     def _current_reveal_wpm(self) -> int:
         """Handle current reveal wpm for speech bubble."""
-        if self._speed_boosting:
-            return max(1, int(getattr(config, "BUBBLE_HOLD_REVEAL_WPM", 480)))
-        return max(1, int(getattr(config, "BUBBLE_REVEAL_WPM", 170)))
+        fallback = 480 if self._speed_boosting else 170
+        setting = "BUBBLE_HOLD_REVEAL_WPM" if self._speed_boosting else "BUBBLE_REVEAL_WPM"
+        try:
+            return max(1, int(getattr(config, setting, fallback)))
+        except (TypeError, ValueError, OverflowError):
+            return fallback
 
     @staticmethod
     def _hide_delay_ms() -> int:
@@ -1463,7 +1557,43 @@ class SpeechBubble(QWidget):
         self._speed_boosting = enabled
         self._apply_reveal_speed()
         if self._speed_callback:
-            self._speed_callback(enabled)
+            self._invoke_runtime_callback("speed", self._speed_callback, enabled)
+
+    def _clear_image(self) -> None:
+        """Remove any generated-image thumbnail from the bubble."""
+        if not hasattr(self, "_image_label"):
+            return
+        self._image_pixmap = QPixmap()
+        self._image_label.clear()
+        self._image_label.hide()
+
+    def _layout_image(self) -> None:
+        """Scale and place the image without allowing it to overflow the screen."""
+        if not hasattr(self, "_image_label") or self._image_pixmap.isNull():
+            return
+        try:
+            screen_h = QApplication.primaryScreen().availableGeometry().height()
+            max_h = max(120, min(_IMAGE_MAX_HEIGHT, int(screen_h * _IMAGE_SCREEN_FRACTION)))
+        except Exception:
+            max_h = _IMAGE_MAX_HEIGHT
+        max_w = max(1, self._text_w)
+        thumbnail = self._image_pixmap.scaled(
+            max_w,
+            max_h,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        has_text = bool(self._thinking or self._all_line_segments or self._line_segments)
+        text_body_h = self._base_bubble_h() if has_text else 0
+        image_y = text_body_h if has_text else _PAD
+        self._bubble_h = image_y + thumbnail.height() + _PAD
+        self.setFixedSize(self._bubble_w + _TAIL_W, self._bubble_h)
+        image_x = _PAD + max(0, (max_w - thumbnail.width()) // 2)
+        self._image_label.setGeometry(image_x, image_y, thumbnail.width(), thumbnail.height())
+        self._image_label.setPixmap(thumbnail)
+        self._image_label.show()
+        self._image_label.raise_()
+        self._sync_text_view_geometry()
 
     def _sync_text_view_geometry(self) -> None:
         """Keep the selectable text view inside the bubble's content rectangle."""
@@ -1725,7 +1855,7 @@ class SpeechBubble(QWidget):
     def _text_view_clicked(self) -> None:
         """Mirror the old bubble click behavior for simple text-area clicks."""
         if self._click_callback and self._can_open_chat_from_click():
-            self._click_callback()
+            self._invoke_runtime_callback("click", self._click_callback)
 
     def _text_context_actions(self, selected_text: str, full_text: str) -> list[dict]:
         """Return addon-provided actions for selected bubble text."""

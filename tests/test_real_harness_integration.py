@@ -2,7 +2,8 @@
 
 These tests intentionally spend provider tokens and invoke the production
 adapters without mocks. They are disabled during the ordinary test suite and
-enabled by the trusted-branch CI job with WISP_RUN_REAL_HARNESS_TESTS=1.
+run only when WISP_RUN_REAL_HARNESS_TESTS=1 is set explicitly. No CI job sets
+that variable; run this file manually (e.g. before a release).
 """
 from __future__ import annotations
 

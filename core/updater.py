@@ -82,9 +82,14 @@ def current_version() -> str:
     candidates.append(Path(__file__).resolve().parents[1] / "pyproject.toml")
 
     for path in candidates:
-        if not path.exists():
+        try:
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8")
+        except Exception:
+            # Version display is diagnostic UI and must never prevent startup
+            # when bundled metadata is missing, locked, corrupt, or unreadable.
             continue
-        text = path.read_text(encoding="utf-8")
         match = re.search(r'(?m)^version\s*=\s*"([^"]+)"\s*$', text)
         if match:
             return match.group(1)

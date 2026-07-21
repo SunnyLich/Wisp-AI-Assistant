@@ -307,8 +307,7 @@ def add_fact_manual_lightweight(
     if not _is_memory_worthy_fact(text, source="manual"):
         return False
     with _FALLBACK_LOCK:
-        _fallback_upsert_unlocked(text, category, "manual", project)
-    return True
+        return _fallback_upsert_unlocked(text, category, "manual", project)
 
 
 def update_fact_lightweight(
@@ -353,7 +352,7 @@ def delete_fact_lightweight(fact_id: str) -> bool:
 
 def _fallback_upsert_unlocked(
     text: str, category: str, source: str, project: str | None = None
-) -> None:
+) -> bool:
     """Handle fallback upsert unlocked for memory store store."""
     project = (project or "").strip() or None
     facts = _fallback_read_all_unlocked()
@@ -371,6 +370,7 @@ def _fallback_upsert_unlocked(
             fact["last_seen"] = now
             fact["category"] = category
             fact["source"] = source
+            inserted = False
             break
     else:
         facts.append({
@@ -383,7 +383,9 @@ def _fallback_upsert_unlocked(
             "last_seen": now,
             "archived": False,
         })
+        inserted = True
     _fallback_write_all_unlocked(facts)
+    return inserted
 
 
 # ---------------------------------------------------------------------------
@@ -810,17 +812,17 @@ class MemoryManager:
             print(f"[memory] Ignored low-value fact candidate: {text!r}")
             return False
 
-        self._fallback_upsert(text, category, source, project)
+        inserted = self._fallback_upsert(text, category, source, project)
         self._invalidate_router()
-        return True
+        return inserted
 
     def _fallback_upsert(
         self, text: str, category: str, source: str, project: str | None = None
-    ) -> None:
+    ) -> bool:
         """Handle fallback upsert for memory manager."""
         text = _normalize_fact_text(text)
         with _FALLBACK_LOCK:
-            _fallback_upsert_unlocked(text, category, source, project)
+            return _fallback_upsert_unlocked(text, category, source, project)
 
     # ------------------------------------------------------------------
     # Viewer API - read
@@ -863,7 +865,7 @@ class MemoryManager:
             self._fallback_update(fact_id, new_text, new_category, project)
             self._invalidate_router()
 
-    def add_fact_manual(self, text: str, category: str = "general", project: str | None = None) -> None:
+    def add_fact_manual(self, text: str, category: str = "general", project: str | None = None) -> bool:
         """Add a fact directly from the viewer (manual entry).
 
         A non-empty *project* scopes the fact and forces the project_context
@@ -875,7 +877,7 @@ class MemoryManager:
         elif category not in _CATEGORIES:
             category = "general"
         with self._ltm_lock:
-            self._upsert_fact(text.strip(), category, source="manual", project=project)
+            return self._upsert_fact(text.strip(), category, source="manual", project=project)
 
     def prune_low_value_facts(self) -> int:
         """

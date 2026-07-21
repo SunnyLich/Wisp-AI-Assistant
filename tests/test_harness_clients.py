@@ -38,6 +38,57 @@ def test_normalized_cwd_uses_parent_for_file(tmp_path: Path) -> None:
     assert normalized_cwd(file_path) == tmp_path.resolve()
 
 
+def test_codex_client_unavailable_is_reported_before_process_start(monkeypatch):
+    monkeypatch.delenv("WISP_CODEX_CLI", raising=False)
+    monkeypatch.setattr(codex.shutil, "which", lambda _name: None)
+
+    with pytest.raises(CodexAppServerError, match="ChatGPT is unavailable"):
+        codex._codex_executable()
+
+
+@pytest.mark.parametrize(
+    ("failure_phase", "message"),
+    [
+        ("missing_session", "did not return a conversation id"),
+        ("authentication", "external authentication is invalid"),
+        ("provider_rejection", "provider rejects the operation"),
+    ],
+)
+def test_codex_session_auth_and_provider_rejections_are_controlled(
+    tmp_path, monkeypatch, failure_phase, message
+):
+    class Client:
+        backend = "fake-codex"
+        _items = {}
+        _reply_parts = []
+        _attachments = []
+        _model_thinking_announced = False
+
+        def request(self, method, _params):
+            if failure_phase == "authentication":
+                raise CodexAppServerError(message)
+            if method == "thread/start":
+                if failure_phase == "missing_session":
+                    return {"thread": {}}
+                return {"thread": {"id": "thread-1"}}
+            return {"thread": {"id": "thread-1"}}
+
+    client = Client()
+    monkeypatch.setattr(codex, "_persistent_client", lambda *_args: (client, True))
+    monkeypatch.setattr(codex, "close_persistent_codex", lambda: None)
+    if failure_phase == "provider_rejection":
+        monkeypatch.setattr(
+            codex,
+            "_start_turn",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                CodexAppServerError(message)
+            ),
+        )
+
+    with pytest.raises(CodexAppServerError, match=message):
+        codex.run_codex("hello", cwd=tmp_path)
+
+
 def test_codex_environment_isolates_state_without_mutating_parent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

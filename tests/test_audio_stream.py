@@ -11,7 +11,6 @@ from core import tts as tts_module
 
 
 def _pcm(value: float = 0.5, n: int = 8) -> bytes:
-    """Verify pcm behavior."""
     return (np.ones(n, dtype=np.float32) * value).tobytes()
 
 
@@ -24,7 +23,6 @@ class FakeStream:
     writes stay on the worker thread."""
 
     def __init__(self, on_first_write=None):
-        """Initialize the fake stream instance."""
         self.writes: list[bytes] = []
         self.aborted = False
         self.started = False
@@ -32,33 +30,26 @@ class FakeStream:
         self._on_first_write = on_first_write
 
     def start(self):
-        """Verify start behavior."""
         self.started = True
 
     def stop(self):
-        """Verify stop behavior."""
         pass
 
     def close(self):
-        """Verify close behavior."""
         self.closed = True
 
     def write(self, data):
-        """Verify write behavior."""
         if not self.writes and self._on_first_write is not None:
             self._on_first_write()
         self.writes.append(bytes(data))
 
     def abort(self):
-        """Verify abort behavior."""
         self.aborted = True
 
 
 class AudioStreamTests(unittest.TestCase):
-    """Test case for audio stream tests behavior."""
     def setUp(self):
         # Deterministic playback params: cartesia => float32 @ 44100, rate 1.0.
-        """Verify set up behavior."""
         self._patches = [
             mock.patch.object(config, "TTS_PROVIDER", "cartesia"),
             mock.patch.object(config, "TTS_PLAYBACK_RATE", 1.0),
@@ -71,7 +62,6 @@ class AudioStreamTests(unittest.TestCase):
 
     def _run(self, chunks, fake_stream, on_done=None, on_audio_start=None,
              on_amplitude=None, on_word_timestamps=None):
-        """Verify run behavior."""
         with mock.patch.object(audio.sd, "RawOutputStream", return_value=fake_stream), \
              mock.patch.object(tts_module, "stream_audio_from_chunks",
                                side_effect=lambda text_chunks, **kw: iter(chunks)):
@@ -80,7 +70,6 @@ class AudioStreamTests(unittest.TestCase):
             )
 
     def test_normal_playback_writes_chunks_and_calls_callbacks(self):
-        """Verify normal playback writes chunks and calls callbacks behavior."""
         stream = FakeStream()
         started = []
         done = []
@@ -114,7 +103,6 @@ class AudioStreamTests(unittest.TestCase):
     def test_stop_midstream_aborts_and_suppresses_on_done(self):
         # The first write triggers stop(); the next loop iteration must abort
         # and the completion callback must NOT fire (a superseding query owns UI).
-        """Verify stop midstream aborts and suppresses on done behavior."""
         stream = FakeStream(on_first_write=audio.stop)
         done = []
         self._run(
@@ -126,19 +114,16 @@ class AudioStreamTests(unittest.TestCase):
         self.assertEqual(done, [])
 
     def test_clears_current_stop_event_after_completion(self):
-        """Verify clears current stop event after completion behavior."""
         stream = FakeStream()
         self._run([_pcm()], stream)
         self.assertIsNone(audio._current_stop_event)
 
     def test_tts_none_drains_text_without_opening_audio_stream(self):
-        """Verify tts none drains text without opening audio stream behavior."""
         started = []
         done = []
         drained = []
 
         def text_chunks():
-            """Verify text chunks behavior."""
             drained.append("a")
             yield "hello"
             drained.append("b")
@@ -162,13 +147,11 @@ class AudioStreamTests(unittest.TestCase):
         self.assertEqual(done, [1])
 
     def test_macos_audio_disabled_drains_text_without_opening_stream(self):
-        """Verify macos audio disabled drains text without opening stream behavior."""
         started = []
         done = []
         drained = []
 
         def text_chunks():
-            """Verify text chunks behavior."""
             drained.append("a")
             yield "hello"
             drained.append("b")
@@ -192,6 +175,47 @@ class AudioStreamTests(unittest.TestCase):
         self.assertEqual(drained, ["a", "b"])
         self.assertEqual(started, [1])
         self.assertEqual(done, [1])
+
+    def test_output_device_and_permission_failures_cleanup_without_completion(self):
+        failures = (
+            OSError("audio device unavailable"),
+            PermissionError("audio-output permission denied"),
+        )
+        for failure in failures:
+            with self.subTest(failure=str(failure)), \
+                 mock.patch.object(audio.sd, "RawOutputStream", side_effect=failure), \
+                 mock.patch.object(
+                     tts_module,
+                     "stream_audio_from_chunks",
+                     return_value=iter([_pcm()]),
+                 ):
+                done = []
+                audio._stream_and_play_chunks(
+                    iter(["text"]), done.append, None, None, None
+                )
+
+                self.assertIsNone(audio._current_stop_event)
+                self.assertEqual(done, [])
+
+    def test_tts_producer_failure_does_not_escape_thread_or_claim_completion(self):
+        stream = FakeStream()
+
+        def failed_producer(*_args, **_kwargs):
+            raise ConnectionError("provider network request failed")
+            yield b"unreachable"
+
+        with mock.patch.object(audio.sd, "RawOutputStream", return_value=stream), \
+             mock.patch.object(
+                 tts_module,
+                 "stream_audio_from_chunks",
+                 side_effect=failed_producer,
+             ):
+            done = []
+            audio._stream_and_play_chunks(iter(["text"]), done.append, None, None, None)
+
+        self.assertIsNone(audio._current_stop_event)
+        self.assertEqual(done, [])
+        self.assertTrue(stream.closed)
 
 
 if __name__ == "__main__":

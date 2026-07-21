@@ -21,7 +21,6 @@ _F_AUTOREPEAT = object()
 
 
 class _FakeQuartz:
-    """Test case for fake quartz behavior."""
     kCGEventTapDisabledByTimeout = 0xFFFFFFFE
     kCGEventTapDisabledByUserInput = -3
     kCGEventKeyDown = 10
@@ -35,16 +34,13 @@ class _FakeQuartz:
     kCFRunLoopCommonModes = object()
 
     def __init__(self, tap_factory=None):
-        """Initialize the fake quartz instance."""
         self.captured: dict = {}
         self._tap_factory = tap_factory or (lambda option: SimpleNamespace(name="tap"))
 
     def CGEventMaskBit(self, bit):
-        """Verify c g event mask bit behavior."""
         return 1 << bit
 
     def CGEventGetIntegerValueField(self, event, field):
-        """Verify c g event get integer value field behavior."""
         if field is _F_KEYCODE:
             return event.keycode
         if field is _F_AUTOREPEAT:
@@ -52,39 +48,31 @@ class _FakeQuartz:
         return 0
 
     def CGEventGetFlags(self, event):
-        """Verify c g event get flags behavior."""
         return event.flags
 
     def CGEventTapCreate(self, loc, place, option, mask, cb, refcon):
-        """Verify c g event tap create behavior."""
         self.captured.setdefault("options", []).append(option)
         self.captured["cb"] = cb
         return self._tap_factory(option)
 
     def CFMachPortCreateRunLoopSource(self, a, tap, b):
-        """Verify c f mach port create run loop source behavior."""
         return SimpleNamespace()
 
     def CFRunLoopGetCurrent(self):
-        """Verify c f run loop get current behavior."""
         return SimpleNamespace()
 
     def CFRunLoopAddSource(self, *a):
-        """Verify c f run loop add source behavior."""
         pass
 
     def CGEventTapEnable(self, tap, on):
-        """Verify c g event tap enable behavior."""
         pass
 
 
 def _event(keycode, flags=0, autorepeat=0):
-    """Verify event behavior."""
     return SimpleNamespace(keycode=keycode, flags=flags, autorepeat=autorepeat)
 
 
 def _install(monkeypatch, fake, release_kinds=None):
-    """Verify install behavior."""
     monkeypatch.setitem(sys.modules, "Quartz", fake)
     hotkey_helper._HOTKEY_TAP = None
     table = hotkey_helper._build_tap_table([("ctrl+q", "caller", {"index": 0})], VK)
@@ -99,7 +87,6 @@ def _install(monkeypatch, fake, release_kinds=None):
 
 
 def test_active_tap_swallows_matched_keydown(monkeypatch):
-    """Verify active tap swallows matched keydown behavior."""
     cb, emitted, fake = _install(monkeypatch, _FakeQuartz())
     # Prefers the active (swallowing) option first.
     assert fake.captured["options"][0] == _FakeQuartz.kCGEventTapOptionDefault
@@ -110,7 +97,6 @@ def test_active_tap_swallows_matched_keydown(monkeypatch):
 
 
 def test_passes_through_ordinary_keystroke(monkeypatch):
-    """Verify passes through ordinary keystroke behavior."""
     cb, emitted, fake = _install(monkeypatch, _FakeQuartz())
     ev = _event(12, 0)  # bare "q", no modifiers -> not a hotkey
     ret = cb(None, fake.kCGEventKeyDown, ev, None)
@@ -119,7 +105,6 @@ def test_passes_through_ordinary_keystroke(monkeypatch):
 
 
 def test_autorepeat_of_hotkey_is_swallowed_without_reemitting(monkeypatch):
-    """Verify autorepeat of hotkey is swallowed without reemitting behavior."""
     cb, emitted, fake = _install(monkeypatch, _FakeQuartz())
     ret = cb(None, fake.kCGEventKeyDown, _event(12, CTRL, autorepeat=1), None)
     assert ret is None  # still consumed so it can't leak
@@ -127,7 +112,6 @@ def test_autorepeat_of_hotkey_is_swallowed_without_reemitting(monkeypatch):
 
 
 def test_keyup_of_owned_key_is_swallowed(monkeypatch):
-    """Verify keyup of owned key is swallowed behavior."""
     cb, emitted, fake = _install(monkeypatch, _FakeQuartz())
     # key-up of the hotkey letter -> swallowed (no dangling key-up to the app).
     assert cb(None, fake.kCGEventKeyUp, _event(12), None) is None
@@ -154,9 +138,7 @@ def test_primary_and_secondary_voice_keyups_emit_stop(monkeypatch):
 
 def test_falls_back_to_listen_only_when_active_tap_unavailable(monkeypatch):
     # Active tap creation fails (e.g. Accessibility not granted); listen-only works.
-    """Verify falls back to listen only when active tap unavailable behavior."""
     def factory(option):
-        """Verify factory behavior."""
         if option == _FakeQuartz.kCGEventTapOptionDefault:
             return None
         return SimpleNamespace(name="listen-only-tap")
@@ -167,3 +149,23 @@ def test_falls_back_to_listen_only_when_active_tap_unavailable(monkeypatch):
         _FakeQuartz.kCGEventTapOptionDefault,
         _FakeQuartz.kCGEventTapOptionListenOnly,
     ]
+
+
+def test_hotkey_tap_reports_input_monitoring_permission_failure(monkeypatch):
+    """When neither tap can be created, the backend fails cleanly with guidance."""
+    fake = _FakeQuartz(tap_factory=lambda _option: None)
+    monkeypatch.setitem(sys.modules, "Quartz", fake)
+    messages: list[str] = []
+    monkeypatch.setattr(hotkey_helper, "_dbg", messages.append)
+    table = hotkey_helper._build_tap_table(
+        [("ctrl+q", "caller", {"index": 0})], VK
+    )
+
+    ok = hotkey_helper._install_hotkey_tap(table, lambda _kind, **_extra: None)
+
+    assert ok is False
+    assert fake.captured["options"] == [
+        _FakeQuartz.kCGEventTapOptionDefault,
+        _FakeQuartz.kCGEventTapOptionListenOnly,
+    ]
+    assert any("Input Monitoring + Accessibility" in message for message in messages)

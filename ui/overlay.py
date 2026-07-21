@@ -686,7 +686,7 @@ class IconOverlay(QMainWindow):
 
     def eventFilter(self, obj, event):
         """Handle event filter for icon overlay."""
-        if obj is self._icon_label:
+        if obj is getattr(self, "_icon_label", None):
             t = event.type()
 
             if t == QEvent.Type.Move and self._icon_system_move_active:

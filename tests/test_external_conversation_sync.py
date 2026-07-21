@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from core.conversation_store import external_sync
 from core.conversation_store.external_sync import (
     apply_external_conversations,
     discover_external_conversations,
@@ -21,6 +22,71 @@ from core.conversation_store.external_sync import (
 def _write_jsonl(path: Path, records: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+
+
+def test_external_path_and_format_changes_are_rejected_without_mutation(tmp_path):
+    source_root = tmp_path / ".codex"
+    path = source_root / "sessions" / "session.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {"type": "session_meta", "payload": {"id": "changed"}},
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "Original"}},
+        ],
+    )
+    conversation = parse_codex_session(path)
+    assert conversation is not None
+    conversation["messages"].append({"role": "assistant", "content": "Pending"})
+    path.unlink()
+
+    with pytest.raises(ValueError, match="external history path"):
+        push_conversation_to_source(conversation, source_root=source_root)
+    assert conversation["external_source"]["message_count"] == 1
+
+    changed_format = source_root / "sessions" / "changed-format.jsonl"
+    _write_jsonl(changed_format, [{"unexpected_provider_schema": True}])
+    assert parse_codex_session(changed_format) is None
+
+
+@pytest.mark.parametrize("failure_stage", ["locked", "backup"])
+def test_external_locked_file_and_backup_failures_preserve_source(
+    tmp_path, monkeypatch, failure_stage
+):
+    source_root = tmp_path / ".codex"
+    path = source_root / "sessions" / "session.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {"type": "session_meta", "payload": {"id": "safe-push"}},
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "Original"}},
+        ],
+    )
+    original = path.read_bytes()
+    conversation = parse_codex_session(path)
+    assert conversation is not None
+    conversation["messages"].append({"role": "assistant", "content": "Pending"})
+    if failure_stage == "locked":
+        monkeypatch.setattr(
+            external_sync,
+            "_append_jsonl",
+            lambda *_args: (_ for _ in ()).throw(PermissionError("file is locked")),
+        )
+    else:
+        monkeypatch.setattr(
+            external_sync.shutil,
+            "copy2",
+            lambda *_args: (_ for _ in ()).throw(OSError("backup failed")),
+        )
+
+    with pytest.raises((PermissionError, OSError)):
+        push_conversation_to_source(
+            conversation,
+            backup_dir=tmp_path / "backups",
+            source_root=source_root,
+        )
+
+    assert path.read_bytes() == original
+    assert conversation["external_source"]["message_count"] == 1
 
 
 def test_parse_codex_uses_user_and_final_messages_only(tmp_path):

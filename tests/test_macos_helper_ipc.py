@@ -22,7 +22,6 @@ from core.macos_helper.client import HelperClient, HelperError
 
 
 def test_ping_round_trip_and_echo():
-    """Verify ping round trip and echo behavior."""
     client = HelperClient()
     try:
         result = client.call("ping", {"value": "hello-from-parent"}, timeout=15)
@@ -35,7 +34,6 @@ def test_ping_round_trip_and_echo():
 
 
 def test_worker_process_is_reused_across_calls():
-    """Verify worker process is reused across calls behavior."""
     client = HelperClient()
     try:
         first = client.call("ping", timeout=15)
@@ -47,7 +45,6 @@ def test_worker_process_is_reused_across_calls():
 
 
 def test_unknown_method_raises_helper_error():
-    """Verify unknown method raises helper error behavior."""
     client = HelperClient()
     try:
         raised = False
@@ -61,7 +58,6 @@ def test_unknown_method_raises_helper_error():
 
 
 def test_calls_fail_fast_after_shutdown():
-    """Verify calls fail fast after shutdown behavior."""
     client = HelperClient()
     client.call("ping", timeout=15)   # start the worker
     client.shutdown()                  # then stop it (sets the shutting-down flag)
@@ -76,7 +72,6 @@ def test_calls_fail_fast_after_shutdown():
 
 
 def _run_directly() -> int:
-    """Verify run directly behavior."""
     tests = [
         test_ping_round_trip_and_echo,
         test_worker_process_is_reused_across_calls,

@@ -203,6 +203,30 @@ def test_selected_text_empty_is_friendly(monkeypatch):
     assert _text_of(context_server._call_tool("get_selected_text", {})) == "(no selection)"
 
 
+def test_selected_text_failure_matrix_is_returned_as_mcp_tool_errors(monkeypatch):
+    """Selection backend faults remain in-band and cannot terminate the MCP server."""
+    monkeypatch.setattr(
+        "core.context_fetcher.get_active_window_info",
+        lambda **kw: WindowInfo(title="Notepad", pid=99999999),
+    )
+    monkeypatch.setattr(context_server, "_client_pids", lambda: {1})
+    faults = (
+        RuntimeError("focus moved"),
+        RuntimeError("target control does not expose accessible text"),
+        PermissionError("OS permission is missing"),
+        RuntimeError("target application is unsupported"),
+        NotImplementedError("platform backend is unsupported"),
+    )
+    for fault in faults:
+        monkeypatch.setattr(
+            "core.capture.get_selected_text",
+            lambda **_kw: (_ for _ in ()).throw(fault),
+        )
+        content, is_error = context_server._safe_call_tool("get_selected_text", {})
+        assert is_error is True
+        assert str(fault) in _text_of(content)
+
+
 def test_selected_text_is_clipped_to_safety_limit(monkeypatch):
     """A giant desktop selection cannot become a giant MCP result."""
     monkeypatch.setattr(

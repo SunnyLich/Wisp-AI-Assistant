@@ -261,6 +261,21 @@ def _expanding_form_layout(parent: QWidget | None = None) -> QFormLayout:
     return form
 
 
+def _reveal_local_folder(parent: QWidget, title: str, raw_path: str | Path) -> bool:
+    """Open a local folder while keeping OS/backend failures inside the UI."""
+    try:
+        path = Path(raw_path).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(f"Folder no longer exists: {path}")
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        if not opened:
+            raise OSError(f"This platform could not reveal the folder: {path}")
+    except (OSError, RuntimeError, ValueError) as exc:
+        QMessageBox.warning(parent, title, str(exc))
+        return False
+    return True
+
+
 class AgentTaskDialog(QDialog):
     """Qt dialog for agent task dialog."""
     _last_task_spec: AgentTaskSpec | None = None  # Class variable to store last submitted task
@@ -3402,11 +3417,11 @@ class AgentRunWindow(QDialog):
     def _open_result_folder(self) -> None:
         """Open result folder."""
         if self._run_dir:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(self._run_dir))
+            _reveal_local_folder(self, t("Open Memory Folder"), self._run_dir)
 
     def _open_scope_folder(self) -> None:
         """Open scope folder."""
-        QDesktopServices.openUrl(QUrl.fromLocalFile(self._spec.scope_folder))
+        _reveal_local_folder(self, t("Open Scope Folder"), self._spec.scope_folder)
 
     def _retry_run(self) -> None:
         """Handle retry run for agent run window."""

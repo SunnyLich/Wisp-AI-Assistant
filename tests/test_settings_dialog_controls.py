@@ -56,20 +56,16 @@ def test_disconnect_clicked_handlers_ignores_missing_connections_warning():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_combo_ignores_wheel_when_popup_closed():
-    """Verify settings combo ignores wheel when popup closed behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
     from ui.settings_panel.dialog import _NoScrollCombo
 
     class FakeWheelEvent:
-        """Test case for fake wheel event behavior."""
         def __init__(self) -> None:
-            """Initialize the fake wheel event instance."""
             self.ignored = False
 
         def ignore(self) -> None:
-            """Verify ignore behavior."""
             self.ignored = True
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -89,7 +85,6 @@ def test_settings_combo_ignores_wheel_when_popup_closed():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_memory_tab_does_not_show_stored_facts():
-    """Verify settings memory tab does not show stored facts behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
 
@@ -181,7 +176,6 @@ def test_settings_exposes_setup_check_button():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tts_voice_tab_exposes_stt_settings():
-    """Verify tts voice tab exposes stt settings behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
@@ -337,7 +331,6 @@ def test_speech_settings_group_tts_fields_and_use_compact_actions():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tts_voice_tab_does_not_import_stt_stack(monkeypatch):
-    """Verify tts voice tab does not import stt stack behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1018,7 +1011,6 @@ def test_optional_install_terminal_falls_back_to_konsole_on_linux(monkeypatch, t
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_technical_combo_options_translate_model_names_only():
-    """Verify technical combo options translate model names only behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1090,7 +1082,6 @@ def test_context_combo_localization_preserves_app_context_labels():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_stt_model_dropdown_preserves_saved_custom_value():
-    """Verify stt model dropdown preserves saved custom value behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1115,7 +1106,6 @@ def test_stt_model_dropdown_preserves_saved_custom_value():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_live_voice_voice_dropdown_supports_custom_value():
-    """Verify live voice voice dropdown supports custom value behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLineEdit
 
@@ -1175,7 +1165,6 @@ def test_provider_model_lists_include_current_defaults():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_app_tab_exposes_assistant_language_setting():
-    """Verify app tab exposes assistant language setting behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QLabel
@@ -1356,6 +1345,65 @@ def test_privacy_model_install_requires_explicit_confirmation(monkeypatch):
     assert "2.8 GB" in str(prompt["body"])
     assert prompt["default_button"] == QMessageBox.StandardButton.No
     assert prompt["buttons"] & QMessageBox.StandardButton.Yes
+    app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_privacy_model_removal_failure_matrix_is_controlled(monkeypatch):
+    """Missing, cancelled, locked, and partial privacy cleanup stay in Settings."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from core import privacy_model
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    dialog._fields = {}
+    refreshes = []
+    warnings = []
+    answer = {"value": QMessageBox.StandardButton.No}
+    calls = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: answer["value"],
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args: warnings.append(str(_args[-1])) or QMessageBox.StandardButton.Ok,
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_refresh_privacy_model_status",
+        lambda self: refreshes.append(True),
+    )
+
+    monkeypatch.setattr(privacy_model, "remove_model", lambda: calls.append("remove"))
+    SettingsDialog._remove_privacy_model(dialog)
+    assert calls == []
+
+    answer["value"] = QMessageBox.StandardButton.Yes
+    monkeypatch.setattr(privacy_model, "remove_model", lambda: False)
+    SettingsDialog._remove_privacy_model(dialog)
+    assert refreshes == [True]
+
+    faults = (
+        PermissionError("A target required by this function is locked."),
+        PermissionError("Required elevation is denied."),
+        PermissionError("Storage access is denied."),
+        BlockingIOError("Another process is using the files."),
+        OSError("Cleanup only partly completes."),
+    )
+    for fault in faults:
+        monkeypatch.setattr(
+            privacy_model,
+            "remove_model",
+            lambda fault=fault: (_ for _ in ()).throw(fault),
+        )
+        SettingsDialog._remove_privacy_model(dialog)
+        assert str(fault) in warnings[-1]
     app.processEvents()
 
 
@@ -1585,7 +1633,6 @@ def test_update_download_switches_button_to_apply(monkeypatch, tmp_path):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_localize_widget_tree_uses_app_language(monkeypatch):
-    """Verify localize widget tree uses app language behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget
 
@@ -1611,7 +1658,6 @@ def test_localize_widget_tree_uses_app_language(monkeypatch):
 
 
 def test_i18n_uses_qt_catalog_without_dynamic_matching(monkeypatch):
-    """Verify i18n uses qt catalog without dynamic matching behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1637,7 +1683,6 @@ def test_i18n_uses_qt_catalog_without_dynamic_matching(monkeypatch):
 
 
 def test_i18n_supports_traditional_chinese(monkeypatch):
-    """Verify i18n supports traditional chinese behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -2281,6 +2326,72 @@ def test_kokoro_post_install_fails_when_required_gpu_is_unavailable(monkeypatch)
     )
 
 
+def test_kokoro_asset_prepare_failure_matrix_is_controlled(monkeypatch):
+    """Asset download failures become a failed install result with durable detail."""
+    from core import tts
+    from ui.settings_panel.dialog import SettingsDialog
+
+    faults = (
+        ConnectionError("network access is unavailable"),
+        RuntimeError("package source is unavailable"),
+        OSError("available disk space is insufficient"),
+        PermissionError("filesystem permission is insufficient"),
+        RuntimeError("dependency versions conflict"),
+    )
+    for fault in faults:
+        monkeypatch.setattr(
+            tts,
+            "prepare_kokoro_assets",
+            lambda _voice=None, voice=None, fault=fault: (_ for _ in ()).throw(fault),
+        )
+        logs: list[str] = []
+        ok, message = SettingsDialog._prepare_kokoro_after_install(
+            voice="af_heart",
+            progress=lambda _message: None,
+            write_log=logs.append,
+        )
+        assert ok is False
+        assert str(fault) in message
+        assert str(fault) in "\n".join(logs)
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_kokoro_asset_repair_cancel_stops_before_download(monkeypatch):
+    """Cancelling repair keeps the current assets and never starts a worker."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QMessageBox, QPushButton
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    voice = QComboBox()
+    voice.addItem("Heart", "af_heart")
+    dialog._fields = {"KOKORO_VOICE": voice}
+    dialog._kokoro_assets_mode = "repair"
+    dialog._kokoro_assets_update_revision = ""
+    dialog._kokoro_assets_btn = QPushButton()
+    dialog._kokoro_install_status_lbl = QLabel()
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Cancel,
+    )
+    monkeypatch.setattr(
+        dialog,
+        "_start_async_test",
+        lambda *_args, **_kwargs: pytest.fail("download worker started after cancellation"),
+    )
+    try:
+        SettingsDialog._kokoro_assets_action(dialog)
+        assert dialog._kokoro_assets_btn.isEnabled()
+    finally:
+        voice.deleteLater()
+        dialog._kokoro_assets_btn.deleteLater()
+        dialog._kokoro_install_status_lbl.deleteLater()
+        app.processEvents()
+
+
 def test_kokoro_post_install_verifies_runtime_import(monkeypatch):
     """Kokoro install should fail if runtime imports are broken after install."""
     from core import optional_deps, tts
@@ -2625,8 +2736,73 @@ def test_elevenlabs_reinstall_click_passes_reinstall(monkeypatch):
         _app.processEvents()
 
 
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_shared_speech_optional_install_cancellation_starts_no_installer(monkeypatch):
+    """Cancelling any shared optional speech install leaves packages untouched."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox
+
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog.__new__(SettingsDialog)
+    monkeypatch.setattr(SettingsDialog, "_elevenlabs_installed", lambda self: False)
+    monkeypatch.setattr(SettingsDialog, "_live_voice_installed", lambda self: False)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_kokoro_install_snapshot",
+        lambda self: {
+            "installed": False,
+            "needs_gpu": False,
+            "needs_repair": False,
+            "mode": "cpu",
+        },
+    )
+    monkeypatch.setattr(
+        dialog_mod.QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Cancel,
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_install_optional_tts_package",
+        lambda *_args, **_kwargs: pytest.fail("installer started after cancellation"),
+    )
+
+    fields = {
+        "KOKORO_VOICE": QLineEdit("af_heart"),
+        "KOKORO_LANG_CODE": QLineEdit("a"),
+        "KOKORO_DEVICE": QLineEdit("cpu"),
+        "KOKORO_SPEED": QLineEdit("1.0"),
+        "KOKORO_SAMPLE_RATE": QLineEdit("24000"),
+        "TTS_VOLUME": QLineEdit("1.0"),
+    }
+    for key, value in (
+        ("STT_MODEL", "base"),
+        ("STT_DEVICE", "cpu"),
+        ("STT_COMPUTE_TYPE", "int8"),
+        ("STT_LANGUAGE", "en"),
+        ("STT_BEAM_SIZE", "5"),
+    ):
+        combo = QComboBox()
+        combo.addItem(value, value)
+        fields[key] = combo
+    dialog._fields = fields
+
+    try:
+        SettingsDialog._install_elevenlabs(dialog)
+        SettingsDialog._install_live_voice(dialog)
+        SettingsDialog._install_kokoro(dialog)
+        SettingsDialog._preload_stt_model(dialog)
+        app.processEvents()
+    finally:
+        for widget in fields.values():
+            widget.deleteLater()
+        app.processEvents()
+
+
 def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
-    """Verify i18n translates settings apply tool warning behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -2654,7 +2830,6 @@ def test_i18n_translates_settings_apply_tool_warning(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_i18n_translates_stt_backend_status_messages(monkeypatch):
-    """Verify i18n translates stt backend status messages behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -2680,7 +2855,6 @@ def test_i18n_translates_stt_backend_status_messages(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_llm_model_routing_surface_translates_to_traditional_chinese(isolated_default_profile, monkeypatch):
-    """Verify llm model routing surface translates to traditional chinese behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton
 
@@ -2818,7 +2992,6 @@ def test_llm_model_routing_surface_translates_to_traditional_chinese(isolated_de
 
 
 def test_qt_catalogs_translate_exact_spanish_and_french_sources(monkeypatch):
-    """Verify qt catalogs translate exact spanish and french sources behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -2851,7 +3024,6 @@ def test_qt_catalogs_translate_exact_spanish_and_french_sources(monkeypatch):
 
 
 def test_i18n_translates_auth_ui_but_keeps_technical_tokens(monkeypatch):
-    """Verify i18n translates auth ui but keeps technical tokens behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -2946,7 +3118,6 @@ def test_app_settings_surface_translates_to_traditional_chinese():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_status_label_setters_localize_dynamic_text():
-    """Verify status label setters localize dynamic text behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel
 
@@ -3049,17 +3220,14 @@ def test_llm_tab_hides_advanced_chat_harness_controls_until_expanded():
 
 
 def test_settings_open_requests_are_coalesced(monkeypatch):
-    """Verify settings open requests are coalesced behavior."""
     from ui.settings_panel import dialog as settings_dialog
 
     callbacks = []
 
     def fake_single_shot(_delay, callback):
-        """Verify fake single shot behavior."""
         callbacks.append(callback)
 
     def fake_open_now(**_kwargs):
-        """Verify fake open now behavior."""
         settings_dialog._settings_open_pending = False
 
     monkeypatch.setattr(settings_dialog.QTimer, "singleShot", fake_single_shot)
@@ -3079,21 +3247,16 @@ def test_settings_open_requests_are_coalesced(monkeypatch):
 
 
 def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch):
-    """Verify hidden settings dialog is replaced without clearing new one behavior."""
     from ui.settings_panel import dialog as settings_dialog
 
     class FakeSignal:
-        """Test case for fake signal behavior."""
         def __init__(self) -> None:
-            """Initialize the fake signal instance."""
             self._callbacks = []
 
         def connect(self, callback) -> None:
-            """Verify connect behavior."""
             self._callbacks.append(callback)
 
         def emit(self, obj=None) -> None:
-            """Verify emit behavior."""
             for callback in list(self._callbacks):
                 callback(obj)
 
@@ -3102,7 +3265,6 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
         created = []
 
         def __init__(self, parent=None, on_apply=None, on_setup_check=None, extra_tools=None) -> None:
-            """Initialize the fake dialog instance."""
             self.parent = parent
             self._on_apply = on_apply
             self._on_setup_check = on_setup_check
@@ -3114,35 +3276,27 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
             FakeDialog.created.append(self)
 
         def objectName(self):
-            """Verify object name behavior."""
             return "fake-settings"
 
         def isVisible(self):
-            """Verify is visible behavior."""
             return self.visible
 
         def isMinimized(self):
-            """Verify is minimized behavior."""
             return False
 
         def showNormal(self):
-            """Verify show normal behavior."""
             pass
 
         def show(self):
-            """Verify show behavior."""
             self.visible = True
 
         def raise_(self):
-            """Verify raise behavior."""
             pass
 
         def activateWindow(self):
-            """Verify activate window behavior."""
             pass
 
         def deleteLater(self):
-            """Verify delete later behavior."""
             self.deleted = True
 
     old = FakeDialog()
@@ -3150,7 +3304,6 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
     new_dialogs = []
 
     def make_dialog(parent=None, on_apply=None, on_setup_check=None, extra_tools=None):
-        """Verify make dialog behavior."""
         dialog = FakeDialog(
             parent=parent,
             on_apply=on_apply,
@@ -3181,21 +3334,16 @@ def test_hidden_settings_dialog_is_replaced_without_clearing_new_one(monkeypatch
 
 
 def test_cancel_status_refresh_invalidates_pending_results():
-    """Verify cancel status refresh invalidates pending results behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     class FakeTimer:
-        """Test case for fake timer behavior."""
         def __init__(self) -> None:
-            """Initialize the fake timer instance."""
             self.stopped = False
 
         def isActive(self):
-            """Verify is active behavior."""
             return True
 
         def stop(self):
-            """Verify stop behavior."""
             self.stopped = True
 
     dialog = SettingsDialog.__new__(SettingsDialog)
@@ -3214,21 +3362,16 @@ def test_cancel_status_refresh_invalidates_pending_results():
 
 
 def test_cancel_async_ui_updates_stops_test_and_auth_timers():
-    """Verify cancel async ui updates stops test and auth timers behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     class FakeTimer:
-        """Test case for fake timer behavior."""
         def __init__(self) -> None:
-            """Initialize the fake timer instance."""
             self.stopped = False
 
         def isActive(self):
-            """Verify is active behavior."""
             return True
 
         def stop(self):
-            """Verify stop behavior."""
             self.stopped = True
 
     dialog = SettingsDialog.__new__(SettingsDialog)
@@ -3428,11 +3571,9 @@ def test_auth_status_timeout_replaces_stuck_checking_labels():
 
 
 def test_ui_host_skips_direct_stt_reset_thread(monkeypatch):
-    """Verify ui host skips direct stt reset thread behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     def fail_thread_start(*_args, **_kwargs):
-        """Verify fail thread start behavior."""
         raise AssertionError("UI host must not start an STT reset thread")
 
     monkeypatch.setenv("WISP_MACOS_PY_UI_HOST", "1")
@@ -3442,7 +3583,6 @@ def test_ui_host_skips_direct_stt_reset_thread(monkeypatch):
 
 
 def test_reset_page_key_mapping_is_scoped():
-    """Verify reset page key mapping is scoped behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     env = {
@@ -3505,7 +3645,6 @@ def test_reset_page_key_mapping_is_scoped():
 
 
 def test_settings_tab_strip_uses_theme_background():
-    """Verify settings tab strip uses theme background behavior."""
     from ui.settings_panel.dialog import SettingsDialog
     from ui.shared.theme import theme_colors
 
@@ -3523,7 +3662,6 @@ def test_settings_tab_strip_uses_theme_background():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_tab_bar_has_explicit_painted_backing():
-    """Verify settings tab bar has explicit painted backing behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
@@ -3720,6 +3858,129 @@ def test_connections_page_filters_and_paginates_large_provider_lists():
             for row in rows
             if not row["widget"].isHidden()
         } == {"ollama", "custom"}
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_connection_filter_and_expand_are_provider_failure_independent(monkeypatch):
+    """Local list filtering never depends on credentials or provider I/O."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from core import secret_store
+    from core.llm_clients import client as llm
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    try:
+        for row in list(dialog._api_key_rows):
+            dialog._remove_api_key_row(row)
+        rows = [
+            dialog._add_api_key_row(provider, alias=f"connection-{index}")
+            for index, provider in enumerate(
+                ("openai", "anthropic", "google", "groq", "mistral", "xai", "ollama", "custom")
+            )
+        ]
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("provider or credential I/O reached by local filtering")
+
+        monkeypatch.setattr(secret_store, "get_secret", forbidden)
+        monkeypatch.setattr(llm, "list_models", forbidden)
+        monkeypatch.setattr(llm, "test_route_connection", forbidden)
+
+        for _fault in (
+            "credentials unavailable",
+            "network unavailable",
+            "provider unavailable",
+            "account permission missing",
+            "provider API incompatible",
+        ):
+            dialog._connections_expanded = False
+            dialog._connections_filter.setCurrentIndex(
+                dialog._connections_filter.findData("cloud")
+            )
+            dialog._refresh_connection_rows_filter()
+            assert sum(not row["widget"].isHidden() for row in rows) == 6
+            dialog._toggle_connections_expanded()
+            assert sum(not row["widget"].isHidden() for row in rows) == 6
+
+        dialog._connections_filter.setCurrentIndex(
+            dialog._connections_filter.findData("local")
+        )
+        dialog._refresh_connection_rows_filter()
+        assert {
+            row["provider"].currentData()
+            for row in rows
+            if not row["widget"].isHidden()
+        } == {"ollama", "custom"}
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_connection_configuration_failure_matrix_is_controlled(monkeypatch):
+    """Connection add/alias/key/custom-preset/remove stays usable across boundary faults."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from core import secret_store
+    from core.llm_clients import client as llm
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    warnings: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, message: warnings.append(message))
+    try:
+        for row in list(dialog._api_key_rows):
+            dialog._remove_api_key_row(row)
+
+        external_faults = (
+            ValueError("value required by this function is invalid"),
+            ValueError("endpoint URL is malformed"),
+            ConnectionError("endpoint is offline"),
+            PermissionError("account lacks permission"),
+        )
+        for fault in external_faults:
+            def forbidden(*_args, error=fault, **_kwargs):
+                raise error
+
+            with monkeypatch.context() as scoped:
+                scoped.setattr(secret_store, "get_secret", forbidden)
+                scoped.setattr(llm, "list_models", forbidden)
+                scoped.setattr(llm, "test_route_connection", forbidden)
+                row = dialog._add_api_key_row("openai", alias="Primary")
+                row["alias"].setText("Renamed connection")
+                assert row["alias"].text() == "Renamed connection"
+                dialog._apply_custom_preset("http://localhost:1234/v1", "local-model")
+                assert dialog._fields["CUSTOM_BASE_URL"].text() == "http://localhost:1234/v1"
+                dialog._remove_api_key_row(row)
+                assert row not in dialog._api_key_rows
+
+        # The credential-storage action itself contains keychain unavailability
+        # and leaves the typed secret present so the user can retry.
+        row = dialog._add_api_key_row("openai", alias="Keychain")
+        row["key"].setText("typed-but-not-stored")
+        monkeypatch.setattr(secret_store, "migrate_env_secrets", lambda _env: None)
+        monkeypatch.setattr(
+            secret_store,
+            "set_secret",
+            lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("OS keychain is unavailable")),
+        )
+        assert dialog._save_api_keys_to_keychain() is False
+        assert row["key"].text() == "typed-but-not-stored"
+        assert "OS keychain is unavailable" in warnings[-1]
+
+        # Masking stored secrets is a local UI operation and remains available
+        # even while reads from the credential backend fail.
+        dialog._set_secret_placeholder(row["key"], "stored in keychain", stored=True)
+        assert row["key"].echoMode().name == "Password"
+        assert "stored" in row["key"].placeholderText()
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -3976,7 +4237,6 @@ def test_ollama_custom_preset_fills_dummy_api_key():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_tool_warning_marks_associated_settings_headlines():
-    """Verify tool warning marks associated settings headlines behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -4019,7 +4279,6 @@ def test_tool_warning_marks_associated_settings_headlines():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_llm_tab_groups_credentials_and_models_under_full_height_rails():
-    """Verify llm tab groups credentials and models under full height rails behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QFrame, QWidget
 
@@ -4052,7 +4311,6 @@ def test_llm_tab_groups_credentials_and_models_under_full_height_rails():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_subscription_warning_marks_provider_credentials_headline():
-    """Verify subscription warning marks provider credentials headline behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -4118,7 +4376,6 @@ def test_tts_provider_timing_notice_only_for_providers_without_word_timestamps()
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_warning_markers_refresh_from_loaded_settings():
-    """Verify warning markers refresh from loaded settings behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -4257,7 +4514,6 @@ def test_escape_does_not_close_settings_but_cancel_still_does():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_has_reset_page_button():
-    """Verify settings has reset page button behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -4288,7 +4544,6 @@ def test_settings_has_reset_page_button():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_search_filters_to_matching_page():
-    """Verify settings search filters to matching page behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLineEdit
 
@@ -4322,7 +4577,6 @@ def test_settings_search_filters_to_matching_page():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_dirty_marker_enables_apply_after_change():
-    """Verify settings dirty marker enables apply after change behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -4531,6 +4785,66 @@ def test_settings_reports_secondary_shortcut_conflicts_only_when_saving(monkeypa
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_shortcut_mutation_failure_matrix_is_controlled(monkeypatch):
+    """Rename/add/edit validation rejects empty, invalid, duplicate, and stale rows."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, _title, message: warnings.append(str(message)) or QMessageBox.StandardButton.Ok,
+    )
+
+    try:
+        first = dialog._caller_blocks[0]
+        original_label = first["label"].text()
+
+        first["label"].setText("")
+        assert dialog._validate_caller_mutations() is False
+        first["label"].setText("bad\x00name")
+        assert dialog._validate_caller_mutations() is False
+        first["label"].setText(original_label)
+
+        if len(dialog._caller_blocks) < 2:
+            dialog._add_caller_block(label="Second shortcut", intents=[])
+        second = dialog._caller_blocks[1]
+        second["label"].setText(first["label"].text())
+        assert dialog._validate_caller_mutations() is False
+        second["label"].setText("Second shortcut")
+
+        dialog._add_caller_intent_row(first)
+        row = first["intent_rows"][-1]
+        assert dialog._validate_caller_mutations() is False
+        row["key"].setText("too-long")
+        row["label"].setText("New choice")
+        row["prompt"].setPlainText("Do the new thing")
+        assert dialog._validate_caller_mutations() is False
+        row["key"].setText(first["intent_rows"][0]["key"].text())
+        assert dialog._validate_caller_mutations() is False
+
+        row["key"].setText("z")
+        row["prompt"].setPlainText("bad\x00prompt")
+        assert dialog._validate_caller_mutations() is False
+        row["prompt"].setPlainText("Do the new thing")
+
+        first["intent_rows"].append({"widget": object()})
+        assert dialog._validate_caller_mutations() is False
+        first["intent_rows"].pop()
+
+        assert dialog._validate_caller_mutations() is True
+        assert warnings
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_apply_real_save_clears_dirty_after_language_change(monkeypatch):
     """Changing Assistant language should save, localize prompts, and clear dirty state."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -4623,7 +4937,6 @@ def test_settings_apply_reports_unexpected_save_exception(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_preset_marks_reviewable_changes_without_saving(isolated_default_profile):
-    """Verify settings preset marks reviewable changes without saving behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -4649,7 +4962,8 @@ def test_settings_preset_marks_reviewable_changes_without_saving(isolated_defaul
         assert _get(dialog._fields["STT_MODEL"]) == "base"
         assert _get(dialog._fields["CONTEXT_BROWSER_MAX_CHARS"]) == "3000"
         assert dialog._active_preset_slug == "low_setup"
-        assert {"LLM", "TTS / Voice", "Advanced", "Keybinds"} <= dialog._tab_dirty_names
+        assert {"App", "LLM"} <= dialog._tab_dirty_names
+        assert {"TTS / Voice", "Advanced", "Keybinds"}.isdisjoint(dialog._tab_dirty_names)
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -4712,8 +5026,119 @@ def test_settings_profiles_menu_only_exposes_low_setup_builtin_preset():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_builtin_profile_selection_updates_label_and_replaces_custom_runtime_profile(tmp_path, monkeypatch):
+    """A built-in selection must survive the live config reload after Save changes."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    import ui.settings_panel.dialog as settings_dialog
+    from core.system import autostart
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join([
+            "PROFILE_COUNT=1",
+            "PROFILE_1_ID=a",
+            "PROFILE_1_LABEL=A",
+            "PROFILE_1_LLM_PROVIDER=ollama",
+            "PROFILE_1_LLM_MODEL=profile-model",
+            "ACTIVE_PROFILE=a",
+            "SETTINGS_PROFILE=a",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    monkeypatch.setattr(autostart, "sync_start_on_login", lambda _enabled: None)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        profile_btn = dialog.findChild(QPushButton, "settingsProfilesButton")
+        assert profile_btn is not None
+        assert profile_btn.text() == "A"
+
+        dialog._apply_preset("Low setup")
+        app.processEvents()
+
+        assert profile_btn.text() == "Low setup"
+        assert dialog._pending_active_profile == "default"
+        assert dialog._apply_btn.isEnabled()
+
+        monkeypatch.setattr(dialog, "_save_api_keys_to_keychain", lambda: True)
+        monkeypatch.setattr(dialog, "_capability_warnings_for_values", lambda _vals: ([], {}))
+        monkeypatch.setattr(dialog, "_set_warning_markers", lambda _warnings: None)
+        assert dialog._do_save() is True
+
+        saved = settings_env.read_settings_env()
+        assert saved["ACTIVE_PROFILE"] == "default"
+        assert saved["SETTINGS_PROFILE"] == "default"
+        assert saved["WISP_SETTINGS_PRESET"] == "low_setup"
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_custom_profile_selection_clears_builtin_profile_marker(tmp_path, monkeypatch):
+    """Switching back to a custom profile must not reopen as the built-in preset."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    import ui.settings_panel.dialog as settings_dialog
+    from core.system import autostart
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join([
+            "WISP_SETTINGS_PRESET=low_setup",
+            "PROFILE_COUNT=1",
+            "PROFILE_1_ID=a",
+            "PROFILE_1_LABEL=A",
+            "PROFILE_1_LLM_PROVIDER=ollama",
+            "PROFILE_1_LLM_MODEL=profile-model",
+            "ACTIVE_PROFILE=default",
+            "SETTINGS_PROFILE=default",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    monkeypatch.setattr(autostart, "sync_start_on_login", lambda _enabled: None)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        profile_btn = dialog.findChild(QPushButton, "settingsProfilesButton")
+        assert profile_btn is not None
+        assert profile_btn.text() == "Low setup"
+
+        dialog._apply_saved_profile(1)
+        app.processEvents()
+
+        assert profile_btn.text() == "A"
+        assert dialog._pending_active_profile == "a"
+
+        monkeypatch.setattr(dialog, "_save_api_keys_to_keychain", lambda: True)
+        monkeypatch.setattr(dialog, "_capability_warnings_for_values", lambda _vals: ([], {}))
+        monkeypatch.setattr(dialog, "_set_warning_markers", lambda _warnings: None)
+        assert dialog._do_save() is True
+
+        saved = settings_env.read_settings_env()
+        assert saved["ACTIVE_PROFILE"] == "a"
+        assert saved["SETTINGS_PROFILE"] == "a"
+        assert "WISP_SETTINGS_PRESET" not in saved
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_active_preset_persists_user_edits_as_preset_overrides():
-    """Verify settings active preset persists user edits as preset overrides behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -4741,7 +5166,7 @@ def test_settings_active_preset_persists_user_edits_as_preset_overrides():
 def test_settings_can_create_custom_profile(tmp_path, monkeypatch):
     """Verify Settings can create a real PROFILE_N custom profile."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QInputDialog, QPushButton
+    from PySide6.QtWidgets import QApplication, QInputDialog, QLabel, QPushButton
 
     import ui.settings_panel.dialog as settings_dialog
     from ui.settings_panel import env as settings_env
@@ -4756,8 +5181,11 @@ def test_settings_can_create_custom_profile(tmp_path, monkeypatch):
 
     try:
         profile_btn = dialog.findChild(QPushButton, "settingsProfilesButton")
+        profile_label = dialog.findChild(QLabel, "settingsProfileLabel")
         assert profile_btn is not None
-        assert profile_btn.text() == "Profiles..."
+        assert profile_label is not None
+        assert profile_label.text() == "Profile"
+        assert profile_btn.text() == "Default"
 
         dialog._fields["CONTEXT_BROWSER_MAX_CHARS"].setText("12345")
         dialog._create_custom_profile()
@@ -4770,6 +5198,7 @@ def test_settings_can_create_custom_profile(tmp_path, monkeypatch):
         assert "ACTIVE_PROFILE" not in saved
         assert "SETTINGS_PROFILE" not in saved
         assert dialog._pending_active_profile == "local-research"
+        assert profile_btn.text() == "Local Research"
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -4814,6 +5243,67 @@ def test_settings_profiles_menu_shows_saved_profile_names_without_prefix(tmp_pat
     finally:
         if menu is not None:
             menu.deleteLater()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_settings_active_profile_controls_displayed_and_saved_model(tmp_path, monkeypatch):
+    """Settings must show and update the same profile model the runtime resolves."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    import ui.settings_panel.dialog as settings_dialog
+    from core.system import autostart
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join([
+            "LLM_PROVIDER=openai",
+            "LLM_MODEL=stale-global-model",
+            "CONTEXT_BROWSER_MAX_CHARS=111",
+            "PROFILE_COUNT=1",
+            "PROFILE_1_ID=wizard-profile",
+            "PROFILE_1_LABEL=Wizard Profile",
+            "PROFILE_1_LLM_PROVIDER=ollama",
+            "PROFILE_1_LLM_MODEL=profile-model",
+            "PROFILE_1_CONTEXT_BROWSER_MAX_CHARS=222",
+            "ACTIVE_PROFILE=wizard-profile",
+            "SETTINGS_PROFILE=wizard-profile",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        profile_btn = dialog.findChild(QPushButton, "settingsProfilesButton")
+        llm_row = dialog._model_section_rows["LLM"][0]
+        assert profile_btn is not None
+        assert profile_btn.text() == "Wizard Profile"
+        assert llm_row["api_key_combo"].currentData() == "ollama"
+        assert dialog._model_value(llm_row) == "profile-model"
+        assert dialog._fields["CONTEXT_BROWSER_MAX_CHARS"].text() == "222"
+
+        dialog._apply_env_values_to_ui(
+            {"LLM_PROVIDER": "ollama", "LLM_MODEL": "updated-profile-model"}
+        )
+        captured = {}
+        monkeypatch.setattr(dialog, "_save_api_keys_to_keychain", lambda: True)
+        monkeypatch.setattr(dialog, "_capability_warnings_for_values", lambda _vals: ([], {}))
+        monkeypatch.setattr(dialog, "_set_warning_markers", lambda _warnings: None)
+        monkeypatch.setattr(autostart, "sync_start_on_login", lambda _enabled: None)
+        monkeypatch.setattr(settings_dialog, "_write_env", lambda vals, remove_keys=None: captured.update(vals))
+
+        assert dialog._do_save() is True
+        assert captured["LLM_MODEL"] == "updated-profile-model"
+        assert captured["PROFILE_1_LLM_MODEL"] == "updated-profile-model"
+        assert captured["PROFILE_1_LLM_PROVIDER"] == "ollama"
+    finally:
         dialog.deleteLater()
         app.processEvents()
 
@@ -4870,6 +5360,354 @@ def test_settings_can_rename_and_delete_custom_profile(tmp_path, monkeypatch):
         assert "ACTIVE_PROFILE" not in saved
         assert "SETTINGS_PROFILE" not in saved
         assert dialog._pending_active_profile == ""
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_reset_all_settings_failure_matrix_stays_controlled(tmp_path, monkeypatch):
+    """Cancel, missing files, and every cleanup fault keep the reset dialog alive."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    import config
+    import ui.settings_panel.dialog as settings_dialog
+    from core import secret_store, tts
+    from core.auth import chatgpt, copilot_auth, github
+    from core.llm_clients import client as llm_client
+    from ui.settings_panel import env as settings_env
+    from ui.shared import theme
+
+    env_path = tmp_path / ".env"
+    env_path.write_text("THEME_MODE=dark\n", encoding="utf-8")
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    monkeypatch.setattr(secret_store, "API_KEY_NAMES", ())
+    monkeypatch.setattr(chatgpt, "clear_tokens", lambda: None)
+    monkeypatch.setattr(github, "clear_tokens", lambda: None)
+    monkeypatch.setattr(copilot_auth, "clear_token", lambda: None)
+    monkeypatch.setattr(config, "reload", lambda: None)
+    monkeypatch.setattr(llm_client, "reset_clients", lambda: None)
+    monkeypatch.setattr(tts, "reset_connections", lambda: None)
+    # _reset_all imports this helper at call time, so patch the defining module
+    # instead of adding an unused attribute to settings_dialog. Reapplying the
+    # global Qt stylesheet for every injected unlink fault makes the matrix test
+    # unrelated whole-app windows and can flood the event queue.
+    monkeypatch.setattr(theme, "apply_app_theme", lambda *_args, **_kwargs: None)
+    warnings: list[str] = []
+    infos: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, message: warnings.append(message))
+    monkeypatch.setattr(QMessageBox, "information", lambda _p, _t, message: infos.append(message))
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        dialog._reset_stt_model_in_background = lambda: None
+        dialog._apply_dialog_theme = lambda: None
+        dialog._load_values = lambda: None
+        dialog._refresh_tab_labels = lambda: None
+        dialog._refresh_search_index = lambda: None
+        dialog._on_apply = None
+
+        # Cancel is a strict no-op.
+        monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.StandardButton.No)
+        before = env_path.read_bytes()
+        dialog._reset_all()
+        assert env_path.read_bytes() == before
+
+        monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.StandardButton.Yes)
+
+        # An already-missing settings target is a successful idempotent reset.
+        env_path.unlink()
+        dialog._reset_all()
+        assert not env_path.exists()
+
+        failures = (
+            PermissionError("target required by this function is locked"),
+            PermissionError("required elevation is denied"),
+            PermissionError("storage access is denied"),
+            OSError("another process is using the files"),
+            OSError("cleanup only partly completes"),
+        )
+        original_unlink = Path.unlink
+        for failure in failures:
+            env_path.write_text("THEME_MODE=dark\n", encoding="utf-8")
+
+            def fail_target_unlink(path, *args, error=failure, **kwargs):
+                if path == env_path:
+                    raise error
+                return original_unlink(path, *args, **kwargs)
+
+            with monkeypatch.context() as scoped:
+                scoped.setattr(Path, "unlink", fail_target_unlink)
+                dialog._reset_all()
+            assert env_path.exists()
+            assert str(failure) in warnings[-1]
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_custom_profile_delete_failure_matrix_is_transactional(tmp_path, monkeypatch):
+    """Missing/cancelled/locked/partial profile deletion cannot corrupt Settings."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    import ui.settings_panel.dialog as settings_dialog
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    initial = (
+        "PROFILE_COUNT=1\n"
+        "PROFILE_1_ID=keep-me\n"
+        "PROFILE_1_LABEL=Keep Me\n"
+        "ACTIVE_PROFILE=keep-me\n"
+        "SETTINGS_PROFILE=keep-me\n"
+    )
+    env_path.write_text(initial, encoding="utf-8")
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    warnings: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, message: warnings.append(message))
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        # A stale/missing menu target is an idempotent no-op.
+        dialog._choose_saved_profile_slot = lambda *_args: None
+        dialog._delete_custom_profile()
+        assert env_path.read_text(encoding="utf-8") == initial
+
+        chosen = (1, "keep-me", "Keep Me")
+        dialog._choose_saved_profile_slot = lambda *_args: chosen
+
+        # Explicit cancellation cannot touch persistence.
+        monkeypatch.setattr(QMessageBox, "question", lambda *_a, **_k: QMessageBox.StandardButton.No)
+        dialog._delete_custom_profile()
+        assert env_path.read_text(encoding="utf-8") == initial
+
+        monkeypatch.setattr(QMessageBox, "question", lambda *_a, **_k: QMessageBox.StandardButton.Yes)
+        failures = (
+            PermissionError("target required by this function is locked"),
+            PermissionError("required elevation is denied"),
+            PermissionError("storage access is denied"),
+            OSError("another process is using the files"),
+            OSError("cleanup only partly completes"),
+        )
+        for failure in failures:
+            before_env = dict(dialog._env)
+            with monkeypatch.context() as scoped:
+                scoped.setattr(
+                    settings_dialog,
+                    "_write_env",
+                    lambda *_a, error=failure, **_k: (_ for _ in ()).throw(error),
+                )
+                dialog._delete_custom_profile()
+            assert dialog._env == before_env
+            assert env_path.read_text(encoding="utf-8") == initial
+            assert str(failure) in warnings[-1]
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_custom_profile_create_failure_matrix_is_controlled(tmp_path, monkeypatch):
+    """Create handles empty/invalid/duplicate names and every persistence fault."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
+
+    import ui.settings_panel.dialog as settings_dialog
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    initial = "PROFILE_COUNT=1\nPROFILE_1_ID=existing\nPROFILE_1_LABEL=Existing\n"
+    env_path.write_text(initial, encoding="utf-8")
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    warnings: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, message: warnings.append(message))
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        # Empty/cancelled input never reaches persistence.
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("", True))
+        dialog._create_custom_profile()
+        assert env_path.read_text(encoding="utf-8") == initial
+
+        # A punctuation-only name is normalized to a valid fallback id.
+        captured: dict[str, str] = {}
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("!!!", True))
+        with monkeypatch.context() as scoped:
+            scoped.setattr(settings_dialog, "_write_env", lambda vals, **_k: captured.update(vals))
+            dialog._create_custom_profile()
+        assert captured["PROFILE_2_ID"] == "custom"
+
+        # Reset the in-memory model, then prove a duplicate label receives a unique id.
+        dialog._env = settings_env.read_settings_env()
+        captured.clear()
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("Existing", True))
+        with monkeypatch.context() as scoped:
+            scoped.setattr(settings_dialog, "_write_env", lambda vals, **_k: captured.update(vals))
+            dialog._create_custom_profile()
+        assert captured["PROFILE_2_ID"] == "existing-2"
+
+        failures = (
+            PermissionError("backing store is read-only"),
+            PermissionError("backing store is locked"),
+            ValueError("backing store is corrupt"),
+            OSError("write is interrupted"),
+        )
+        for failure in failures:
+            dialog._env = settings_env.read_settings_env()
+            before_env = dict(dialog._env)
+            monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("New Profile", True))
+            with monkeypatch.context() as scoped:
+                scoped.setattr(
+                    settings_dialog,
+                    "_write_env",
+                    lambda *_a, error=failure, **_k: (_ for _ in ()).throw(error),
+                )
+                dialog._create_custom_profile()
+            assert dialog._env == before_env
+            assert env_path.read_text(encoding="utf-8") == initial
+            assert str(failure) in warnings[-1]
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_custom_profile_rename_failure_matrix_is_controlled(tmp_path, monkeypatch):
+    """Rename rejects empty/duplicate values and contains every persistence fault."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
+
+    import ui.settings_panel.dialog as settings_dialog
+    from ui.settings_panel import env as settings_env
+
+    env_path = tmp_path / ".env"
+    initial = (
+        "PROFILE_COUNT=2\n"
+        "PROFILE_1_ID=first\nPROFILE_1_LABEL=First\n"
+        "PROFILE_2_ID=second\nPROFILE_2_LABEL=Second\n"
+    )
+    env_path.write_text(initial, encoding="utf-8")
+    monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
+    monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    warnings: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, message: warnings.append(message))
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    try:
+        dialog._choose_saved_profile_slot = lambda *_args: (1, "first", "First")
+
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("", True))
+        dialog._rename_custom_profile()
+        assert env_path.read_text(encoding="utf-8") == initial
+
+        # Duplicate names are rejected case-insensitively before persistence.
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("second", True))
+        dialog._rename_custom_profile()
+        assert env_path.read_text(encoding="utf-8") == initial
+        assert "already exists" in warnings[-1]
+
+        failures = (
+            ValueError("new value is invalid"),
+            PermissionError("backing store is read-only"),
+            PermissionError("backing store is locked"),
+            ValueError("backing store is corrupt"),
+            OSError("write is interrupted"),
+        )
+        for failure in failures:
+            before_env = dict(dialog._env)
+            monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: ("Renamed", True))
+            with monkeypatch.context() as scoped:
+                scoped.setattr(
+                    settings_dialog,
+                    "_write_env",
+                    lambda *_a, error=failure, **_k: (_ for _ in ()).throw(error),
+                )
+                dialog._rename_custom_profile()
+            assert dialog._env == before_env
+            assert env_path.read_text(encoding="utf-8") == initial
+            assert str(failure) in warnings[-1]
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_update_check_download_repo_failure_matrix_is_in_band(tmp_path, monkeypatch):
+    """All updater modes surface fault classes in Settings and remain retryable."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from core import updater
+    import ui.settings_panel.dialog as settings_dialog
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon, name):
+            self.target = target
+            assert daemon is True
+            assert name.startswith("wisp-")
+
+        def start(self):
+            self.target()
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = settings_dialog.SettingsDialog()
+    monkeypatch.setattr(settings_dialog.threading, "Thread", ImmediateThread)
+    asset = updater.UpdateAsset("windows-x64", "Wisp.zip", "https://example.invalid/Wisp.zip")
+    faults = (
+        ConnectionError("network access is unavailable"),
+        FileNotFoundError("package source is unavailable"),
+        OSError("available disk space is insufficient"),
+        PermissionError("filesystem permission is insufficient"),
+        updater.UpdateError("verification fails"),
+        RuntimeError("dependency versions conflict"),
+    )
+    try:
+        for failure in faults:
+            for mode, method_name, action in (
+                ("check", "check_for_updates", dialog._check_for_updates),
+                ("repo", "apply_repo_update", dialog._pull_repo_update),
+                ("download", "download_update", dialog._download_available_update),
+            ):
+                dialog._update_running = False
+                dialog._update_mode = mode
+                dialog._update_check_result = SimpleNamespace(asset=asset)
+                with monkeypatch.context() as scoped:
+                    scoped.setattr(
+                        updater,
+                        method_name,
+                        lambda *_a, error=failure, **_k: (_ for _ in ()).throw(error),
+                    )
+                    action()
+                    app.processEvents()
+                assert str(failure) in dialog._update_status_lbl.text()
+                assert dialog._update_running is False
+                assert dialog._update_btn.isEnabled()
+
+        # Applying is the destructive/cancellable stage. Cancellation must not
+        # invoke the helper or discard the verified download.
+        downloaded = tmp_path / "Wisp.zip"
+        downloaded.write_bytes(b"verified update")
+        dialog._update_download_path = downloaded
+        dialog._update_mode = "apply"
+        monkeypatch.setattr(QMessageBox, "exec", lambda _self: QMessageBox.StandardButton.Cancel)
+        monkeypatch.setattr(
+            updater,
+            "apply_update",
+            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("cancelled update was applied")),
+        )
+        dialog._apply_downloaded_update()
+        assert dialog._update_download_path == downloaded
+        assert "ready" in dialog._update_status_lbl.text().lower()
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -4941,7 +5779,6 @@ def test_caller_memory_context_block_uses_third_row_in_responsive_grid():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_caller_custom_prompt_row_lives_with_intent_rows():
-    """Verify caller custom prompt row lives with intent rows behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
@@ -4981,7 +5818,6 @@ def test_caller_custom_prompt_row_lives_with_intent_rows():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_memory_panel_refresh_runs_on_background_thread(monkeypatch):
-    """Verify memory panel refresh runs on background thread behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -4994,17 +5830,13 @@ def test_memory_panel_refresh_runs_on_background_thread(monkeypatch):
     class FakeManager:
         """Coordinate fake manager behavior."""
         def get_all_facts(self):
-            """Verify get all facts behavior."""
             raise AssertionError("refresh should not run on the UI thread")
 
     class FakeThread:
-        """Test case for fake thread behavior."""
         def __init__(self, *, target, name: str, daemon: bool) -> None:
-            """Initialize the fake thread instance."""
             started.append({"target": target, "name": name, "daemon": daemon, "started": False})
 
         def start(self) -> None:
-            """Verify start behavior."""
             started[-1]["started"] = True
 
     monkeypatch.setattr(memory_viewer.threading, "Thread", FakeThread)
@@ -5024,7 +5856,6 @@ def test_memory_panel_refresh_runs_on_background_thread(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_memory_panel_read_only_hides_mutation_controls():
-    """Verify memory panel read only hides mutation controls behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -5036,7 +5867,6 @@ def test_memory_panel_read_only_hides_mutation_controls():
     class FakeManager:
         """Coordinate fake manager behavior."""
         def get_all_facts(self):
-            """Verify get all facts behavior."""
             return []
 
     panel = MemoryPanel(
@@ -5060,7 +5890,6 @@ def test_memory_panel_read_only_hides_mutation_controls():
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_memory_panel_add_runs_on_background_thread(monkeypatch):
-    """Verify memory panel add runs on background thread behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -5073,17 +5902,13 @@ def test_memory_panel_add_runs_on_background_thread(monkeypatch):
     class FakeManager:
         """Coordinate fake manager behavior."""
         def add_fact_manual(self, _text, category="general", project=None):
-            """Verify add fact manual behavior."""
             raise AssertionError("add should not run on the UI thread")
 
     class FakeThread:
-        """Test case for fake thread behavior."""
         def __init__(self, *, target, name: str, daemon: bool) -> None:
-            """Initialize the fake thread instance."""
             started.append({"target": target, "name": name, "daemon": daemon, "started": False})
 
         def start(self) -> None:
-            """Verify start behavior."""
             started[-1]["started"] = True
 
     monkeypatch.setattr(memory_viewer.threading, "Thread", FakeThread)
@@ -5093,7 +5918,7 @@ def test_memory_panel_add_runs_on_background_thread(monkeypatch):
         panel._add_text.setText("I prefer fast settings")
         panel._on_add_fact()
 
-        assert panel._add_text.text() == ""
+        assert panel._add_text.text() == "I prefer fast settings"
         assert started
         assert started[0]["name"] == "wisp-memory-add"
         assert started[0]["daemon"] is True
@@ -5104,8 +5929,193 @@ def test_memory_panel_add_runs_on_background_thread(monkeypatch):
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_memory_fact_add_failure_matrix_keeps_input_retryable(monkeypatch):
+    """Rejected, duplicate, and failed manual facts keep the typed text for retry."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    import ui.memory_viewer as memory_viewer
+    from ui.memory_viewer import MemoryPanel
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+            assert name == "wisp-memory-add"
+            assert daemon is True
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(memory_viewer.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: QMessageBox.StandardButton.Ok)
+    class MustNotAddEmpty:
+        def add_fact_manual(self, *_args, **_kwargs):
+            raise AssertionError("empty manual facts must stop before storage")
+
+    empty_panel = MemoryPanel(MustNotAddEmpty(), initial_facts=[])
+    empty_panel._on_add_fact()
+    assert empty_panel._add_text.text() == ""
+    empty_panel.deleteLater()
+
+    failures = (
+        False,
+        ValueError("new value is invalid"),
+        PermissionError("backing store is read-only"),
+        BlockingIOError("backing store is locked"),
+        RuntimeError("backing store is corrupt"),
+        OSError("write is interrupted"),
+    )
+    for failure in failures:
+        class FailingManager:
+            def add_fact_manual(self, _text, category="general", project=None, value=failure):
+                if isinstance(value, BaseException):
+                    raise value
+                return value
+
+        panel = MemoryPanel(FailingManager(), initial_facts=[])
+        panel._add_text.setText("I prefer concise answers")
+        panel._on_add_fact()
+        app.processEvents()
+
+        assert panel._add_text.text() == "I prefer concise answers"
+        panel.deleteLater()
+    app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_memory_fact_delete_failure_matrix_keeps_retryable_row(monkeypatch):
+    """A fact row disappears only after its real background deletion succeeds."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
+
+    import ui.memory_viewer as memory_viewer
+    from ui.memory_viewer import _FactRow
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+            assert name == "wisp-memory-delete"
+            assert daemon is True
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(memory_viewer.threading, "Thread", ImmediateThread)
+    failures = (
+        PermissionError("target required by this function is locked"),
+        PermissionError("required elevation is denied"),
+        PermissionError("storage access is denied"),
+        OSError("another process is using the files"),
+        OSError("cleanup only partly completes"),
+    )
+
+    for answer, failure in (
+        (QMessageBox.StandardButton.No, None),
+        *((QMessageBox.StandardButton.Yes, item) for item in failures),
+    ):
+        parent = QWidget()
+        layout = QVBoxLayout(parent)
+
+        class FailingManager:
+            def delete_fact(self, _fact_id, error=failure):
+                if error is not None:
+                    raise error
+
+        row = _FactRow(
+            {"id": "fact-1", "text": "Keep this fact", "category": "general"},
+            FailingManager(),
+            parent,
+        )
+        layout.addWidget(row)
+        monkeypatch.setattr(QMessageBox, "question", lambda *_a, value=answer, **_k: value)
+
+        row._on_delete()
+        app.processEvents()
+
+        assert layout.indexOf(row) >= 0
+        assert row.parent() is parent
+        parent.deleteLater()
+    app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_memory_fact_project_move_failure_matrix_keeps_editor_retryable(monkeypatch):
+    """Moving a fact never escapes validation/store faults or destroys its editor."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+
+    import ui.memory_viewer as memory_viewer
+    from ui.memory_viewer import _FactRow
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+            assert name == "wisp-memory-update"
+            assert daemon is True
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(memory_viewer.threading, "Thread", ImmediateThread)
+    failures = (
+        ValueError("new value is invalid"),
+        ValueError("new value duplicates an existing value"),
+        PermissionError("backing store is read-only"),
+        PermissionError("backing store is locked"),
+        ValueError("backing store is corrupt"),
+        OSError("write is interrupted"),
+    )
+    for failure in failures:
+        parent = QWidget()
+        layout = QVBoxLayout(parent)
+
+        class FailingManager:
+            def update_fact(self, *_args, error=failure, **_kwargs):
+                raise error
+
+        row = _FactRow(
+            {"id": "fact-1", "text": "Keep this fact", "category": "general"},
+            FailingManager(),
+            parent,
+            projects=[{"id": "project-2", "name": "Project 2"}],
+        )
+        layout.addWidget(row)
+        row._proj_combo.setCurrentIndex(row._proj_combo.findData("project-2"))
+        row._save_fact()
+        app.processEvents()
+        assert layout.indexOf(row) >= 0
+        assert row._text_edit.text() == "Keep this fact"
+        parent.deleteLater()
+
+    # Empty text is rejected before any store call or background task starts.
+    parent = QWidget()
+    layout = QVBoxLayout(parent)
+
+    class MustNotUpdate:
+        def update_fact(self, *_args, **_kwargs):
+            raise AssertionError("empty fact must not reach persistence")
+
+    row = _FactRow(
+        {"id": "fact-1", "text": "Keep this fact", "category": "general"},
+        MustNotUpdate(),
+        parent,
+    )
+    layout.addWidget(row)
+    row._text_edit.setText("   ")
+    row._save_fact()
+    assert layout.indexOf(row) >= 0
+    parent.deleteLater()
+    app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_keybinds_has_voice_block_and_tools_buttons():
-    """Verify settings keybinds has voice block and tools buttons behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -5294,7 +6304,6 @@ def test_settings_context_source_blocks_use_even_columns():
 
 
 def test_reset_keybinds_page_includes_voice_keys():
-    """Verify reset keybinds page includes voice keys behavior."""
     from ui.settings_panel.dialog import SettingsDialog
 
     env = {
@@ -5375,7 +6384,6 @@ def test_tool_access_dialog_round_trips_overrides():
 
 
 def test_bubble_hide_delay_seconds_round_trip():
-    """Verify bubble hide delay seconds round trip behavior."""
     from ui.settings_panel.dialog import _ms_to_seconds_str, _seconds_str_to_ms
 
     assert _ms_to_seconds_str("3500", 3500) == "3.5"

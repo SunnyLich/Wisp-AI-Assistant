@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import json
 import os
 import signal
 import subprocess
@@ -26,6 +27,10 @@ from pathlib import Path
 
 WORKFLOW_TESTS = (
     "tests/test_app_user_workflows.py",
+    "tests/test_profile_user_workflows.py",
+    "tests/test_workflow_manifest.py",
+    "tests/test_feature_acceptance_manifest.py",
+    "tests/test_feature_acceptance_workflows.py",
     "tests/runtime/test_flows.py",
     "tests/test_error_recommendations.py",
     "tests/test_i18n_catalog_sources.py",
@@ -45,12 +50,88 @@ LATEST_LOG_POINTER = "latest_app_workflow_tests.txt"
 LATEST_FAILURE_POINTER = "latest_app_workflow_tests_failure.txt"
 STRICT_LOG_PATTERNS = (
     "Could not parse stylesheet",
+    "[crash] unhandled",
     "Fatal Python error",
     "Segmentation fault",
     "Abort trap",
     "SIGTRAP",
 )
 FAILURE_TAIL_LINES = 80
+
+
+def _manifest_workflow_test_files(root: Path) -> tuple[str, ...]:
+    """Return every test file referenced by the expanded function manifest."""
+
+    manifest_path = root / "tests" / "workflows" / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ()
+    files = {
+        str(node_id).split("::", 1)[0].replace("\\", "/")
+        for record in manifest.get("workflows", [])
+        for node_id in record.get("test_node_ids", [])
+        if "::" in str(node_id)
+    }
+    return tuple(sorted(files))
+
+
+def _workflow_test_files(root: Path) -> tuple[str, ...]:
+    """Merge the legacy master list with every manifest-referenced test file."""
+
+    architecture = set(APP_ARCHITECTURE_TESTS)
+    return tuple(
+        path
+        for path in dict.fromkeys((*WORKFLOW_TESTS, *_manifest_workflow_test_files(root)))
+        if path not in architecture
+    )
+
+
+def _failure_evidence_nodes(root: Path) -> tuple[str, ...]:
+    """Return every direct asserting node in the failure-coverage manifest."""
+
+    manifest_path = root / "tests" / "workflows" / "failure_coverage.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ()
+    return tuple(
+        sorted(
+            {
+                str(node_id).replace("\\", "/")
+                for record in manifest.get("failure_cases", [])
+                for node_id in record.get("evidence_node_ids", [])
+            }
+        )
+    )
+
+
+def _feature_acceptance_counts(root: Path) -> dict[str, int | bool]:
+    """Return honest positive feature and interaction counts for summaries."""
+
+    acceptance_path = root / "tests" / "workflows" / "feature_acceptance.json"
+    interactions_path = root / "tests" / "workflows" / "feature_interactions.json"
+    try:
+        acceptance = json.loads(acceptance_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        acceptance = {"records": []}
+    try:
+        interactions = json.loads(interactions_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        interactions = {"interactions": []}
+    records = acceptance.get("records", [])
+    accepted = sum(1 for row in records if row.get("acceptance_status") == "real_entry_accepted")
+    dependency_audited = sum(1 for row in records if row.get("dependency_status") == "audited")
+    return {
+        "total": len(records),
+        "accepted": accepted,
+        "component_only": sum(1 for row in records if row.get("acceptance_status") == "component_only"),
+        "candidates": sum(1 for row in records if row.get("acceptance_status") == "candidate_needs_audit"),
+        "untested": sum(1 for row in records if row.get("acceptance_status") == "untested"),
+        "dependency_audited": dependency_audited,
+        "accepted_interactions": sum(1 for row in interactions.get("interactions", []) if row.get("status") == "accepted"),
+        "complete": len(records) == 472 and accepted == 472 and dependency_audited == 472,
+    }
 
 
 def _repo_root() -> Path:
@@ -390,7 +471,7 @@ def _run_pytest_phase(
     return status, log_path
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the Wisp app user-workflow test suite.",
     )
@@ -430,6 +511,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Do not run scripts/setup_dev.* automatically when pytest is missing.",
     )
     parser.add_argument(
+        "--require-complete-acceptance",
+        action="store_true",
+        help="Fail unless all 472 real-entry features and dependency audits are complete.",
+    )
+    parser.add_argument(
         "pytest_args",
         nargs=argparse.REMAINDER,
         help="Extra pytest arguments, optionally after --.",
@@ -458,6 +544,33 @@ def main(argv: list[str] | None = None) -> int:
         f"args={' '.join(argv if argv is not None else sys.argv[1:])}",
         "",
     ]
+    acceptance_counts = _feature_acceptance_counts(root)
+    summary_lines.extend(
+        [
+            f"feature_acceptance.accepted={acceptance_counts['accepted']}/{acceptance_counts['total']}",
+            f"feature_acceptance.component_only={acceptance_counts['component_only']}",
+            f"feature_acceptance.candidates={acceptance_counts['candidates']}",
+            f"feature_acceptance.untested={acceptance_counts['untested']}",
+            f"feature_acceptance.dependency_audited={acceptance_counts['dependency_audited']}/{acceptance_counts['total']}",
+            f"feature_acceptance.accepted_interactions={acceptance_counts['accepted_interactions']}",
+            f"feature_acceptance.complete={str(bool(acceptance_counts['complete'])).lower()}",
+            "",
+        ]
+    )
+    if args.require_complete_acceptance and not acceptance_counts["complete"]:
+        message = (
+            "Real-entry feature acceptance is incomplete: "
+            f"{acceptance_counts['accepted']}/{acceptance_counts['total']} functions and "
+            f"{acceptance_counts['dependency_audited']}/{acceptance_counts['total']} dependency audits."
+        )
+        incomplete_log = log_dir / "feature-acceptance-incomplete.log"
+        incomplete_log.write_text(message + "\n", encoding="utf-8")
+        summary_lines.extend(["final_exit_code=1", f"failure_log={incomplete_log}"])
+        _write_failure_pointer(root, incomplete_log)
+        summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+        print(message, flush=True)
+        print("Summary:", summary_path, flush=True)
+        return 1
     preflight_message = _pytest_preflight_message(python, root, env)
     if preflight_message and not args.no_auto_setup:
         print("pytest is not available; running developer setup first.", flush=True)
@@ -517,11 +630,14 @@ def main(argv: list[str] | None = None) -> int:
             extra = _with_default_basetemp(extra, root)
             cmd = _pytest_cmd(python, *extra)
     else:
+        workflow_test_files = _workflow_test_files(root)
+        failure_evidence_nodes = _failure_evidence_nodes(root)
         marker = "workflow and not real_host" if real_host else "workflow"
         print(
             "Mode: app workflow suite "
             f"({len(APP_ARCHITECTURE_TESTS)} app-architecture file + "
-            f"{len(WORKFLOW_TESTS)} workflow entry files; use --all-tests for the full pytest suite).",
+            f"{len(failure_evidence_nodes)} direct failure-evidence nodes + "
+            f"{len(workflow_test_files)} workflow entry files; use --all-tests for the full pytest suite).",
             flush=True,
         )
         app_arch_extra = _with_named_basetemp(extra, root, f"app_architecture_{os.getpid()}")
@@ -549,8 +665,27 @@ def main(argv: list[str] | None = None) -> int:
             print("Failure log:", main_log, flush=True)
             _print_failure_tail(main_log)
             return status
+        failure_extra = _with_named_basetemp(extra, root, f"failure_evidence_{os.getpid()}")
+        failure_cmd = _pytest_cmd(python, *failure_evidence_nodes, *failure_extra)
+        status, failure_log = _run_pytest_phase(
+            "pytest-failure-evidence",
+            failure_cmd,
+            root=root,
+            env=env,
+            log_dir=log_dir,
+            summary_lines=summary_lines,
+        )
+        if status != 0:
+            summary_lines.append(f"final_exit_code={_describe_exit_status(status)}")
+            summary_lines.append(f"failure_log={failure_log}")
+            _write_failure_pointer(root, failure_log)
+            summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+            print("Summary:", summary_path, flush=True)
+            print("Failure log:", failure_log, flush=True)
+            _print_failure_tail(failure_log)
+            return status
         workflow_extra = _with_named_basetemp(extra, root, f"workflow_{os.getpid()}")
-        cmd = _pytest_cmd(python, "-m", marker, *WORKFLOW_TESTS, *workflow_extra)
+        cmd = _pytest_cmd(python, "-m", marker, *workflow_test_files, *workflow_extra)
     if args.real_gpt55:
         print("Real GPT 5.5 workflow test enabled; this may spend tokens.", flush=True)
     if real_host:
@@ -624,6 +759,19 @@ def main(argv: list[str] | None = None) -> int:
         print("Failure log:", host_log, flush=True)
         _print_failure_tail(host_log)
     return host_status
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the suite and collect dead/current-run repository temp trees."""
+
+    from scripts.pytest_temp_cleanup import cleanup_stale_owned_basetemps
+
+    root = _repo_root()
+    cleanup_stale_owned_basetemps(root)
+    try:
+        return _main(argv)
+    finally:
+        cleanup_stale_owned_basetemps(root, runner_pid=os.getpid())
 
 
 if __name__ == "__main__":

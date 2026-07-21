@@ -1,15 +1,17 @@
 """Tests for test conversation store."""
 
 import base64
+import builtins
 import importlib
 import json
+
+import pytest
 
 import core.system.paths as paths
 from core.conversation_store import store
 
 
 def _isolate(tmp_path, monkeypatch):
-    """Verify isolate behavior."""
     chats = tmp_path / "chats"
     monkeypatch.setattr(store, "CHATS_DIR", chats)
     monkeypatch.setattr(store, "CHAT_ATTACHMENTS_DIR", chats / "attachments")
@@ -18,7 +20,6 @@ def _isolate(tmp_path, monkeypatch):
 
 
 def test_general_project_always_present(tmp_path, monkeypatch):
-    """Verify general project always present behavior."""
     _isolate(tmp_path, monkeypatch)
     projects = store.load_projects()
     assert projects[0]["id"] == store.GENERAL_PROJECT_ID
@@ -26,7 +27,6 @@ def test_general_project_always_present(tmp_path, monkeypatch):
 
 
 def test_add_and_delete_project(tmp_path, monkeypatch):
-    """Verify add and delete project behavior."""
     _isolate(tmp_path, monkeypatch)
     proj = store.add_project("Wisp Redesign")
     assert proj["id"] != store.GENERAL_PROJECT_ID
@@ -38,6 +38,34 @@ def test_add_and_delete_project(tmp_path, monkeypatch):
 
     assert store.delete_project(proj["id"]) is True
     assert all(p["id"] != proj["id"] for p in store.load_projects())
+
+
+def test_add_project_failure_matrix_is_transactional(tmp_path, monkeypatch):
+    """Invalid, duplicate, and interrupted project creates never leave partial data."""
+    _isolate(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="required"):
+        store.add_project("")
+    with pytest.raises(ValueError, match="invalid"):
+        store.add_project("bad\x00project")
+
+    existing = store.add_project("Existing")
+    duplicate = store.add_project(" existing ")
+    assert duplicate["id"] == existing["id"]
+    assert [p["name"] for p in store.load_projects()].count("Existing") == 1
+
+    baseline = store.PROJECTS_FILE.read_bytes()
+    faults = (
+        PermissionError("project store is read-only"),
+        BlockingIOError("project store is locked"),
+        OSError("project write was interrupted"),
+    )
+    for fault in faults:
+        with monkeypatch.context() as scoped:
+            scoped.setattr(store.os, "replace", lambda *_args, fault=fault: (_ for _ in ()).throw(fault))
+            with pytest.raises(type(fault), match=str(fault)):
+                store.add_project(f"Failed {type(fault).__name__}")
+        assert store.PROJECTS_FILE.read_bytes() == baseline
+        assert not list(store.PROJECTS_FILE.parent.glob("projects.json.tmp"))
 
 
 def test_projects_with_same_name_are_isolated_by_conversation_scope(tmp_path, monkeypatch):
@@ -53,13 +81,11 @@ def test_projects_with_same_name_are_isolated_by_conversation_scope(tmp_path, mo
 
 
 def test_cannot_delete_general(tmp_path, monkeypatch):
-    """Verify cannot delete general behavior."""
     _isolate(tmp_path, monkeypatch)
     assert store.delete_project(store.GENERAL_PROJECT_ID) is False
 
 
 def test_conversation_round_trip_and_title(tmp_path, monkeypatch):
-    """Verify conversation round trip and title behavior."""
     _isolate(tmp_path, monkeypatch)
     convs = [
         {
@@ -109,7 +135,6 @@ def test_legacy_harness_conversation_migrates_to_provider_scope(tmp_path, monkey
 
 
 def test_pin_and_rename_round_trip(tmp_path, monkeypatch):
-    """Verify pin and rename round trip behavior."""
     _isolate(tmp_path, monkeypatch)
     store.save_conversations([
         {
@@ -259,7 +284,6 @@ def test_tool_context_round_trip(tmp_path, monkeypatch):
 
 
 def test_deleting_project_reassigns_conversations(tmp_path, monkeypatch):
-    """Verify deleting project reassigns conversations behavior."""
     _isolate(tmp_path, monkeypatch)
     proj = store.add_project("Temp")
     store.save_conversations([
@@ -271,7 +295,45 @@ def test_deleting_project_reassigns_conversations(tmp_path, monkeypatch):
 
 
 def test_paths_expose_chats_locations():
-    """Verify paths expose chats locations behavior."""
     importlib.reload(paths)
     assert paths.CHATS_DIR.name == "chats"
     assert paths.PROJECTS_FILE.name == "projects.json"
+
+
+def test_locked_and_corrupt_conversation_store_fails_closed(tmp_path, monkeypatch):
+    """Unreadable history is treated as unavailable, never as valid partial data."""
+    _isolate(tmp_path, monkeypatch)
+    store.CONVERSATIONS_FILE.parent.mkdir(parents=True)
+    store.CONVERSATIONS_FILE.write_text("{broken json", encoding="utf-8")
+    assert store.load_conversations() == []
+
+    real_open = builtins.open
+
+    def locked_open(path, *args, **kwargs):
+        if str(path) == str(store.CONVERSATIONS_FILE):
+            raise PermissionError("conversation store locked")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", locked_open)
+    assert store.load_conversations() == []
+
+
+def test_interrupted_conversation_write_preserves_store_and_removes_temp(tmp_path, monkeypatch):
+    """An interrupted atomic replace keeps old history and cleans its .tmp file."""
+    _isolate(tmp_path, monkeypatch)
+    original = [{"messages": [{"role": "user", "content": "original"}]}]
+    store.save_conversations(original)
+    before = store.CONVERSATIONS_FILE.read_bytes()
+
+    monkeypatch.setattr(
+        store.os,
+        "replace",
+        lambda *_args: (_ for _ in ()).throw(OSError("interrupted")),
+    )
+    with pytest.raises(OSError, match="interrupted"):
+        store.save_conversations(
+            [{"messages": [{"role": "user", "content": "replacement"}]}]
+        )
+
+    assert store.CONVERSATIONS_FILE.read_bytes() == before
+    assert not store.CONVERSATIONS_FILE.with_suffix(".json.tmp").exists()

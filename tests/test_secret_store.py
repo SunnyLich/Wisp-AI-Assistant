@@ -12,31 +12,24 @@ from core import secret_store
 
 
 class FakeKeyring(types.SimpleNamespace):
-    """Test case for fake keyring behavior."""
     def __init__(self):
-        """Initialize the fake keyring instance."""
         super().__init__()
         self.values = {}
 
     def get_password(self, service, account):
-        """Verify get password behavior."""
         return self.values.get((service, account))
 
     def set_password(self, service, account, value):
-        """Verify set password behavior."""
         self.values[(service, account)] = value
 
     def delete_password(self, service, account):
-        """Verify delete password behavior."""
         self.values.pop((service, account), None)
 
 
 class SecretStoreTests(unittest.TestCase):
-    """Test case for secret store tests behavior."""
     def setUp(self):
         # Isolate the on-disk meta file (markers + migration flag) and reset the
         # process-wide blob cache so each case reads its mocked keychain fresh.
-        """Verify set up behavior."""
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         meta = patch.object(secret_store, "_META_FILE", Path(self._tmp.name) / ".secret_status.json")
@@ -46,7 +39,6 @@ class SecretStoreTests(unittest.TestCase):
         self.addCleanup(secret_store._invalidate_cache)
 
     def test_get_secret_prefers_keychain_over_env(self):
-        """Verify get secret prefers keychain over env behavior."""
         fake = FakeKeyring()
         # Stored as the consolidated blob.
         fake.set_password("python-ai-overlay", "__wisp_secrets__",
@@ -57,7 +49,6 @@ class SecretStoreTests(unittest.TestCase):
             self.assertEqual(secret_store.get_secret("OPENAI_API_KEY"), "keychain-value")
 
     def test_get_secret_falls_back_to_env_for_migration(self):
-        """Verify get secret falls back to env for migration behavior."""
         fake = FakeKeyring()
         with patch.dict(sys.modules, {"keyring": fake}), patch.dict(
             "os.environ", {"OPENAI_API_KEY": "env-value"}
@@ -67,7 +58,6 @@ class SecretStoreTests(unittest.TestCase):
     def test_legacy_per_key_items_are_migrated_into_the_blob(self):
         # An older install stored one item per key — those must still be read,
         # then folded into the consolidated blob.
-        """Verify legacy per key items are migrated into the blob behavior."""
         fake = FakeKeyring()
         fake.set_password("python-ai-overlay", "openai_api_key", "legacy-openai")
         fake.set_password("python-ai-overlay", "cartesia_api_key", "legacy-cartesia")
@@ -80,7 +70,6 @@ class SecretStoreTests(unittest.TestCase):
             self.assertEqual(blob["CARTESIA_API_KEY"], "legacy-cartesia")
 
     def test_legacy_key_is_recovered_when_consolidated_blob_already_exists(self):
-        """Verify legacy key is recovered when consolidated blob already exists behavior."""
         fake = FakeKeyring()
         fake.set_password(
             "python-ai-overlay",
@@ -99,7 +88,6 @@ class SecretStoreTests(unittest.TestCase):
         self.assertEqual(blob["GOOGLE_API_KEY"], "legacy-google")
 
     def test_set_secret_writes_single_consolidated_item(self):
-        """Verify set secret writes single consolidated item behavior."""
         fake = FakeKeyring()
         with patch.dict(sys.modules, {"keyring": fake}):
             secret_store.set_secret("OPENAI_API_KEY", "sk-a")
@@ -113,7 +101,6 @@ class SecretStoreTests(unittest.TestCase):
             self.assertEqual(secret_store.get_secret("GOOGLE_API_KEY"), "g-b")
 
     def test_delete_secret_removes_only_that_key(self):
-        """Verify delete secret removes only that key behavior."""
         fake = FakeKeyring()
         with patch.dict(sys.modules, {"keyring": fake}):
             secret_store.set_secret("OPENAI_API_KEY", "sk-a")
@@ -123,7 +110,6 @@ class SecretStoreTests(unittest.TestCase):
             self.assertEqual(secret_store.get_secret("GOOGLE_API_KEY"), "g-b")
 
     def test_migrate_env_secrets_writes_missing_keys(self):
-        """Verify migrate env secrets writes missing keys behavior."""
         fake = FakeKeyring()
         env = {"OPENAI_API_KEY": "sk-test", "GOOGLE_API_KEY": "google-test", "GROQ_API_KEY": ""}
         with patch.dict(sys.modules, {"keyring": fake}):
@@ -135,7 +121,6 @@ class SecretStoreTests(unittest.TestCase):
         self.assertEqual(blob["GOOGLE_API_KEY"], "google-test")
 
     def test_secret_source_reports_keychain_env_or_none(self):
-        """Verify secret source reports keychain env or none behavior."""
         fake = FakeKeyring()
         fake.set_password("python-ai-overlay", "__wisp_secrets__",
                           json.dumps({"OPENAI_API_KEY": "keychain-value"}))

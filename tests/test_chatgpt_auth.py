@@ -5,7 +5,6 @@ import logging
 import os
 import socket
 import threading
-import time
 import urllib.request
 import uuid
 import webbrowser
@@ -46,6 +45,28 @@ def _free_local_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+def test_browser_oauth_reports_when_system_browser_cannot_open(monkeypatch):
+    """A false/failed browser launch ends the flow instead of waiting five minutes."""
+    errors: list[str] = []
+    finished = threading.Event()
+
+    class FakeServer:
+        def __init__(self, *_args, **_kwargs):
+            self.closed = False
+
+        def server_close(self):
+            self.closed = True
+
+    monkeypatch.setattr(chatgpt_auth, "HTTPServer", FakeServer)
+    monkeypatch.setattr(webbrowser, "open", lambda _url: False)
+    chatgpt_auth.start_browser_login(
+        lambda _tokens: pytest.fail("browser failure must not authenticate"),
+        lambda message: (errors.append(message), finished.set()),
+    )
+    assert finished.wait(5)
+    assert errors == ["The browser cannot open the ChatGPT sign-in page."]
 
 
 def test_browser_oauth_rejects_mismatched_state_without_leaking_code(monkeypatch, caplog):
@@ -141,39 +162,186 @@ def test_browser_oauth_valid_callback_uses_pkce_and_persists_tokens(monkeypatch)
     assert query["code_challenge"] == [chatgpt_auth._generate_code_challenge("valid-verifier")]
 
 
-def test_token_file_fallback_refresh_rotation_and_clear(tmp_path, monkeypatch):
-    """Fallback storage preserves rotated refresh state and clears completely."""
+def test_token_storage_fails_closed_when_keyring_is_unavailable(tmp_path, monkeypatch):
+    """Reusable OAuth tokens are never written to a plaintext fallback file."""
     token_file = tmp_path / "private" / "tokens.json"
     monkeypatch.setattr(chatgpt_auth, "_TOKEN_FILE", token_file)
-    monkeypatch.setattr(chatgpt_auth, "_keyring_get", lambda: None)
-    monkeypatch.setattr(chatgpt_auth, "_keyring_set", lambda _value: False)
-    monkeypatch.setattr(chatgpt_auth, "_keyring_delete", lambda: None)
+    monkeypatch.setattr(chatgpt_auth, "_USE_CHUNKED_KEYRING", True)
+    monkeypatch.setattr(chatgpt_auth, "_keyring_get", lambda _account=chatgpt_auth._KEYRING_ACCOUNT: None)
+    monkeypatch.setattr(chatgpt_auth, "_keyring_set", lambda _value, _account=chatgpt_auth._KEYRING_ACCOUNT: False)
+    monkeypatch.setattr(chatgpt_auth, "_keyring_delete", lambda _account=chatgpt_auth._KEYRING_ACCOUNT: None)
+
+    with pytest.raises(chatgpt_auth.OAuthTokenStorageError, match="not stored"):
+        chatgpt_auth.save_tokens({"access": "old", "refresh": "refresh-old", "expires": 1})
+    assert not token_file.exists()
+
+
+def test_legacy_plaintext_tokens_migrate_to_keyring_and_are_removed(tmp_path, monkeypatch):
+    token_file = tmp_path / "private" / "tokens.json"
+    token_file.parent.mkdir(parents=True)
+    tokens = {"access": "old", "refresh": "refresh-old", "expires": 1}
+    token_file.write_text(json.dumps(tokens), encoding="utf-8")
+    stored: dict[str, str] = {}
+    monkeypatch.setattr(chatgpt_auth, "_TOKEN_FILE", token_file)
+    monkeypatch.setattr(chatgpt_auth, "_USE_CHUNKED_KEYRING", True)
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "_keyring_get",
+        lambda account=chatgpt_auth._KEYRING_ACCOUNT: stored.get(account),
+    )
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "_keyring_set",
+        lambda value, account=chatgpt_auth._KEYRING_ACCOUNT: stored.__setitem__(account, value) or True,
+    )
+
+    assert chatgpt_auth.get_tokens() == tokens
+    assert not token_file.exists()
+
+
+def test_chunked_token_roundtrip_rewrite_and_clear(tmp_path, monkeypatch):
+    """Large OAuth payloads are chunked, rewritten, reassembled, and fully removed."""
+    stored: dict[str, str] = {}
+    deleted: list[str] = []
+    monkeypatch.setattr(chatgpt_auth, "_TOKEN_FILE", tmp_path / "must-not-exist.json")
+    monkeypatch.setattr(chatgpt_auth, "_USE_CHUNKED_KEYRING", True)
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "_keyring_get",
+        lambda account=chatgpt_auth._KEYRING_ACCOUNT: stored.get(account),
+    )
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "_keyring_set",
+        lambda value, account=chatgpt_auth._KEYRING_ACCOUNT: stored.__setitem__(account, value) or True,
+    )
+
+    def delete(account=chatgpt_auth._KEYRING_ACCOUNT):
+        deleted.append(account)
+        stored.pop(account, None)
+
+    monkeypatch.setattr(chatgpt_auth, "_keyring_delete", delete)
+
+    large = {
+        "access": "access-" + "a" * 2400,
+        "refresh": "refresh-" + "r" * 1200,
+        "expires": 123456789,
+        "account_id": "account-1",
+    }
+    chatgpt_auth.save_tokens(large)
+    first_manifest = json.loads(stored[chatgpt_auth._KEYRING_ACCOUNT])
+    assert first_manifest[chatgpt_auth._CHUNK_MANIFEST_KEY] == 1
+    assert first_manifest["count"] >= 4
+    assert chatgpt_auth.get_tokens() == large
+
+    smaller = {
+        "access": "new-access-" + "b" * 1000,
+        "refresh": "new-refresh",
+        "expires": 987654321,
+        "account_id": "account-1",
+    }
+    chatgpt_auth.save_tokens(smaller)
+    second_manifest = json.loads(stored[chatgpt_auth._KEYRING_ACCOUNT])
+    assert second_manifest["count"] < first_manifest["count"]
+    assert chatgpt_auth.get_tokens() == smaller
+    for index in range(second_manifest["count"], first_manifest["count"]):
+        assert chatgpt_auth._chunk_account(index) not in stored
+
+    chatgpt_auth.clear_tokens()
+    assert chatgpt_auth.get_tokens() is None
+    assert chatgpt_auth._KEYRING_ACCOUNT not in stored
+    assert all(not account.startswith(f"{chatgpt_auth._KEYRING_ACCOUNT}-chunk-") for account in stored)
+    assert chatgpt_auth._chunk_account(0) in deleted
+
+
+def test_chunked_refresh_rewrites_rotating_credentials(tmp_path, monkeypatch):
+    """Automatic refresh replaces a large expired chunk set with the rotated tokens."""
+    stored: dict[str, str] = {}
+    monkeypatch.setattr(chatgpt_auth, "_TOKEN_FILE", tmp_path / "must-not-exist.json")
+    monkeypatch.setattr(chatgpt_auth, "_USE_CHUNKED_KEYRING", True)
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "_keyring_get",
+        lambda account=chatgpt_auth._KEYRING_ACCOUNT: stored.get(account),
+    )
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "_keyring_set",
+        lambda value, account=chatgpt_auth._KEYRING_ACCOUNT: stored.__setitem__(account, value) or True,
+    )
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "_keyring_delete",
+        lambda account=chatgpt_auth._KEYRING_ACCOUNT: stored.pop(account, None),
+    )
+
     expired = {
-        "access": "expired-access",
-        "refresh": "rotating-refresh",
-        "expires": int((time.time() - 60) * 1000),
+        "access": "expired-access-" + "a" * 2400,
+        "refresh": "rotating-refresh-" + "r" * 1200,
+        "expires": 1,
         "account_id": "account-1",
     }
     chatgpt_auth.save_tokens(expired)
-    assert json.loads(token_file.read_text(encoding="utf-8")) == expired
+    old_count = json.loads(stored[chatgpt_auth._KEYRING_ACCOUNT])["count"]
 
+    def refresh(refresh_token):
+        assert refresh_token == expired["refresh"]
+        return {
+            "access_token": "fresh-access",
+            "refresh_token": "fresh-refresh",
+            "expires_in": 3600,
+        }
+
+    monkeypatch.setattr(chatgpt_auth, "_do_refresh", refresh)
+
+    assert chatgpt_auth.get_valid_access_token() == "fresh-access"
+    refreshed = chatgpt_auth.get_tokens()
+    assert refreshed["refresh"] == "fresh-refresh"
+    assert refreshed["account_id"] == "account-1"
+    new_count = json.loads(stored[chatgpt_auth._KEYRING_ACCOUNT])["count"]
+    assert new_count < old_count
+    for index in range(new_count, old_count):
+        assert chatgpt_auth._chunk_account(index) not in stored
+
+
+def test_device_login_reports_secure_storage_failure(monkeypatch):
+    """A completed device login must not poll forever when the keychain rejects tokens."""
+    responses = iter(
+        [
+            {"device_auth_id": "device", "user_code": "CODE", "interval": 1},
+            {"authorization_code": "auth-code", "code_verifier": "verifier"},
+        ]
+    )
+    errors: list[str] = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr(chatgpt_auth.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(chatgpt_auth.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(chatgpt_auth, "_post_json", lambda *_args, **_kwargs: next(responses))
     monkeypatch.setattr(
         chatgpt_auth,
-        "_do_refresh",
-        lambda refresh: {
-            "access_token": "fresh-access",
-            "refresh_token": "fresh-refresh" if refresh == "rotating-refresh" else "",
-            "expires_in": 3600,
-        },
+        "_exchange_code",
+        lambda *_args: {"access_token": "access", "refresh_token": "refresh", "expires_in": 3600},
     )
-    assert chatgpt_auth.get_valid_access_token() == "fresh-access"
-    stored = json.loads(token_file.read_text(encoding="utf-8"))
-    assert stored["refresh"] == "fresh-refresh"
-    assert stored["account_id"] == "account-1"
+    monkeypatch.setattr(
+        chatgpt_auth,
+        "save_tokens",
+        lambda _tokens: (_ for _ in ()).throw(chatgpt_auth.OAuthTokenStorageError("keychain unavailable")),
+    )
 
-    chatgpt_auth.clear_tokens()
-    assert not token_file.exists()
-    assert chatgpt_auth.get_tokens() is None
+    chatgpt_auth.start_device_login(
+        lambda _url, _code: None,
+        lambda _tokens: pytest.fail("storage failure must not authenticate"),
+        errors.append,
+    )
+
+    assert errors == ["keychain unavailable"]
 
 
 @pytest.mark.real_host
@@ -186,11 +354,16 @@ def test_real_os_keyring_roundtrip_uses_disposable_account(tmp_path, monkeypatch
     account = f"chatgpt-oauth-contract-{uuid.uuid4()}"
     monkeypatch.setattr(chatgpt_auth, "_KEYRING_ACCOUNT", account)
     monkeypatch.setattr(chatgpt_auth, "_TOKEN_FILE", tmp_path / "must-not-exist.json")
-    payload = json.dumps({"access": "disposable-contract-token"})
+    tokens = {
+        "access": "disposable-contract-token-" + "a" * 2400,
+        "refresh": "disposable-refresh-token-" + "r" * 1200,
+        "expires": 123456789,
+        "account_id": "disposable-account",
+    }
     try:
-        assert chatgpt_auth._keyring_set(payload) is True
-        assert chatgpt_auth._keyring_get() == payload
+        chatgpt_auth.save_tokens(tokens)
+        assert chatgpt_auth.get_tokens() == tokens
         assert not chatgpt_auth._TOKEN_FILE.exists()
     finally:
-        chatgpt_auth._keyring_delete()
-    assert chatgpt_auth._keyring_get() is None
+        chatgpt_auth.clear_tokens()
+    assert chatgpt_auth.get_tokens() is None

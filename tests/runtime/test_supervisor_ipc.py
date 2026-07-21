@@ -1,4 +1,4 @@
-"""Tests for macos py test supervisor ipc."""
+"""Tests for supervisor/worker IPC framing, calls, and process lifecycle."""
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ pytestmark = pytest.mark.workflow
 
 
 def _worker(module: str, role: str, name: str | None = None, env: dict[str, str] | None = None) -> WorkerClient:
-    """Verify worker behavior."""
     merged_env = {
         "WISP_BRAIN_FAKE_LLM": "1",
         "CHAT_EXECUTION_MODE": "wisp",
@@ -169,10 +168,59 @@ def test_supervisor_shutdown_continues_after_one_worker_raises(monkeypatch):
     assert forced == [snapshot]
 
 
+def test_supervisor_startup_failure_matrix_cleans_every_partial_worker(monkeypatch):
+    """All startup fault classes roll back the complete worker process set."""
+    failures = (
+        FileNotFoundError("required worker executable is missing"),
+        ModuleNotFoundError("required worker dependency is missing"),
+        WorkerError("inter-process startup times out"),
+        WorkerError("an old worker process remains"),
+        WorkerError("a stale process lock remains"),
+        PermissionError("required OS permission is absent"),
+        WorkerError("worker crashes during initialization"),
+    )
+    monkeypatch.setattr(supervisor_ipc, "_snapshot_managed_processes", lambda _pids: [])
+    monkeypatch.setattr(supervisor_ipc, "_force_stop_managed_processes", lambda _items: [])
+
+    for failure in failures:
+        shutdowns: list[str] = []
+
+        class FakeWorker:
+            pid = None
+
+            def __init__(self, name, error=None):
+                self.name = name
+                self.error = error
+
+            def call(self, method, params, *, timeout):
+                assert method == f"{self.name}.ping"
+                assert params == {"value": self.name}
+                assert timeout > 0
+                if self.error is not None:
+                    raise self.error
+                return {"pong": True}
+
+            def shutdown(self):
+                shutdowns.append(self.name)
+
+        supervisor = object.__new__(WispSupervisor)
+        supervisor.workers = {
+            "native": FakeWorker("native"),
+            "ui": FakeWorker("ui", failure),
+            "brain": FakeWorker("brain"),
+            "audio": FakeWorker("audio"),
+        }
+        with pytest.raises(type(failure), match=str(failure)):
+            supervisor.start_all()
+        assert shutdowns == ["native", "ui", "brain", "audio"]
+
+
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
-def test_wisp_supervisor_starts_real_app_worker_process_set(tmp_path):
+def test_wisp_supervisor_starts_real_app_worker_process_set(tmp_path, runtime_state_guard):
     """The app architecture starts UI/native/brain/audio as separate workers."""
     supervisor = _app_supervisor(tmp_path)
+    for name, worker in supervisor.workers.items():
+        runtime_state_guard.watch_worker(name, worker)
     managed_processes = []
     try:
         results = supervisor.start_all()
@@ -222,7 +270,6 @@ def test_wisp_supervisor_starts_real_app_worker_process_set(tmp_path):
 
 
 def test_native_worker_ping_and_boundary_status():
-    """Verify native worker ping and boundary status behavior."""
     worker = _worker("runtime.workers.native_host", "native")
     try:
         result = worker.call("ping", {"value": "hello"}, timeout=10)
@@ -235,7 +282,6 @@ def test_native_worker_ping_and_boundary_status():
 
 
 def test_audio_worker_ping_does_not_import_audio_stack():
-    """Verify audio worker ping does not import audio stack behavior."""
     worker = _worker("runtime.workers.audio_host", "audio")
     try:
         result = worker.call("audio.ping", timeout=10)
@@ -278,7 +324,6 @@ def test_audio_worker_synthesizes_playable_wav_over_ipc(tmp_path):
 
 
 def test_brain_worker_exposes_boundary_status_without_ui_or_native_imports():
-    """Verify brain worker exposes boundary status without ui or native imports behavior."""
     worker = _worker("runtime.workers.brain_host", "brain")
     try:
         result = worker.call("brain.ping", timeout=20)
@@ -1011,7 +1056,6 @@ def test_brain_worker_agent_run_streams_and_persists_over_ipc(tmp_path):
 
 
 def test_unknown_method_reports_error_without_killing_worker():
-    """Verify unknown method reports error without killing worker behavior."""
     worker = _worker("runtime.workers.native_host", "native")
     try:
         with pytest.raises(WorkerError):
@@ -1023,7 +1067,6 @@ def test_unknown_method_reports_error_without_killing_worker():
 
 
 def test_worker_stderr_log_file_is_created_in_run_log_dir(tmp_path):
-    """Verify worker stderr log file is created in run log dir behavior."""
     worker = _worker(
         "runtime.workers.native_host",
         "native",
@@ -1056,7 +1099,6 @@ def test_kokoro_install_worker_stderr_is_promoted_to_console_log(caplog):
 
 
 def test_worker_respawns_after_process_death():
-    """Verify worker respawns after process death behavior."""
     worker = _worker("runtime.workers.native_host", "native")
     try:
         first = worker.call("ping", timeout=10)
@@ -1124,7 +1166,6 @@ def test_brain_worker_death_mid_stream_fails_request_and_recovers():
 
 
 def test_worker_exit_handler_fires_when_process_exits():
-    """Verify worker exit handler fires when process exits behavior."""
     seen = []
     worker = _worker("runtime.workers.native_host", "native")
     worker.on_exit(lambda returncode: seen.append(returncode))
@@ -1145,7 +1186,6 @@ def test_worker_exit_handler_fires_when_process_exits():
 
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 def test_ui_worker_emits_ready_event_and_passes_boundary():
-    """Verify ui worker emits ready event and passes boundary behavior."""
     seen = []
     worker = _worker(
         "runtime.workers.ui_host",
@@ -1168,7 +1208,6 @@ def test_ui_worker_emits_ready_event_and_passes_boundary():
 
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 def test_ui_worker_freeze_watchdog_writes_log(tmp_path):
-    """Verify ui worker freeze watchdog writes log behavior."""
     worker = _worker(
         "runtime.workers.ui_host",
         "ui",
@@ -1210,7 +1249,6 @@ def test_ui_worker_freeze_watchdog_writes_log(tmp_path):
 
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 def test_ui_worker_show_settings_does_not_block_event_loop(tmp_path):
-    """Verify ui worker show settings does not block event loop behavior."""
     worker = _worker(
         "runtime.workers.ui_host",
         "ui",
@@ -1239,7 +1277,6 @@ def test_ui_worker_show_settings_does_not_block_event_loop(tmp_path):
 
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 def test_ui_worker_show_memory_does_not_crash_or_block_event_loop(tmp_path):
-    """Verify ui worker show memory does not crash or block event loop behavior."""
     worker = _worker(
         "runtime.workers.ui_host",
         "ui",
@@ -1272,7 +1309,6 @@ def test_ui_worker_show_memory_does_not_crash_or_block_event_loop(tmp_path):
 
 @pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed")
 def test_ui_worker_bubble_clear_does_not_import_audio_or_freeze(tmp_path):
-    """Verify ui worker bubble clear does not import audio or freeze behavior."""
     if _is_macos_offscreen_qt():
         pytest.skip("macOS offscreen Qt cannot reliably construct overlay/tray surfaces")
     worker = _worker(

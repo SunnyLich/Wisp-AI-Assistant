@@ -24,9 +24,15 @@ from core.agent.task_spec import (
 
 
 class AgentTaskRetryTests(unittest.TestCase):
-    """Test case for agent task retry tests behavior."""
+    def test_retry_spec_rejects_unavailable_task_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "missing-run-artifacts"
+            run_dir.mkdir()
+
+            with self.assertRaisesRegex(ValueError, "does not have task.json"):
+                retry_spec_from_run(run_dir)
+
     def test_researcher_role_has_default_responsibility(self):
-        """Verify researcher role has default responsibility behavior."""
         self.assertIn("read-only context", role_responsibility("Researcher"))
 
     def test_agent_defaults_follow_assistant_language(self):
@@ -107,7 +113,6 @@ class AgentTaskRetryTests(unittest.TestCase):
         self.assertNotIn("run_command", coordinator_tools)
 
     def test_retry_spec_loads_original_task(self):
-        """Verify retry spec loads original task behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
             (run_dir / "task.json").write_text(
@@ -127,7 +132,6 @@ class AgentTaskRetryTests(unittest.TestCase):
             self.assertEqual(spec.objective, "Make tests pass.")
 
     def test_continue_spec_adds_previous_run_context(self):
-        """Verify continue spec adds previous run context behavior."""
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
             (run_dir / "task.json").write_text(

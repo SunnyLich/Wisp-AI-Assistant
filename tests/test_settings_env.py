@@ -9,9 +9,7 @@ from ui import settings_env
 
 
 class SettingsEnvTests(unittest.TestCase):
-    """Test case for settings env tests behavior."""
     def test_write_env_removes_secret_keys(self):
-        """Verify write env removes secret keys behavior."""
         with TemporaryDirectory() as tmp:
             env_path = Path(tmp) / ".env"
             env_path.write_text(

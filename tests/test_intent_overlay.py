@@ -254,7 +254,6 @@ def test_context_preview_entries_expand_item_sources(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
-    """Verify custom prompt input grabs keyboard on windows behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QWidget
 
@@ -268,11 +267,9 @@ def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
     force_foreground_calls: list[bool] = []
 
     def grab_keyboard(self):
-        """Verify grab keyboard behavior."""
         grabs.append(self)
 
     def release_keyboard(self):
-        """Verify release keyboard behavior."""
         releases.append(self)
 
     monkeypatch.setattr(intent_overlay, "_IS_WIN", True)
@@ -306,7 +303,6 @@ def test_custom_prompt_input_grabs_keyboard_on_windows(monkeypatch):
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_key_debug_avoids_prompt_text(monkeypatch, capsys):
-    """Verify intent overlay key debug avoids prompt text behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QEvent, Qt
     from PySide6.QtGui import QKeyEvent
@@ -531,7 +527,6 @@ def test_intent_overlay_pending_selection_close_cancels_not_chosen(qapp, monkeyp
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_intent_overlay_translates_default_custom_prompt_label(monkeypatch):
-    """Verify intent overlay translates default custom prompt label behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -588,7 +583,6 @@ def test_intent_overlay_translates_builtin_labels_but_preserves_runtime_prompt()
 
 
 def test_intent_overlay_preserves_custom_prompt_label():
-    """Verify intent overlay preserves custom prompt label behavior."""
     import config
     import ui.intent_overlay as intent_overlay
 
@@ -1093,6 +1087,64 @@ def test_intent_overlay_changes_restart_timeout_countdown(monkeypatch):
     finally:
         overlay.close()
         app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_intent_picker_timeout_failure_matrix_is_controlled(monkeypatch):
+    """Invalid, zero, stale, and modal-owned timeout states stay controlled."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QDialog
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    # Invalid runtime config must not prevent the real picker from opening.
+    monkeypatch.setattr(config, "INTENT_OVERLAY_TIMEOUT_MS", "not-a-duration")
+    invalid = intent_overlay.IntentOverlay(caller_idx=0)
+    try:
+        assert invalid._overlay_timeout_ms == intent_overlay._AUTO_CLOSE_MS
+        assert invalid._timer.isActive()
+
+        # A state transition must retire the old timer instead of allowing it
+        # to cancel a custom prompt later.
+        invalid._custom_mode = True
+        invalid._restart_timer()
+        assert not invalid._timer.isActive()
+    finally:
+        invalid.close()
+        app.processEvents()
+
+    # Zero is an intentional no-timeout mode and remains inactive across use.
+    monkeypatch.setattr(config, "INTENT_OVERLAY_TIMEOUT_MS", 0)
+    persistent = intent_overlay.IntentOverlay(caller_idx=0)
+    try:
+        assert persistent._overlay_timeout_ms == 0
+        assert not persistent._timer.isActive()
+        persistent._note_interaction()
+        assert not persistent._timer.isActive()
+    finally:
+        persistent.close()
+        app.processEvents()
+
+    # A modal taking focus cannot make timeout cancellation re-entrant or emit
+    # cancellation more than once.
+    monkeypatch.setattr(config, "INTENT_OVERLAY_TIMEOUT_MS", 50)
+    modal_owned = intent_overlay.IntentOverlay(caller_idx=0)
+    modal = QDialog()
+    cancelled: list[bool] = []
+    modal_owned.cancelled.connect(lambda: cancelled.append(True))
+    try:
+        modal.setModal(True)
+        modal.show()
+        app.processEvents()
+        modal_owned._cancel()
+        modal_owned._cancel()
+        assert cancelled == [True]
+    finally:
+        modal.close()
+        _close_overlay_if_valid(modal_owned, app)
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")

@@ -3,7 +3,6 @@ from core.llm_clients import client
 
 
 def test_sanitize_history_keeps_only_text_user_assistant_turns():
-    """Verify sanitize history keeps only text user assistant turns behavior."""
     raw = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "hello", "display_content": "<b>hello</b>"},
@@ -18,13 +17,11 @@ def test_sanitize_history_keeps_only_text_user_assistant_turns():
 
 
 def test_sanitize_history_handles_none_and_empty():
-    """Verify sanitize history handles none and empty behavior."""
     assert client._sanitize_history(None) == []
     assert client._sanitize_history([]) == []
 
 
 def test_openai_messages_splice_history_between_system_and_current_turn():
-    """Verify openai messages splice history between system and current turn behavior."""
     history = [
         {"role": "user", "content": "first"},
         {"role": "assistant", "content": "reply"},
@@ -37,7 +34,6 @@ def test_openai_messages_splice_history_between_system_and_current_turn():
 
 
 def test_openai_messages_no_history_is_system_then_user():
-    """Verify openai messages no history is system then user behavior."""
     msgs = client._build_openai_messages("solo", None, "", "")
     assert [m["role"] for m in msgs] == ["system", "user"]
 

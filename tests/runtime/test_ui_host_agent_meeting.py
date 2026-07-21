@@ -1,4 +1,4 @@
-"""Tests for macos py test ui host agent meeting."""
+"""Tests for the UI host's agent meeting room views and controls."""
 
 from __future__ import annotations
 
@@ -11,14 +11,11 @@ pytestmark = pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, rea
 
 
 class _Host:
-    """Test case for host behavior."""
     def __init__(self) -> None:
-        """Initialize the host instance."""
         self.events: list[tuple[str, dict]] = []
         self.notices: list[tuple[str, bool, dict | None]] = []
 
     def emit(self, event: str, data: dict) -> None:
-        """Verify emit behavior."""
         self.events.append((event, data))
 
     def _agent_notify_approval(
@@ -27,13 +24,11 @@ class _Host:
         resolved: bool = False,
         data: dict | None = None,
     ) -> dict:
-        """Verify agent notify approval behavior."""
         self.notices.append((text, resolved, data))
         return {"notified": True}
 
 
 def _qapp():
-    """Verify qapp behavior."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -41,7 +36,6 @@ def _qapp():
 
 
 def test_mac_ui_agent_run_dialog_recreates_meeting_room(tmp_path):
-    """Verify mac ui agent run dialog recreates meeting room behavior."""
     app = _qapp()
     import config
     from ui import i18n

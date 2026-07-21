@@ -24,19 +24,42 @@ def _tiny_wav() -> bytes:
 
 
 class TtsConnectionTests(unittest.TestCase):
-    """Test case for tts connection tests behavior."""
+    def test_tts_connection_failure_matrix_returns_controlled_diagnostic(self):
+        """Provider test faults are returned to Settings instead of escaping."""
+        failures = (
+            RuntimeError("authentication is invalid"),
+            RuntimeError("configured endpoint is unavailable"),
+            OSError("network access is unavailable"),
+            RuntimeError("selected model is missing"),
+            RuntimeError("provider rate limit is reached"),
+            RuntimeError("tested capability is unsupported"),
+        )
+        for failure in failures:
+            with self.subTest(failure=str(failure)), patch.object(
+                tts,
+                "_stream_openai",
+                side_effect=failure,
+            ):
+                ok, message = tts.test_connection(
+                    "openai",
+                    openai_api_key="test-key",
+                    openai_model="test-model",
+                    openai_voice="alloy",
+                )
+            self.assertFalse(ok)
+            self.assertIn("TTS test failed", message)
+            self.assertIn(str(failure), message)
+
     def test_none_provider_reports_disabled(self):
-        """Verify none provider reports disabled behavior."""
         ok, message = tts.test_connection("none")
 
         self.assertTrue(ok)
         self.assertIn("disabled", message)
 
     def test_cartesia_connection_requires_voice_id(self):
-        """Verify cartesia connection requires voice id behavior."""
         ok, message = tts.test_connection(
             "cartesia",
-            cartesia_api_key="cartesia-key",
+            cartesia_api_key="cartesia-key",  # secret-scan: allow
             cartesia_voice_id="",
         )
 
@@ -44,15 +67,11 @@ class TtsConnectionTests(unittest.TestCase):
         self.assertIn("CARTESIA_VOICE_ID", message)
 
     def test_elevenlabs_connection_succeeds_when_audio_arrives(self):
-        """Verify elevenlabs connection succeeds when audio arrives behavior."""
         class FakeElevenLabs:
-            """Test case for fake eleven labs behavior."""
             def __init__(self, api_key):
-                """Initialize the fake eleven labs instance."""
                 self.api_key = api_key
 
             def generate(self, **kwargs):
-                """Verify generate behavior."""
                 yield b"audio"
 
         fake_module = types.ModuleType("elevenlabs.client")

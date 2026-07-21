@@ -149,10 +149,15 @@ def _minimal_agent_spec(scope: Path) -> dict[str, Any]:
     }
 
 
-def test_workflow_state_isolation_guard_and_memory_project_scope(isolated_app_state: IsolatedAppState):
+def test_workflow_state_isolation_guard_and_memory_project_scope(
+    isolated_app_state: IsolatedAppState,
+    runtime_state_guard,
+):
     """A real project/conversation/memory workflow stays scoped to temp state."""
     from core.conversation_store import store as conversations
     from core.memory_store import store as memory
+
+    runtime_state_guard.validate_json_under(isolated_app_state.root)
 
     project_a = conversations.add_project("Aurora")
     project_b = conversations.add_project("Borealis")
@@ -180,7 +185,7 @@ def test_workflow_state_isolation_guard_and_memory_project_scope(isolated_app_st
 
     saved_general = manager.save_memory("The user prefers compact workflow reports.", scope="general")
     assert saved_general["ok"] is True
-    rejected = manager.save_memory("api_key sk-proj-abcdefghijklmnopqrstuvwxyz1234567890")
+    rejected = manager.save_memory("api_key sk-proj-abcdefghijklmnopqrstuvwxyz1234567890")  # secret-scan: allow
     assert rejected["ok"] is False
 
     aurora_memory = manager.retrieve_relevant("what do you remember", project_id=project_a["id"])
@@ -876,6 +881,148 @@ def test_tool_file_permission_and_approval_workflow(tmp_path: Path):
 
     with pytest.raises(PermissionDenied):
         tools.run_command(["python", "-m", "py_compile", "public.txt"])
+
+
+def test_all_live_local_file_tools_complete_real_operations(tmp_path: Path):
+    """Every granted local-file model tool produces its intended disk result."""
+
+    import config
+    from core.llm_clients import client as llm_client
+    from core.tools.local_files import LOCAL_FILE_TOOLS
+
+    root = tmp_path / "live-file-tools"
+    root.mkdir()
+    seed = root / "seed.txt"
+    seed.write_text("alpha beta", encoding="utf-8")
+    old_roots = list(getattr(config, "TOOL_FILE_ROOTS", []))
+    old_blocked = list(getattr(config, "TOOL_FILE_BLOCKED_GLOBS", []))
+    old_mode = getattr(config, "TOOL_FILE_MODE", "never")
+    allowed = sorted(LOCAL_FILE_TOOLS)
+    try:
+        config.TOOL_FILE_ROOTS = [str(root)]
+        config.TOOL_FILE_BLOCKED_GLOBS = []
+        config.TOOL_FILE_MODE = "auto"
+        llm_client.set_live_file_access_mode("auto")
+
+        listed = llm_client._execute_model_tool(
+            "list_files", {"folder": str(root)}, allowed_tools=allowed
+        )
+        assert "seed.txt" in listed
+        assert "alpha beta" in llm_client._execute_model_tool(
+            "read_file", {"path": str(seed)}, allowed_tools=allowed
+        )
+
+        created = root / "created.txt"
+        created_result = llm_client._execute_model_tool(
+            "create_file",
+            {"path": str(created), "content": "created once"},
+            allowed_tools=allowed,
+        )
+        assert "created.txt" in created_result
+        assert created.read_text(encoding="utf-8") == "created once"
+
+        edited_result = llm_client._execute_model_tool(
+            "edit_file",
+            {"path": str(seed), "old": "beta", "new": "gamma"},
+            allowed_tools=allowed,
+        )
+        assert "Edited" in edited_result
+        assert seed.read_text(encoding="utf-8") == "alpha gamma"
+
+        written_result = llm_client._execute_model_tool(
+            "write_file",
+            {"path": str(created), "content": "overwritten"},
+            allowed_tools=allowed,
+        )
+        assert written_result
+        assert created.read_text(encoding="utf-8") == "overwritten"
+    finally:
+        llm_client.set_live_file_access_mode(None)
+        config.TOOL_FILE_ROOTS = old_roots
+        config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+        config.TOOL_FILE_MODE = old_mode
+
+
+@pytest.mark.parametrize(
+    ("access_mode", "tool_name"),
+    [
+        (mode, tool)
+        for mode in ("off", "read", "ask", "auto")
+        for tool in ("list_files", "read_file", "create_file", "edit_file", "write_file")
+    ],
+)
+def test_every_file_access_mode_controls_every_live_file_tool(
+    tmp_path: Path,
+    access_mode: str,
+    tool_name: str,
+):
+    """Execute the complete four-mode by five-tool behavior matrix."""
+
+    import config
+    from core.llm_clients import client as llm_client
+    from core.tools.local_files import file_tools_for_access
+
+    root = tmp_path / "file-mode-matrix"
+    root.mkdir()
+    seed = root / "seed.txt"
+    seed.write_text("alpha beta", encoding="utf-8")
+    created = root / "created.txt"
+    inputs = {
+        "list_files": {"folder": str(root)},
+        "read_file": {"path": str(seed)},
+        "create_file": {"path": str(created), "content": "created"},
+        "edit_file": {"path": str(seed), "old": "beta", "new": "gamma"},
+        "write_file": {"path": str(seed), "content": "overwritten"},
+    }
+    allowed = file_tools_for_access(access_mode)
+    approvals: list[dict[str, Any]] = []
+    old_roots = list(getattr(config, "TOOL_FILE_ROOTS", []))
+    old_blocked = list(getattr(config, "TOOL_FILE_BLOCKED_GLOBS", []))
+    old_mode = getattr(config, "TOOL_FILE_MODE", "never")
+    try:
+        config.TOOL_FILE_ROOTS = [str(root)]
+        config.TOOL_FILE_BLOCKED_GLOBS = []
+        config.TOOL_FILE_MODE = access_mode
+        llm_client.set_live_file_access_mode(access_mode)
+        llm_client.set_file_edit_approval_callback(
+            lambda request: approvals.append(request) or True
+        )
+
+        result = llm_client._execute_model_tool(
+            tool_name,
+            inputs[tool_name],
+            allowed_tools=allowed,
+        )
+
+        granted = tool_name in allowed
+        if not granted:
+            assert "disabled" in result.lower()
+            assert seed.read_text(encoding="utf-8") == "alpha beta"
+            assert not created.exists()
+            assert approvals == []
+        elif tool_name == "list_files":
+            assert "seed.txt" in result
+        elif tool_name == "read_file":
+            assert "alpha beta" in result
+        elif tool_name == "create_file":
+            assert created.read_text(encoding="utf-8") == "created"
+        elif tool_name == "edit_file":
+            assert seed.read_text(encoding="utf-8") == "alpha gamma"
+        else:
+            assert seed.read_text(encoding="utf-8") == "overwritten"
+
+        if granted and tool_name in {"create_file", "edit_file", "write_file"}:
+            if access_mode == "ask":
+                assert approvals and approvals[0]["action"] == tool_name
+            else:
+                assert access_mode == "auto"
+                assert approvals == []
+    finally:
+        llm_client.set_live_file_access_mode(None)
+        llm_client.set_file_edit_approval_callback(None)
+        config.TOOL_FILE_ROOTS = old_roots
+        config.TOOL_FILE_BLOCKED_GLOBS = old_blocked
+        config.TOOL_FILE_MODE = old_mode
 
 
 def test_provider_fallback_cooldown_capability_and_auth_redaction_workflow(
@@ -1994,7 +2141,7 @@ def test_persistence_corruption_migration_and_reset_scope_workflow(
 
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\n"
+        "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\n"  # secret-scan: allow
         "LLM_PROVIDER=chatgpt\n"
         "THEME_MODE=dark\n",
         encoding="utf-8",
