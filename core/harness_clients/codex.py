@@ -334,7 +334,7 @@ def _initialize_client(
     client = _Client(workdir, on_event, approval_callback)
     try:
         client.request("initialize", {
-            "clientInfo": {"name": "wisp", "title": "Wisp", "version": "0.10.1"},
+            "clientInfo": {"name": "wisp", "title": "Wisp", "version": "0.10.2"},
             "capabilities": {"experimentalApi": True},
         })
         client.send({"method": "initialized", "params": {}})

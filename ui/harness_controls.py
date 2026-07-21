@@ -32,7 +32,27 @@ _CODEX_MODELS = (
     "gpt-5.4-mini",
     "gpt-5.3-codex-spark",
 )
-_CLAUDE_MODELS = ("opus", "sonnet", "haiku")
+_CLAUDE_MODELS = (
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-5",
+    "claude-opus-4-5-20251101",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
+    "best",
+    "opus",
+    "sonnet",
+    "haiku",
+    "opusplan",
+    "opus[1m]",
+    "sonnet[1m]",
+)
 
 
 def _select_data(combo: QComboBox, value: str) -> None:
@@ -100,7 +120,12 @@ class HarnessControlsDialog(QDialog):
         self.model.setEditable(True)
         self.model.addItem(t("Provider default"), "")
         for model in (_CLAUDE_MODELS if self.provider == "claude" else _CODEX_MODELS):
-            self.model.addItem(model, model)
+            label = (
+                f"{model} — usage credits required"
+                if self.provider == "claude" and model == "claude-fable-5"
+                else model
+            )
+            self.model.addItem(label, model)
         model_value = getattr(
             config,
             "WISP_CLAUDE_MODEL" if self.provider == "claude" else "WISP_CODEX_MODEL",

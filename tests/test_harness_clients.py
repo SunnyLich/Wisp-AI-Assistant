@@ -522,6 +522,7 @@ def test_claude_streams_thinking_and_reply_without_repeating_final_blocks(
     sdk_types.PermissionResultDeny = PermissionResultDeny
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", sdk)
     monkeypatch.setitem(sys.modules, "claude_agent_sdk.types", sdk_types)
+    monkeypatch.setattr("config.WISP_CLAUDE_MODEL", "claude-sonnet-5", raising=False)
     monkeypatch.setattr("config.WISP_CLAUDE_SYSTEM_PROMPT", "Claude-only rules.", raising=False)
     monkeypatch.setattr("config.WISP_CLAUDE_APPROVAL_MODE", "ask", raising=False)
 
@@ -551,6 +552,7 @@ def test_claude_streams_thinking_and_reply_without_repeating_final_blocks(
     assert received_options[0]["include_hook_events"] is True
     assert received_options[0]["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert received_options[0]["permission_mode"] == "default"
+    assert received_options[0]["model"] == "claude-sonnet-5"
     assert received_options[0]["system_prompt"] == "Claude-only rules."
 
 
