@@ -4660,6 +4660,7 @@ def _stream_codex(
                     allowed_tools=allowed_tools,
                     pinned_tools=pinned_tools,
                     user_intent=text,
+                    trace_ui=_chat_tool_trace_ui_enabled(),
                 )
                 return
             except Exception as exc:
@@ -5037,6 +5038,7 @@ def _stream_anthropic(
             allowed_tools=allowed_tools,
             pinned_tools=pinned_tools,
             user_intent=user_text,
+            trace_ui=_chat_tool_trace_ui_enabled(),
         )
         return
     except Exception as exc:

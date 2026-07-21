@@ -181,7 +181,10 @@ class ChatToolLoopTypesTests(unittest.TestCase):
         with (
             mock.patch.object(llm, "_get_tool_schemas", return_value=[{"name": "read_file"}]),
             mock.patch.object(llm, "_log_offered_model_tools"),
-            mock.patch.object(llm, "_run_unified_anthropic_tool_loop", return_value=iter(["unified"])),
+            mock.patch.object(llm, "_chat_tool_trace_ui_enabled", return_value=True),
+            mock.patch.object(
+                llm, "_run_unified_anthropic_tool_loop", return_value=iter(["unified"])
+            ) as unified_loop,
         ):
             chunks = list(
                 llm._stream_anthropic(
@@ -195,6 +198,7 @@ class ChatToolLoopTypesTests(unittest.TestCase):
             )
 
         self.assertEqual(chunks, ["unified"])
+        self.assertIs(unified_loop.call_args.kwargs["trace_ui"], True)
 
 
 class ChatFlowHarnessTests(unittest.TestCase):

@@ -697,6 +697,7 @@ def test_chat_context_policy_normalizes_legacy_on_modes():
     try:
         assert window._context_controls["ambient"].property("context_state") == "on"
         assert window._context_controls["browser"].property("context_state") == "on"
+        assert window._context_controls["memory"].property("context_state") == "on"
         assert window._context_controls["screenshot"].property("context_state") == "on"
         assert window._context_controls["browser"].property("context_tokens") == "? tok"
 

@@ -1228,6 +1228,177 @@
       ],
       "test_node_ids": ["tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"],
       "status": "accepted"
+    },
+    {
+      "interaction_id": "I070",
+      "source_function_id": "F153",
+      "target_function_id": "F145",
+      "description": "The selected project determines which project owns every newly created chat.",
+      "source_states": ["general", "existing_named_project", "newly_created_project"],
+      "target_states": ["new_button", "ctrl_n"],
+      "cases": [
+        {"source_state": "general", "target_state": "new_button", "expected_result": "The new chat belongs to General."},
+        {"source_state": "general", "target_state": "ctrl_n", "expected_result": "The shortcut-created chat belongs to General."},
+        {"source_state": "existing_named_project", "target_state": "new_button", "expected_result": "The new chat carries the existing project id."},
+        {"source_state": "existing_named_project", "target_state": "ctrl_n", "expected_result": "The shortcut-created chat keeps the selected project id."},
+        {"source_state": "newly_created_project", "target_state": "new_button", "expected_result": "The new chat carries the just-created project id."},
+        {"source_state": "newly_created_project", "target_state": "ctrl_n", "expected_result": "The same start-new handler keeps the new project when invoked by shortcut."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls", "tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I071",
+      "source_function_id": "F149",
+      "target_function_ids": ["F148", "F150"],
+      "description": "Overlay new/continue choice and Chat history selection determine which conversation receives a later turn.",
+      "source_states": ["new", "continue_project_one", "continue_project_two"],
+      "target_states": ["selected_conversation", "next_send"],
+      "cases": [
+        {"source_state": "new", "target_state": "selected_conversation", "expected_result": "No prior conversation index is selected."},
+        {"source_state": "new", "target_state": "next_send", "expected_result": "The next turn starts a fresh history."},
+        {"source_state": "continue_project_one", "target_state": "selected_conversation", "expected_result": "The project-one history index is selected."},
+        {"source_state": "continue_project_one", "target_state": "next_send", "expected_result": "The old project-one turn is retained in the request."},
+        {"source_state": "continue_project_two", "target_state": "selected_conversation", "expected_result": "Changing project filters and selects the project-two history index."},
+        {"source_state": "continue_project_two", "target_state": "next_send", "expected_result": "Only the selected conversation would be continued."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_intent_overlay_project_conversation_and_context_chip_workflow", "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I072",
+      "source_function_id": "F155",
+      "target_function_id": "F151",
+      "description": "Conversation project assignment determines its visible history group.",
+      "source_states": ["general", "existing_project", "new_project"],
+      "target_states": ["grouped_sidebar"],
+      "cases": [
+        {"source_state": "general", "target_state": "grouped_sidebar", "expected_result": "The row appears in General."},
+        {"source_state": "existing_project", "target_state": "grouped_sidebar", "expected_result": "The row appears under the existing project heading."},
+        {"source_state": "new_project", "target_state": "grouped_sidebar", "expected_result": "Moving the row adds it to the new project and removes it from the old group."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I073",
+      "source_function_ids": ["F161", "F162"],
+      "target_function_ids": ["F163", "F164"],
+      "description": "Attachment source and content type determine pending context, request payload, durable references, and thumbnail rendering.",
+      "source_states": ["picker_text", "picker_image", "drop_text", "drop_image"],
+      "target_states": ["pending_chip", "sent_context_or_image", "reopened_or_rendered"],
+      "cases": [
+        {"source_state": "picker_text", "target_state": "pending_chip", "expected_result": "The picked text filename is visible before send."},
+        {"source_state": "picker_text", "target_state": "sent_context_or_image", "expected_result": "Its text reaches the model payload."},
+        {"source_state": "picker_text", "target_state": "reopened_or_rendered", "expected_result": "Its durable reference survives conversation persistence."},
+        {"source_state": "picker_image", "target_state": "pending_chip", "expected_result": "The picked image filename is visible before send."},
+        {"source_state": "picker_image", "target_state": "sent_context_or_image", "expected_result": "Its image reference reaches the user turn/model payload."},
+        {"source_state": "picker_image", "target_state": "reopened_or_rendered", "expected_result": "Its image reference decodes and renders as a thumbnail."},
+        {"source_state": "drop_text", "target_state": "pending_chip", "expected_result": "The dropped text filename is visible before send."},
+        {"source_state": "drop_text", "target_state": "sent_context_or_image", "expected_result": "Its text reaches the model payload."},
+        {"source_state": "drop_text", "target_state": "reopened_or_rendered", "expected_result": "Its durable reference survives conversation persistence."},
+        {"source_state": "drop_image", "target_state": "pending_chip", "expected_result": "The dropped image filename is visible before send."},
+        {"source_state": "drop_image", "target_state": "sent_context_or_image", "expected_result": "Its image reference reaches the user turn/model payload."},
+        {"source_state": "drop_image", "target_state": "reopened_or_rendered", "expected_result": "Its durable image reference decodes and the user bubble contains a thumbnail."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_picker_and_drop_events_attach_text_and_image", "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I074",
+      "source_function_ids": ["F165", "F166", "F167", "F168", "F169", "F170", "F171", "F172"],
+      "target_function_ids": ["F148", "F174"],
+      "description": "Every exposed context state is scoped to the active conversation and changes the policy/preview used by its next send.",
+      "source_states": ["app_off_on_auto", "browser_off_on_auto", "selection_off_on", "clipboard_off_on", "screenshot_off_on_auto", "github_off_on_auto", "memory_off_on_auto", "files_off_read_ask_auto"],
+      "target_states": ["active_conversation", "other_conversation", "next_send", "preview"],
+      "cases": [
+        {"source_state": "app_off_on_auto", "target_state": "next_send", "expected_result": "All App choices survive normalization and reach send."},
+        {"source_state": "app_off_on_auto", "target_state": "active_conversation", "expected_result": "Switching back restores the exact selected App state."},
+        {"source_state": "browser_off_on_auto", "target_state": "next_send", "expected_result": "All Browser choices reach send; On performs runtime fetch."},
+        {"source_state": "browser_off_on_auto", "target_state": "other_conversation", "expected_result": "The other chat retains its independent Browser state."},
+        {"source_state": "selection_off_on", "target_state": "next_send", "expected_result": "Off omits selection; captured On reaches send."},
+        {"source_state": "selection_off_on", "target_state": "other_conversation", "expected_result": "The other chat retains its independent Selection state."},
+        {"source_state": "selection_off_on", "target_state": "preview", "expected_result": "Each Selection change/capture completion requests a current preview."},
+        {"source_state": "clipboard_off_on", "target_state": "next_send", "expected_result": "Both Clipboard choices reach the absolute policy."},
+        {"source_state": "clipboard_off_on", "target_state": "other_conversation", "expected_result": "The other chat retains its independent Clipboard state."},
+        {"source_state": "clipboard_off_on", "target_state": "preview", "expected_result": "Each Clipboard state requests a preview with the updated policy."},
+        {"source_state": "screenshot_off_on_auto", "target_state": "next_send", "expected_result": "All Screenshot choices survive; captured On attaches its image."},
+        {"source_state": "screenshot_off_on_auto", "target_state": "other_conversation", "expected_result": "The other chat retains its independent Screenshot state."},
+        {"source_state": "screenshot_off_on_auto", "target_state": "preview", "expected_result": "Each Screenshot change/capture completion requests a current preview."},
+        {"source_state": "github_off_on_auto", "target_state": "next_send", "expected_result": "All Git/GitHub choices reach runtime grants."},
+        {"source_state": "github_off_on_auto", "target_state": "other_conversation", "expected_result": "The other chat retains its independent Git/GitHub state."},
+        {"source_state": "github_off_on_auto", "target_state": "preview", "expected_result": "Each Git/GitHub state requests a preview with the updated policy."},
+        {"source_state": "memory_off_on_auto", "target_state": "next_send", "expected_result": "Off, On, and model-decide remain distinct and reach send."},
+        {"source_state": "memory_off_on_auto", "target_state": "other_conversation", "expected_result": "The other chat retains its independent Memory state."},
+        {"source_state": "memory_off_on_auto", "target_state": "preview", "expected_result": "Each Memory state requests a preview with the updated policy."},
+        {"source_state": "files_off_read_ask_auto", "target_state": "next_send", "expected_result": "All file modes reach their matching grants."},
+        {"source_state": "files_off_read_ask_auto", "target_state": "other_conversation", "expected_result": "The other chat retains its independent Files state."},
+        {"source_state": "files_off_read_ask_auto", "target_state": "preview", "expected_result": "Each Files mode requests a preview with the updated policy."},
+        {"source_state": "app_off_on_auto", "target_state": "other_conversation", "expected_result": "Switching chats loads the other chat's independent defaults."},
+        {"source_state": "browser_off_on_auto", "target_state": "active_conversation", "expected_result": "Switching back restores the exact selected Browser state."},
+        {"source_state": "selection_off_on", "target_state": "active_conversation", "expected_result": "Switching back restores Selection state without mixing policies."},
+        {"source_state": "clipboard_off_on", "target_state": "active_conversation", "expected_result": "Switching back restores Clipboard state."},
+        {"source_state": "screenshot_off_on_auto", "target_state": "active_conversation", "expected_result": "Switching back restores Screenshot state."},
+        {"source_state": "github_off_on_auto", "target_state": "active_conversation", "expected_result": "Switching back restores Git/GitHub state."},
+        {"source_state": "memory_off_on_auto", "target_state": "active_conversation", "expected_result": "Switching back restores Memory state, including On."},
+        {"source_state": "files_off_read_ask_auto", "target_state": "active_conversation", "expected_result": "Switching back restores Files state."},
+        {"source_state": "app_off_on_auto", "target_state": "preview", "expected_result": "A state change requests a preview with the updated policy."},
+        {"source_state": "browser_off_on_auto", "target_state": "preview", "expected_result": "Current preview tokens update and stale IDs do not."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/test_app_user_workflows.py::test_chat_window_context_preview_send_and_history_workflow", "tests/runtime/test_flows.py::test_chat_request_context_policy_is_absolute_over_legacy_tool_context", "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I075",
+      "source_function_ids": ["F167", "F169"],
+      "target_function_id": "F173",
+      "description": "Selection and Screenshot Off-to-On choices use different interactive capture routes before enabling the chip.",
+      "source_states": ["selection", "screenshot"],
+      "target_states": ["capture_pending", "capture_success", "capture_cancel"],
+      "cases": [
+        {"source_state": "selection", "target_state": "capture_pending", "expected_result": "Selection stays Off while the native selection request is pending."},
+        {"source_state": "selection", "target_state": "capture_success", "expected_result": "Captured text attaches and enables Selection without general file permission."},
+        {"source_state": "selection", "target_state": "capture_cancel", "expected_result": "Cancelling selection capture leaves Selection Off."},
+        {"source_state": "screenshot", "target_state": "capture_pending", "expected_result": "Screenshot stays Off while the snip request is pending."},
+        {"source_state": "screenshot", "target_state": "capture_success", "expected_result": "Captured pixels attach and enable Screenshot without general file permission."},
+        {"source_state": "screenshot", "target_state": "capture_cancel", "expected_result": "Cancelling screenshot capture leaves Screenshot Off."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_selection_capture_waits_for_user_selection_without_file_permission", "tests/runtime/test_flows.py::test_chat_screenshot_chip_snip_attaches_image_without_file_permission"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I076",
+      "source_function_id": "F175",
+      "target_function_ids": ["F176", "F177", "F178"],
+      "description": "Selected message index/text determine what is copied/labeled and where branch or rewind retains history.",
+      "source_states": ["first_message", "middle_message"],
+      "target_states": ["copy_or_ui_lab", "branch", "rewind"],
+      "cases": [
+        {"source_state": "first_message", "target_state": "copy_or_ui_lab", "expected_result": "Copy receives exactly the selected range from the first message."},
+        {"source_state": "first_message", "target_state": "branch", "expected_result": "The branch retains only the first message."},
+        {"source_state": "first_message", "target_state": "rewind", "expected_result": "The current branch is truncated to its first message."},
+        {"source_state": "middle_message", "target_state": "copy_or_ui_lab", "expected_result": "Copy and UI Lab actions receive exactly the selected middle-message range."},
+        {"source_state": "middle_message", "target_state": "branch", "expected_result": "The branch retains messages through the middle message."},
+        {"source_state": "middle_message", "target_state": "rewind", "expected_result": "The current conversation is truncated through the middle message."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts", "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix", "tests/test_chat_window_render_limits.py::test_chat_branch_from_message_recomputes_hidden_context", "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I077",
+      "source_function_id": "F180",
+      "target_function_id": "F147",
+      "description": "Tool-trace configuration changes which progress segments are visible while leaving the final answer unchanged.",
+      "source_states": ["disabled", "enabled"],
+      "target_states": ["stream_chunks", "persisted_answer_and_activity"],
+      "cases": [
+        {"source_state": "disabled", "target_state": "stream_chunks", "expected_result": "Only the answer chunk is emitted."},
+        {"source_state": "disabled", "target_state": "persisted_answer_and_activity", "expected_result": "No loop/tool summary is added to activity."},
+        {"source_state": "enabled", "target_state": "stream_chunks", "expected_result": "Responses emits loop/tool progress, and the Anthropic unified loop receives the same enabled flag."},
+        {"source_state": "enabled", "target_state": "persisted_answer_and_activity", "expected_result": "Trace remains thought activity and final content remains only the answer."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history", "tests/test_unified_chat_harness.py::ChatToolLoopTypesTests::test_anthropic_chat_uses_unified_tool_loop"],
+      "status": "accepted"
     }
   ]
 }

@@ -573,7 +573,7 @@ def _policy_state(policy: dict, source: str) -> str:
         return "auto" if mode == "model" else ("on" if mode == "auto" else "off")
     if source == "memory":
         mode = tool_modes.context_mode(policy, "memory")
-        return "auto" if mode == "model" else ("on" if mode == "auto" else "off")
+        return "auto" if mode == "model" else ("on" if mode == "on" else "off")
     if source == "files":
         return tool_modes.local_file_access_mode(policy)
     return "off"
@@ -596,7 +596,7 @@ def _apply_policy_state(policy: dict, source: str, state: str) -> dict:
     elif source == "screenshot":
         updated["context_screenshot"] = "off" if state == "off" else ("model" if state == "auto" else "auto")
     elif source == "memory":
-        updated["context_memory_mode"] = "off" if state == "off" else ("model" if state == "auto" else "auto")
+        updated["context_memory_mode"] = "off" if state == "off" else ("model" if state == "auto" else "on")
     elif source == "files":
         updated["file_access"] = state if state in {"off", "read", "ask", "auto"} else "off"
     updated["context_documents"] = updated["context_documents_mode"] == "auto"

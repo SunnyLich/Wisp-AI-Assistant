@@ -281,6 +281,7 @@ def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, mon
     monkeypatch.setattr(sys, "platform", "darwin")
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMenu
     import config
     from runtime.supervisor.flows import FlowController
     from ui.intent_overlay import IntentOverlay
@@ -311,6 +312,8 @@ def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, mon
 
     chosen: list[tuple[str, str]] = []
     cancelled: list[bool] = []
+    menus = []
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _pos: menus.append(menu))
     overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
     overlay.cancelled.connect(lambda: cancelled.append(True))
     try:
@@ -336,10 +339,16 @@ def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, mon
         assert selection["state"] == "off"
         assert selection["tokens"] == "~99 tok"
 
-        overlay._set_project_choice("p2")
+        QTest.mouseClick(overlay, Qt.MouseButton.LeftButton, pos=overlay._project_rect.center())
+        project_menu = menus[-1]
+        next(action for action in project_menu.actions() if action.text() == "Project Two").trigger()
         assert overlay.project_choice() == {"mode": "existing", "project_id": "p2"}
         assert overlay.conversation_choice() == {"mode": "new"}
-        overlay._set_conversation_choice(2)
+        QTest.mouseClick(overlay, Qt.MouseButton.LeftButton, pos=overlay._conversation_mode_rect.center())
+        assert overlay.conversation_choice() == {"mode": "continue", "index": 2}
+        QTest.mouseClick(overlay, Qt.MouseButton.LeftButton, pos=overlay._conversation_list_rect.center())
+        conversation_menu = menus[-1]
+        next(action for action in conversation_menu.actions() if action.data() == 2).trigger()
         assert overlay.conversation_choice() == {"mode": "continue", "index": 2}
 
         overlay._input_line.setText("Please answer with the selected project context.")
@@ -589,6 +598,627 @@ def test_chat_real_new_send_newline_continue_and_history_controls(qapp):
             "follow up",
         ]
         assert window._active_idx == 0
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_real_project_and_conversation_options_workflow(qapp, monkeypatch, tmp_path):
+    """Real project selector and conversation menus mutate and persist the shown history."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QInputDialog, QLabel, QMenu, QMessageBox, QPushButton
+
+    from ui import chat_window as chat_window_mod
+    from ui.chat_window import ChatWindow
+
+    conversations = [
+        {
+            "id": "first",
+            "project_id": "p1",
+            "title": "First chat",
+            "messages": [{"role": "user", "content": "first question"}],
+            "context_policy": {},
+        },
+        {
+            "id": "second",
+            "project_id": "general",
+            "title": "Second chat",
+            "messages": [{"role": "user", "content": "second question"}],
+            "context_policy": {},
+        },
+    ]
+    projects = [{"id": "general", "name": "General"}, {"id": "p1", "name": "Project One"}]
+    persisted = []
+    project_changes = []
+    created_names = []
+    revealed = []
+    menus = []
+    submenus = []
+    text_answers = iter([("Created Project", True), ("Renamed chat", True)])
+    record = tmp_path / "chats" / "conversations.json"
+    record.parent.mkdir(parents=True)
+    record.write_text("[]", encoding="utf-8")
+
+    def create_project(name):
+        created_names.append(name)
+        return {"id": "p2", "name": name}
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: next(text_answers))
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _pos: menus.append(menu))
+    original_add_menu = QMenu.addMenu
+
+    def capture_submenu(menu, *args):
+        submenu = original_add_menu(menu, *args)
+        submenus.append(submenu)
+        return submenu
+
+    monkeypatch.setattr(QMenu, "addMenu", capture_submenu)
+    monkeypatch.setattr(chat_window_mod._conversation_store, "CONVERSATIONS_FILE", record)
+    monkeypatch.setattr(chat_window_mod._file_browser, "reveal_path", revealed.append)
+
+    window = ChatWindow(
+        conversations,
+        lambda _messages, **_kwargs: iter(()),
+        projects=projects,
+        on_new_project=create_project,
+        on_project_change=project_changes.append,
+        persist_fn=lambda: persisted.append(True),
+    )
+
+    def open_options(conversation_id):
+        index = next(i for i, conv in enumerate(conversations) if conv["id"] == conversation_id)
+        title_button = next(button for real_idx, button in window._sidebar_btns if real_idx == index)
+        row = title_button.parentWidget()
+        menu_button = next(button for button in row.findChildren(QPushButton) if button is not title_button)
+        QTest.mouseClick(menu_button, Qt.MouseButton.LeftButton)
+        assert menus and window._conversation_menu is menus[-1]
+        return menus[-1]
+
+    def action(menu, label):
+        return next(item for item in menu.actions() if item.text() == label)
+
+    try:
+        window.show()
+        qapp.processEvents()
+        labels = {label.text().strip() for label in window.findChildren(QLabel)}
+        assert "Project One" in labels
+        grouped = window._grouped_sidebar_indices()
+        assert {project_id: indices for project_id, _name, indices in grouped} == {
+            "general": [1],
+            "p1": [0],
+        }
+
+        QTest.mouseClick(window._new_chat_btn, Qt.MouseButton.LeftButton)
+        assert conversations[-1]["project_id"] == "general"
+        window._project_combo.setFocus()
+        QTest.keyClick(window._project_combo, Qt.Key.Key_End)
+        qapp.processEvents()
+        assert created_names == ["Created Project"]
+        assert project_changes == ["p2"]
+        assert window._project_combo.currentData() == "p2"
+        QTest.mouseClick(window._new_chat_btn, Qt.MouseButton.LeftButton)
+        assert conversations[-1]["project_id"] == "p2"
+
+        menu = open_options("first")
+        action(menu, "Pin").trigger()
+        assert conversations[0]["pinned"] is True
+        menu = open_options("first")
+        action(menu, "Unpin").trigger()
+        assert conversations[0]["pinned"] is False
+
+        menu = open_options("first")
+        action(menu, "Rename").trigger()
+        assert conversations[0]["title_override"] == "Renamed chat"
+        assert any("Renamed chat" in button.toolTip() for _idx, button in window._sidebar_btns)
+
+        menu = open_options("first")
+        project_menu = next(submenu for submenu in reversed(submenus) if submenu.title() == "Add to project")
+        next(item for item in project_menu.actions() if item.text() == "Created Project").trigger()
+        assert conversations[0]["project_id"] == "p2"
+        regrouped = {
+            project_id: indices for project_id, _name, indices in window._grouped_sidebar_indices()
+        }
+        assert 0 in regrouped["p2"] and 0 not in regrouped.get("p1", [])
+
+        menu = open_options("first")
+        action(menu, "Browse conversation files").trigger()
+        assert revealed == [record]
+
+        menu = open_options("first")
+        action(menu, "Delete").trigger()
+        assert all(conv["id"] != "first" for conv in conversations)
+        assert len(persisted) == 6
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize("project_state", ["general", "existing", "new"])
+@pytest.mark.parametrize("entry", ["button", "shortcut"])
+def test_chat_project_by_new_entry_matrix(qapp, monkeypatch, project_state, entry):
+    """Every project kind survives both user routes that create a new chat."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QInputDialog
+
+    from ui.chat_window import ChatWindow
+
+    conversations = [
+        {"id": "seed", "project_id": "general", "messages": [{"role": "user", "content": "seed"}]}
+    ]
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("Matrix Project", True))
+    window = ChatWindow(
+        conversations,
+        lambda _messages, **_kwargs: iter(()),
+        projects=[{"id": "general", "name": "General"}, {"id": "p1", "name": "Existing"}],
+        on_new_project=lambda _name: {"id": "p2", "name": "Matrix Project"},
+    )
+    try:
+        window.show()
+        window.activateWindow()
+        qapp.processEvents()
+        expected = "general"
+        if project_state == "existing":
+            window._project_combo.setFocus()
+            QTest.keyClick(window._project_combo, Qt.Key.Key_Down)
+            expected = "p1"
+        elif project_state == "new":
+            window._project_combo.setFocus()
+            QTest.keyClick(window._project_combo, Qt.Key.Key_End)
+            expected = "p2"
+        if entry == "button":
+            QTest.mouseClick(window._new_chat_btn, Qt.MouseButton.LeftButton)
+        else:
+            QTest.keyClick(window, Qt.Key.Key_N, Qt.KeyboardModifier.ControlModifier)
+        qapp.processEvents()
+        assert conversations[-1]["project_id"] == expected
+        assert window._active_idx == len(conversations) - 1
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send(qapp, monkeypatch):
+    """Every context-chip choice travels through its real menu and active chat request."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMenu
+
+    from ui.chat_window import ChatWindow
+
+    conversations = [
+        {"id": "one", "messages": [], "context_policy": {}},
+        {"id": "two", "messages": [], "context_policy": {}},
+    ]
+    menus = []
+    captures = []
+    previews = []
+    sends = []
+    persisted = []
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _pos: menus.append(menu))
+
+    def send_fn(messages, *, context_policy):
+        sends.append({"messages": [dict(item) for item in messages], "policy": dict(context_policy)})
+        yield "context matrix answer"
+
+    window = ChatWindow(
+        conversations,
+        send_fn,
+        active_idx=0,
+        persist_fn=lambda: persisted.append(True),
+        on_context_capture=captures.append,
+        on_context_preview=previews.append,
+    )
+    try:
+        window.show()
+        window.activateWindow()
+        qapp.processEvents()
+
+        expected_final = {}
+        for source, chip in window._context_controls.items():
+            for value, _label in window._context_control_options[source]:
+                preview_count = len(previews)
+                QTest.mouseClick(chip, Qt.MouseButton.LeftButton)
+                menu = menus[-1]
+                action = next(item for item in menu.actions() if item.data() == value)
+                previous = str(chip.property("context_state"))
+                action.trigger()
+                qapp.processEvents()
+                if source in {"selection", "screenshot"} and previous == "off" and value == "on":
+                    assert captures[-1]["source"] == source
+                    assert str(chip.property("context_state")) == "off"
+                    assert window.cancel_context_capture(source)["cancelled"] is True
+                    assert str(chip.property("context_state")) == "off"
+                    QTest.mouseClick(chip, Qt.MouseButton.LeftButton)
+                    next(item for item in menus[-1].actions() if item.data() == "on").trigger()
+                    assert captures[-1]["source"] == source
+                    attached = window.attach_captured_context(
+                        name=f"{source}.txt",
+                        content=f"captured {source}",
+                        item_type="text",
+                        source=source,
+                    )
+                    assert attached["attached"] is True
+                assert str(chip.property("context_state")) == value, source
+                assert len(previews) > preview_count
+                assert previews[-1]["context_policy"] == conversations[0]["context_policy"]
+            expected_final[source] = str(chip.property("context_state"))
+
+        second_button = next(button for index, button in window._sidebar_btns if index == 1)
+        QTest.mouseClick(second_button, Qt.MouseButton.LeftButton)
+        assert window._active_idx == 1
+        second_states = {
+            source: str(chip.property("context_state"))
+            for source, chip in window._context_controls.items()
+        }
+        assert second_states != expected_final
+        assert conversations[1]["context_policy"] != conversations[0]["context_policy"]
+
+        first_button = next(button for index, button in window._sidebar_btns if index == 0)
+        QTest.mouseClick(first_button, Qt.MouseButton.LeftButton)
+        assert window._active_idx == 0
+        assert {
+            source: str(chip.property("context_state"))
+            for source, chip in window._context_controls.items()
+        } == expected_final
+
+        window._input.setFocus()
+        QTest.keyClicks(window._input, "use every selected context")
+        QTest.keyClick(window._input, Qt.Key.Key_Return)
+        _pump_until(qapp, lambda: not window._streaming and bool(sends))
+        assert sends[0]["policy"] == conversations[0]["context_policy"]
+        assert sends[0]["messages"][-1]["role"] == "user"
+        assert "captured selection" in sends[0]["messages"][-1]["content"]
+        assert "captured screenshot" in sends[0]["messages"][-1]["content"]
+        assert persisted
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_real_picker_and_drop_events_attach_text_and_image(
+    qapp, monkeypatch, tmp_path, isolated_app_state: IsolatedAppState
+):
+    """Picker clicks and Qt drag/drop events feed one visible message and its thumbnail."""
+    from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+    from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QImage
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QFileDialog, QLabel
+
+    from core.conversation_store import store as conversation_store
+    from ui.chat_window import ChatWindow
+
+    note = tmp_path / "picked-note.txt"
+    note.write_text("picked through the real file chooser", encoding="utf-8")
+    picker_image = tmp_path / "picked-image.png"
+    dropped_note = tmp_path / "dropped-note.txt"
+    dropped_note.write_text("dropped through the real Qt event", encoding="utf-8")
+    dropped_image = tmp_path / "dropped-image.png"
+    file_image = QImage(3, 2, QImage.Format.Format_RGB32)
+    file_image.fill(QColor("blue"))
+    assert file_image.save(str(picker_image)) and file_image.save(str(dropped_image))
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileNames",
+        lambda *_args, **_kwargs: ([str(note), str(picker_image)], "Supported files"),
+    )
+    conversations = [{"id": "attachments", "messages": [], "context_policy": {}}]
+    sends = []
+
+    def send_fn(messages, *, context_policy):
+        sends.append([dict(item) for item in messages])
+        yield "attachment answer"
+
+    window = ChatWindow(conversations, send_fn)
+    try:
+        window.show()
+        window.activateWindow()
+        qapp.processEvents()
+
+        QTest.mouseClick(window._attach_btn, Qt.MouseButton.LeftButton)
+        assert note.name in window._pending_attachment_labels
+        assert picker_image.name in window._pending_attachment_labels
+        assert window._attachment_label is not None and window._attachment_label.isVisible()
+
+        image = QImage(3, 2, QImage.Format.Format_RGB32)
+        image.fill(QColor("red"))
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(dropped_note)), QUrl.fromLocalFile(str(dropped_image))])
+        mime.setImageData(image)
+        drag = QDragEnterEvent(
+            QPoint(12, 12),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(window, drag)
+        assert drag.isAccepted()
+        drop = QDropEvent(
+            QPointF(12, 12),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(window, drop)
+        assert drop.isAccepted()
+        assert dropped_note.name in window._pending_attachment_labels
+        assert dropped_image.name in window._pending_attachment_labels
+
+        window._input.setFocus()
+        QTest.keyClicks(window._input, "inspect both attachments")
+        QTest.keyClick(window._input, Qt.Key.Key_Return)
+        _pump_until(qapp, lambda: not window._streaming and len(conversations[0]["messages"]) == 2)
+
+        user_message = conversations[0]["messages"][0]
+        external_paths = {
+            item["path"] for item in user_message["attachments"] if item["source"] == "external_path"
+        }
+        assert external_paths == {str(note), str(picker_image), str(dropped_note), str(dropped_image)}
+        image_refs = [item for item in user_message["attachments"] if item["kind"] == "image"]
+        assert image_refs and all(conversation_store.attachment_image_base64(item) for item in image_refs)
+        assert note.name in user_message["context"]
+        assert sends and "picked through the real file chooser" in sends[0][-1]["content"]
+        assert "dropped through the real Qt event" in sends[0][-1]["content"]
+        thumbnails = [label.pixmap() for label in window.findChildren(QLabel) if label.pixmap() is not None]
+        assert any(not pixmap.isNull() for pixmap in thumbnails)
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_real_message_actions_and_zoom_shortcuts(qapp, monkeypatch):
+    """Message option buttons route copy/UI-Lab/branch/rewind and keyboard/wheel zoom."""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QContextMenuEvent, QWheelEvent
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QPushButton
+
+    import config
+    from ui.chat_window import ChatWindow, _MessageTextView
+
+    conversations = [
+        {
+            "id": "actions",
+            "messages": [
+                {"role": "user", "content": "first message"},
+                {"role": "assistant", "content": "select this phrase"},
+                {"role": "user", "content": "third message"},
+            ],
+            "context_policy": {},
+        }
+    ]
+    menus = []
+    edited = []
+    deleted = []
+    saved_scales = []
+    persisted = []
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _pos: menus.append(menu))
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(config, "set_chat_font_scale", saved_scales.append)
+    monkeypatch.setattr(
+        ChatWindow,
+        "_ui_lab_context_actions",
+        lambda *_args: [
+            {"label": "Edit UI label", "action": "label_editor", "match": "select"},
+            {"label": "Delete UI label", "action": "delete_label", "match": "select"},
+        ],
+    )
+    monkeypatch.setattr(ChatWindow, "_edit_ui_lab_label", lambda _self, text, index: edited.append((text, index)))
+    monkeypatch.setattr(ChatWindow, "_delete_ui_lab_label", lambda _self, text, index: deleted.append((text, index)))
+
+    window = ChatWindow(
+        conversations,
+        lambda _messages, **_kwargs: iter(()),
+        persist_fn=lambda: persisted.append(True),
+    )
+
+    def message_buttons():
+        return [
+            button
+            for button in window._stack.currentWidget().findChildren(QPushButton)
+            if button.accessibleName() == "Message options"
+        ]
+
+    def action(menu, label):
+        return next(item for item in menu.actions() if item.text() == label)
+
+    try:
+        window.show()
+        window.activateWindow()
+        qapp.processEvents()
+        views = window.findChildren(_MessageTextView)
+        cursor = views[1].document().find("select")
+        assert not cursor.isNull()
+        views[1].setTextCursor(cursor)
+
+        context_event = QContextMenuEvent(
+            QContextMenuEvent.Reason.Mouse,
+            views[1].rect().center(),
+            views[1].mapToGlobal(views[1].rect().center()),
+        )
+        QApplication.sendEvent(views[1], context_event)
+        menu = menus[-1]
+        action(menu, "Copy selected text").trigger()
+        action(menu, "Edit UI label").trigger()
+        action(menu, "Delete UI label").trigger()
+        assert QApplication.clipboard().text() == "select"
+        assert edited == [("select", 0)] and deleted == [("select", 0)]
+
+        action(menu, "Branch from here").trigger()
+        qapp.processEvents()
+        assert len(conversations) == 2 and window._active_idx == 1
+        assert len(conversations[1]["messages"]) == 2
+
+        QTest.mouseClick(message_buttons()[0], Qt.MouseButton.LeftButton)
+        action(menus[-1], "Rewind current chat to here").trigger()
+        qapp.processEvents()
+        assert len(conversations[1]["messages"]) == 1
+        assert persisted
+
+        initial_scale = window._font_scale
+        QTest.keyClick(window, Qt.Key.Key_Equal, Qt.KeyboardModifier.ControlModifier)
+        qapp.processEvents()
+        assert window._font_scale == pytest.approx(initial_scale + 0.1)
+        QTest.keyClick(window, Qt.Key.Key_Minus, Qt.KeyboardModifier.ControlModifier)
+        qapp.processEvents()
+        assert window._font_scale == pytest.approx(initial_scale)
+
+        wheel = QWheelEvent(
+            QPointF(10, 10),
+            QPointF(window.mapToGlobal(QPoint(10, 10))),
+            QPoint(),
+            QPoint(0, 120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.ControlModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        QApplication.sendEvent(window, wheel)
+        assert wheel.isAccepted() and window._font_scale == pytest.approx(initial_scale + 0.1)
+        QTest.keyClick(window, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
+        qapp.processEvents()
+        assert window._font_scale == pytest.approx(1.0)
+        window._font_scale_save_timer.timeout.emit()
+        assert saved_scales[-1] == pytest.approx(1.0)
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize("message_index", [0, 1], ids=["first", "middle"])
+@pytest.mark.parametrize("operation", ["copy", "branch", "rewind"])
+def test_chat_message_position_action_matrix(qapp, monkeypatch, message_index, operation):
+    """Copy, branch, and rewind target both the first and a middle retained message."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QPushButton
+
+    from ui.chat_window import ChatWindow, _MessageTextView
+
+    conversations = [{
+        "id": "position-matrix",
+        "messages": [
+            {"role": "user", "content": "first target"},
+            {"role": "assistant", "content": "middle target"},
+            {"role": "user", "content": "last target"},
+        ],
+        "context_policy": {},
+    }]
+    menus = []
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _pos: menus.append(menu))
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(ChatWindow, "_ui_lab_context_actions", lambda *_args: [])
+    window = ChatWindow(conversations, lambda _messages, **_kwargs: iter(()))
+    try:
+        window.show()
+        window.activateWindow()
+        qapp.processEvents()
+        active_page = window._stack.currentWidget()
+        views = active_page.findChildren(_MessageTextView)
+        buttons = [
+            button for button in active_page.findChildren(QPushButton)
+            if button.accessibleName() == "Message options"
+        ]
+        if operation == "copy":
+            word = "first" if message_index == 0 else "middle"
+            cursor = views[message_index].document().find(word)
+            views[message_index].setTextCursor(cursor)
+            event = QContextMenuEvent(
+                QContextMenuEvent.Reason.Mouse,
+                views[message_index].rect().center(),
+                views[message_index].mapToGlobal(views[message_index].rect().center()),
+            )
+            QApplication.sendEvent(views[message_index], event)
+            next(item for item in menus[-1].actions() if item.text() == "Copy selected text").trigger()
+            assert QApplication.clipboard().text() == word
+        else:
+            QTest.mouseClick(buttons[message_index], Qt.MouseButton.LeftButton)
+            label = "Branch from here" if operation == "branch" else "Rewind current chat to here"
+            next(item for item in menus[-1].actions() if item.text() == label).trigger()
+            qapp.processEvents()
+            target = conversations[-1] if operation == "branch" else conversations[0]
+            assert len(target["messages"]) == message_index + 1
+            assert len(conversations) == (2 if operation == "branch" else 1)
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_tool_loop_trace_toggle_reaches_visible_history(qapp, monkeypatch):
+    """The real tool-loop toggle controls trace chunks and Chat persists them as activity."""
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    import config
+    from core.llm_clients import client as llm
+    from ui.chat_window import ChatWindow
+
+    monkeypatch.delenv("CHAT_TOOL_TRACE_UI", raising=False)
+
+    class Responses:
+        def create(self, **_kwargs):
+            return SimpleNamespace(id="response", output_text="trace answer", output=[])
+
+    def raw_stream(enabled):
+        monkeypatch.setattr(config, "CHAT_TOOL_TRACE_UI", enabled, raising=False)
+        return list(
+            llm._stream_codex(
+                "inspect the workspace",
+                "gpt-test",
+                SimpleNamespace(responses=Responses()),
+                use_tools=True,
+                allowed_tools=["read_file"],
+                pinned_tools=["read_file"],
+            )
+        )
+
+    disabled = raw_stream(False)
+    assert [getattr(chunk, "kind", "answer") for chunk in disabled] == ["answer"]
+    enabled = raw_stream(True)
+    assert [getattr(chunk, "kind", "answer") for chunk in enabled] == [
+        "progress", "progress", "answer"
+    ]
+    assert "Tool loop:" in str(enabled[0]) and "Tool calls:" in str(enabled[1])
+
+    conversations = [{"id": "trace", "messages": [], "context_policy": {}}]
+
+    def send_fn(_messages, **_kwargs):
+        for chunk in raw_stream(True):
+            kind = getattr(chunk, "kind", "answer")
+            if kind == "progress":
+                yield {"type": "chunk", "text": str(chunk), "is_progress": True, "is_thought": True}
+            else:
+                yield str(chunk)
+
+    window = ChatWindow(conversations, send_fn)
+    try:
+        window.show()
+        window.activateWindow()
+        qapp.processEvents()
+        window._input.setFocus()
+        QTest.keyClicks(window._input, "show trace")
+        QTest.keyClick(window._input, Qt.Key.Key_Return)
+        _pump_until(qapp, lambda: not window._streaming and len(conversations[0]["messages"]) == 2)
+
+        saved = conversations[0]["messages"][1]
+        assert saved["content"] == "trace answer"
+        assert "Tool loop:" in saved["display_content"]
+        assert "Tool calls:" in saved["display_content"]
+        assert [segment["is_thought"] for segment in saved["display_segments"]] == [True, False]
     finally:
         window.close()
         window.deleteLater()

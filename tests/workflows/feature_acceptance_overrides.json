@@ -1482,6 +1482,369 @@
       "interaction_ids": ["I069"]
     },
     {
+      "function_id": "F144",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible ChatWindow -> persisted conversation history -> multi-turn send stream",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"],
+      "success_assertions": ["The real chat window opens, displays stored history, sends a turn, persists the answer, and continues an older conversation."],
+      "audit_note": "Qt controls and conversation logic are real; the model stream is deterministic.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F145",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "New chat button and Ctrl+N shortcut -> ChatWindow.start_new_conversation",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls", "tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"],
+      "success_assertions": ["Both visible button and keyboard shortcut create and select a new conversation under the chosen project."],
+      "audit_note": "Both user entry routes use real Qt events.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I070"]
+    },
+    {
+      "function_id": "F146",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "chat composer Return/Shift+Return events -> send/newline handlers",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"],
+      "success_assertions": ["Shift+Enter inserts a newline without sending; Enter sends the exact multiline text once."],
+      "audit_note": "Uses the focused production QTextEdit and its event filter.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F147",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "brain chat events -> FlowController -> UI-host chat stream -> ChatWindow renderer/persistence",
+      "test_node_ids": ["tests/runtime/test_flows.py::test_chat_request_forwards_remote_activity_transcript_to_chat_window", "tests/runtime/test_flows.py::test_chat_request_forwards_image_only_result_to_chat_window", "tests/test_chat_window_render_limits.py::test_chat_window_streams_and_persists_remote_agent_activity_in_order", "tests/test_chat_window_render_limits.py::test_assistant_image_only_bubble_renders_a_thumbnail"],
+      "success_assertions": ["Text, thought/progress/tool segments, metadata, and image-only results retain order, render, and persist without becoming the wrong final answer."],
+      "audit_note": "Worker/provider emissions are deterministic boundaries; runtime routing and Qt rendering are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I077"]
+    },
+    {
+      "function_id": "F148",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "history row click -> active conversation -> Enter send with retained turns",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"],
+      "success_assertions": ["Selecting an older chat and sending includes its prior user turn and appends the follow-up to that conversation only."],
+      "audit_note": "History selection and send are real controls.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I071"]
+    },
+    {
+      "function_id": "F149",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "IntentOverlay project/mode/history hit regions and popup actions -> conversation_choice",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_intent_overlay_project_conversation_and_context_chip_workflow"],
+      "success_assertions": ["Real overlay clicks switch new/continue mode, filter history by project, and select the exact conversation index."],
+      "audit_note": "The overlay paint hit regions and QMenu actions are production; popup display is captured offscreen.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I071"]
+    },
+    {
+      "function_id": "F150",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "ChatWindow history row button -> active stack page/conversation",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"],
+      "success_assertions": ["Clicking each tested history row selects the matching conversation and subsequent sends stay there."],
+      "audit_note": "Uses real sidebar buttons.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I071"]
+    },
+    {
+      "function_id": "F151",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "conversation project_id/pinned state -> grouped ChatWindow sidebar",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"],
+      "success_assertions": ["General and named-project conversations appear under the correct groups while their real rows remain actionable."],
+      "audit_note": "The grouping algorithm and visible labels are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I072"]
+    },
+    {
+      "function_id": "F152",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "project combo New project option -> name dialog -> project callback/list refresh",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_conversation_store.py::test_add_and_delete_project"],
+      "success_assertions": ["Selecting New project creates it, selects it, exposes it in project actions, and the store round-trips it."],
+      "audit_note": "Only the modal text response is supplied deterministically.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I070"]
+    },
+    {
+      "function_id": "F153",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "project combo selection -> new-chat project_id",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls", "tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"],
+      "success_assertions": ["General, an existing named project, and a newly created project assign the expected project_id to new chats."],
+      "audit_note": "Selection and new-chat creation use production controls.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I070"]
+    },
+    {
+      "function_id": "F154",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "selected project -> active memory scope -> save/retrieve filtering and UI-host memory proxy",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_workflow_state_isolation_guard_and_memory_project_scope", "tests/runtime/test_ui_host_reply.py::test_memory_proxy_accepts_project_scope"],
+      "success_assertions": ["Project facts are saved under the active project, excluded from another project, and UI add/update calls retain their explicit project scope."],
+      "audit_note": "Memory storage is real but isolated; semantic model retrieval is deterministic.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I070"]
+    },
+    {
+      "function_id": "F155",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "conversation options Add to project submenu -> conversation project_id/persist/sidebar refresh",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow"],
+      "success_assertions": ["The real submenu moves the selected conversation to the chosen project and persists the mutation."],
+      "audit_note": "Menu construction and action routing are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I072"]
+    },
+    {
+      "function_id": "F156",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "conversation options Pin/Unpin -> persisted pinned ordering state",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_conversation_store.py::test_pin_and_rename_round_trip"],
+      "success_assertions": ["Pin and Unpin appear according to current state, toggle it through the real menu, and round-trip in storage."],
+      "audit_note": "Uses actual sidebar menu buttons and actions.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I072"]
+    },
+    {
+      "function_id": "F157",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "conversation options Rename -> dialog -> title override/persist/sidebar refresh",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back"],
+      "success_assertions": ["A confirmed name becomes the visible tooltip and persists; cancellation/empty/error cases do not corrupt the old title."],
+      "audit_note": "Only modal responses and persistence failures are deterministic boundaries.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F158",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "conversation options Delete -> confirmation -> history removal/persist",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history"],
+      "success_assertions": ["Confirmed deletion removes only the target; rejected or failed deletion preserves history."],
+      "audit_note": "The button/menu/action path is real; confirmation answers and injected save failures are deterministic.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F159",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "conversation options Browse conversation files -> persist -> shared reveal helper",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow", "tests/test_chat_window_render_limits.py::test_chat_browse_conversation_files_persists_then_reveals_record"],
+      "success_assertions": ["The real action persists first and reveals the exact conversation record."],
+      "audit_note": "OS file-manager launch is the captured boundary.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F160",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "conversation/message metadata -> sidebar and bubble timestamp labels",
+      "test_node_ids": ["tests/test_chat_window_render_limits.py::test_chat_sidebar_shows_conversation_timestamp", "tests/test_chat_window_render_limits.py::test_chat_bubble_header_shows_message_timestamp", "tests/test_chat_window_render_limits.py::test_message_timestamp_formats_from_metadata"],
+      "success_assertions": ["Stored ISO metadata is formatted and displayed on both conversation rows and message headers."],
+      "audit_note": "Formatting and Qt label rendering are production.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F161",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "attachment button -> QFileDialog selection -> shared MIME attachment pipeline -> send",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_picker_and_drop_events_attach_text_and_image"],
+      "success_assertions": ["Clicking the attachment button queues the selected file, shows its name, and supplies its content/reference to the sent turn."],
+      "audit_note": "The modal returns an isolated path; button and extraction/send paths are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I073"]
+    },
+    {
+      "function_id": "F162",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Qt drag-enter/drop events -> shared MIME attachment pipeline -> send",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_picker_and_drop_events_attach_text_and_image"],
+      "success_assertions": ["A real image MIME drag is accepted, queued, saved as an attachment, sent, and rendered."],
+      "audit_note": "Uses QApplication event delivery to the production drop handlers.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I073"]
+    },
+    {
+      "function_id": "F163",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "picker/drop pending attachment state -> visible chip/context -> user turn/model payload",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_picker_and_drop_events_attach_text_and_image", "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"],
+      "success_assertions": ["Pending names are visible before send, context reaches the request, and references survive reopening."],
+      "audit_note": "Files and storage are isolated; UI and model-payload assembly are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I073"]
+    },
+    {
+      "function_id": "F164",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "user/assistant image attachments -> ChatWindow thumbnail renderer",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_picker_and_drop_events_attach_text_and_image", "tests/test_chat_window_render_limits.py::test_assistant_image_only_bubble_renders_a_thumbnail"],
+      "success_assertions": ["Both a dropped user image and an image-only assistant result create non-null visible thumbnails."],
+      "audit_note": "Image bytes are deterministic; Qt decoding/scaling/rendering are real.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I073"]
+    },
+    {
+      "function_id": "F165",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "App context chip -> state menu -> per-conversation policy -> send/runtime policy",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_request_context_policy_is_absolute_over_legacy_tool_context"],
+      "success_assertions": ["Off, On, and Let model decide persist per chat and reach the request policy without stale overrides."],
+      "audit_note": "All exposed menu states run through real actions.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074"]
+    },
+    {
+      "function_id": "F166",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Browser/Web context chip -> state menu -> per-conversation policy -> runtime fetch",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"],
+      "success_assertions": ["All three menu states persist per chat; On fetches browser context and Off suppresses it."],
+      "audit_note": "Browser capture is deterministic; policy/menu/runtime route are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074"]
+    },
+    {
+      "function_id": "F167",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Selection context chip -> Off/On menu -> capture -> per-conversation request",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_selection_capture_waits_for_user_selection_without_file_permission"],
+      "success_assertions": ["Off and On are menu-driven; On requests interactive capture and the captured selection reaches the chosen chat only."],
+      "audit_note": "Native selection result is deterministic.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074", "I075"]
+    },
+    {
+      "function_id": "F168",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Clipboard context chip -> Off/On menu -> per-conversation request policy",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_request_context_policy_is_absolute_over_legacy_tool_context"],
+      "success_assertions": ["Both menu states persist per conversation and the final absolute policy reaches runtime."],
+      "audit_note": "Clipboard contents are an external deterministic boundary.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074"]
+    },
+    {
+      "function_id": "F169",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Screenshot context chip -> state menu -> interactive snip/auto policy -> request",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_screenshot_chip_snip_attaches_image_without_file_permission"],
+      "success_assertions": ["Off, On, and model-decide states work; On requests capture and attaches its image without unrelated file permission."],
+      "audit_note": "Capture pixels are deterministic; chip/runtime paths are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074", "I075"]
+    },
+    {
+      "function_id": "F170",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Git/GitHub context chip -> state menu -> per-conversation tool grants",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_request_context_policy_is_absolute_over_legacy_tool_context"],
+      "success_assertions": ["All three states persist per chat and reach the absolute runtime policy/tool grant calculation."],
+      "audit_note": "All exposed menu states are exercised.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074"]
+    },
+    {
+      "function_id": "F171",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Memory context chip -> state menu -> normalized per-conversation memory policy",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/test_chat_window_render_limits.py::test_chat_context_policy_normalizes_legacy_on_modes"],
+      "success_assertions": ["Off, On, and model-decide remain visibly selected, persist per chat, and the exact normalized policy reaches send."],
+      "audit_note": "The real menu matrix exposed and now guards the former Memory On-to-Off regression.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074"]
+    },
+    {
+      "function_id": "F172",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Files context chip -> Off/Read/Ask/Auto menu -> per-conversation runtime file grants",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/test_profile_user_workflows.py::test_every_file_access_mode_saves_reloads_and_changes_runtime_tool_grants"],
+      "success_assertions": ["All four choices persist per chat and produce the corresponding local-file grants/approval policy."],
+      "audit_note": "All exposed menu states and production grant mapping are exercised.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074"]
+    },
+    {
+      "function_id": "F173",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Selection/Screenshot chip Off-to-On action -> UI-host interactive capture -> ChatWindow.attach_captured_context",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send", "tests/runtime/test_flows.py::test_chat_selection_capture_waits_for_user_selection_without_file_permission", "tests/runtime/test_flows.py::test_chat_screenshot_chip_snip_attaches_image_without_file_permission"],
+      "success_assertions": ["Each Off-to-On action requests its matching capture, remains Off until success, and then attaches/enables the source; cancellation remains closed."],
+      "audit_note": "Native selection/screenshot results are deterministic boundaries.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I075"]
+    },
+    {
+      "function_id": "F174",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "chat context state change/open -> context preview request -> matching preview_id chip token update",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_window_context_preview_send_and_history_workflow", "tests/runtime/test_flows.py::test_chat_context_preview_updates_token_estimates_before_send"],
+      "success_assertions": ["Current preview estimates update visible chips before send, warnings remain visible, and stale preview IDs are ignored."],
+      "audit_note": "Context sources are deterministic; preview routing and Qt updates are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I074"]
+    },
+    {
+      "function_id": "F175",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "selected message text -> real Qt context-menu event -> Copy selected text -> clipboard",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"],
+      "success_assertions": ["A real context-menu event exposes Copy selected text and copies exactly the selected range."],
+      "audit_note": "Clipboard state is real Qt state.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I076"]
+    },
+    {
+      "function_id": "F176",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "message options Branch from here -> retained-message conversation slice -> persisted selected branch",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts", "tests/test_chat_window_render_limits.py::test_chat_branch_from_message_recomputes_hidden_context"],
+      "success_assertions": ["The real menu action creates a separate selected conversation ending at the chosen message and recomputes hidden context."],
+      "audit_note": "Menu action and conversation mutation are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I076"]
+    },
+    {
+      "function_id": "F177",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "message options Rewind current chat to here -> confirmation -> in-place retained slice",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts", "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"],
+      "success_assertions": ["The real action plus confirmation truncates the current chat only; rejection preserves it."],
+      "audit_note": "Confirmation answers are deterministic; action/mutation are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I076"]
+    },
+    {
+      "function_id": "F178",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "selected message text -> UI Lab context actions -> edit/delete callbacks",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts", "tests/test_addon_manager.py::test_ui_lab_addon_exercises_saved_label_surfaces"],
+      "success_assertions": ["With selected chat text, both add-on actions appear and receive the exact match; saved labels are exercised on chat surfaces."],
+      "audit_note": "The action provider result is deterministic; context menu/action routing are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I076"]
+    },
+    {
+      "function_id": "F179",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Ctrl+=/Ctrl+-/Ctrl+0 shortcuts and Ctrl+wheel event filter -> chat font scaling/persistence",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"],
+      "success_assertions": ["Keyboard increase/decrease/reset and Ctrl+wheel update the live scale, and the final scale reaches the settings persistence callback."],
+      "audit_note": "Uses real Qt shortcut and wheel events; settings write is captured.",
+      "dependency_status": "audited"
+    },
+    {
+      "function_id": "F180",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "CHAT_TOOL_TRACE_UI -> unified Responses/Anthropic loop -> progress chunks -> ChatWindow activity history",
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history", "tests/test_unified_chat_harness.py::ChatToolLoopTypesTests::test_anthropic_chat_uses_unified_tool_loop"],
+      "success_assertions": ["Disabled emits only the answer; enabled emits loop/tool summaries as thought activity while preserving the answer, and Anthropic receives the same toggle."],
+      "audit_note": "Provider responses are deterministic; config gate, unified loops, stream typing, and Qt persistence are production.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I077"]
+    },
+    {
       "function_id": "F420",
       "acceptance_status": "real_entry_accepted",
       "production_entry_point": "Onboarding profile fields/buttons and Settings Save changes button",
