@@ -3728,149 +3728,246 @@
     {
       "function_id": "F215",
       "function": "Add a provider connection.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections + Add connection button -> searchable provider catalog -> selected provider row",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_add_alias_search_filter_and_expand_every_connection_provider"
+      ],
+      "success_assertions": [
+        "The actual modal adds each of the 24 production connection providers and returns a row with the exact selected provider and a blank initial alias."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I098",
+        "I105"
+      ],
+      "audit_note": "The visible button, modal event loop, catalog search, selection, and resulting row are real; no provider network is contacted while configuring a connection."
     },
     {
       "function_id": "F216",
       "function": "Give a connection an alias.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connection alias field -> connection search/model credential label -> Settings Save",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_add_alias_search_filter_and_expand_every_connection_provider",
+        "tests/test_connection_management_acceptance.py::test_connection_save_keychain_remove_last_and_cancel_matrix"
+      ],
+      "success_assertions": [
+        "Blank and custom aliases work for every catalog provider; a saved OpenAI alias is persisted under its production settings key and remains searchable."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I098",
+        "I099"
+      ],
+      "audit_note": "Alias editing and Save use the real Qt row and Settings state machine; only the isolated settings-file write boundary is captured."
     },
     {
       "function_id": "F217",
       "function": "Store API keys in the operating-system keychain.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connection/custom secret fields -> Save changes -> core.secret_store.set_secret -> consolidated OS-keychain record",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_connection_save_keychain_remove_last_and_cancel_matrix",
+        "tests/test_secret_store.py::SecretStoreTests::test_set_secret_writes_single_consolidated_item"
+      ],
+      "success_assertions": [
+        "Save sends typed provider and Custom credentials to the secure-store API, clears the visible secret fields, and the real secret store consolidates multiple API keys without writing them to settings."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I102",
+        "I104"
+      ],
+      "audit_note": "The Settings workflow isolates the OS keychain adapter; the secret-store test runs the production serialization and keyring calls against a fake keyring backend."
     },
     {
       "function_id": "F218",
       "function": "Remove/clear a provider connection.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connection row remove button -> staged removal -> Save/Cancel -> core.secret_store.delete_secret",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_connection_save_keychain_remove_last_and_cancel_matrix",
+        "tests/test_secret_store.py::SecretStoreTests::test_delete_secret_removes_only_that_key"
+      ],
+      "success_assertions": [
+        "Removing one of two provider rows retains the shared credential, saving removal of the last row deletes it, Cancel preserves it, changing a sole row clears the replaced provider on Save, and changing back cancels that deletion."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I102"
+      ],
+      "audit_note": "The audit found and fixed persistence defects where removing a row or replacing its provider left the old credential behind and reopening restored the connection."
     },
     {
       "function_id": "F219",
       "function": "Search connections by provider or alias.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections search field -> provider label/ID/alias matcher -> visible connection rows",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_add_alias_search_filter_and_expand_every_connection_provider"
+      ],
+      "success_assertions": [
+        "Empty, missing, every provider ID, and every alias query produce exactly the matching rows under All, Cloud, and Local modes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I099",
+        "I100",
+        "I101"
+      ],
+      "audit_note": "All 150 search/filter state combinations run against the complete production provider catalog in one real dialog."
     },
     {
       "function_id": "F220",
       "function": "Filter All, Cloud, or Local/custom connections.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "All/Cloud/Local connection filter -> provider classification -> visible connection rows",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_add_alias_search_filter_and_expand_every_connection_provider"
+      ],
+      "success_assertions": [
+        "All returns the catalog, Cloud excludes Custom and Ollama, and Local returns exactly Custom and Ollama for every search category."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I100",
+        "I101"
+      ],
+      "audit_note": "Filtering is exercised both alone and crossed with provider, alias, missing, and empty searches."
     },
     {
       "function_id": "F221",
       "function": "Expand or collapse large connection lists.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Show more/Show fewer button -> connection pagination state -> visible connection rows",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_add_alias_search_filter_and_expand_every_connection_provider"
+      ],
+      "success_assertions": [
+        "A 24-row unfiltered list collapses to six and expands to all; search and two-row Local results remain fully visible with pagination disabled in both expansion states."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I101"
+      ],
+      "audit_note": "The production toggle button is clicked for the large-list path and both internal states are checked for filtered cardinalities."
     },
     {
       "function_id": "F222",
       "function": "Configure a custom OpenAI-compatible base URL and API key.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Custom Base URL/API key fields -> Save/model refresh/Test Chat model -> production OpenAI-compatible client",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_ollama_custom_preset_fills_dummy_api_key"
+        "tests/test_connection_management_acceptance.py::test_connection_save_keychain_remove_last_and_cancel_matrix",
+        "tests/test_connection_management_acceptance.py::test_model_refresh_and_manual_name_every_provider_matrix",
+        "tests/test_connection_management_acceptance.py::test_custom_endpoint_and_exact_manual_model_reach_real_test_button"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The custom URL persists, the key enters secure storage, model listing receives typed and stored custom credentials, and local/remote URLs reach the real route probe unchanged."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I103",
+        "I107"
+      ],
+      "audit_note": "Only network transport is replaced; URL validation, credential selection, client construction, probe request, and visible result are production code."
     },
     {
       "function_id": "F223",
       "function": "Pick a saved custom endpoint from the Endpoints menu.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections Endpoints button -> real QMenu action -> Custom URL/model/key fields",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_every_custom_endpoint_menu_action_updates_real_fields"
+      ],
+      "success_assertions": [
+        "Every one of the 21 production endpoint actions applies its exact URL, model hint, and optional API-key hint."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I103"
+      ],
+      "audit_note": "The native popup event loop is opened and its actual QAction is triggered for every menu entry."
     },
     {
       "function_id": "F224",
       "function": "Use an existing local Ollama installation and auto-start its server when needed.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Ollama connection/model route -> ensure_ollama_running -> existing executable/server -> model list/request client",
       "test_node_ids": [
-        "tests/test_ollama_manager.py::test_ensure_ollama_running_does_not_start_a_server_for_remote_urls"
+        "tests/test_ollama_manager.py::test_ensure_ollama_running_leaves_ready_server_alone",
+        "tests/test_ollama_manager.py::test_ensure_ollama_running_starts_installed_server_and_waits",
+        "tests/test_ollama_manager.py::test_ensure_ollama_running_does_not_start_a_server_for_remote_urls",
+        "tests/test_ollama_manager.py::test_llm_client_starts_ollama_before_listing_models",
+        "tests/test_ollama_manager.py::test_llm_client_starts_ollama_before_building_request_client"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "A ready server is reused, an installed stopped server is started and awaited, remote URLs never start a local process, and readiness precedes both listing and request-client construction."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I108"
+      ],
+      "audit_note": "Real process and HTTP calls are deterministic boundaries; executable discovery, endpoint resolution, startup decisions, waiting, and LLM-client sequencing are real."
     },
     {
       "function_id": "F225",
       "function": "Use an LM Studio or other OpenAI-compatible endpoint through Custom.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "LM Studio/remote endpoint QAction -> Custom route/manual model -> Test Chat model -> OpenAI-compatible SDK probe",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_every_custom_endpoint_menu_action_updates_real_fields",
+        "tests/test_connection_management_acceptance.py::test_custom_endpoint_and_exact_manual_model_reach_real_test_button"
+      ],
+      "success_assertions": [
+        "Both LM Studio at localhost and a remote OpenAI-compatible endpoint build the SDK client with the selected URL/key, send the exact manual model, and render a successful route result."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I107"
+      ],
+      "audit_note": "The SDK transport is a deterministic boundary; the menu, custom configuration, asynchronous test worker, route validation, client factory, probe arguments, and UI result are real."
     },
     {
       "function_id": "F226",
       "function": "Refresh model names from providers that support model listing.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "LLM route refresh button -> background safe_list_models -> live model combo/status",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_model_refresh_and_manual_name_every_provider_matrix",
+        "tests/test_ollama_manager.py::test_llm_client_starts_ollama_before_listing_models"
+      ],
+      "success_assertions": [
+        "Every 24 connection providers plus ChatGPT refreshes through the actual button; typed and stored credentials are selected correctly, live lists replace built-ins, and provider errors retain the manual model with a visible diagnostic."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I104",
+        "I105",
+        "I106",
+        "I108"
+      ],
+      "audit_note": "Provider model-list HTTP calls are deterministic; background threading, credential/base-URL resolution, signal delivery, combo replacement, and error preservation are real."
     },
     {
       "function_id": "F227",
       "function": "Enter an exact model name manually.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Custom model sentinel -> exact model field -> model route value -> Test Chat model probe",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_model_refresh_and_manual_name_every_provider_matrix",
+        "tests/test_connection_management_acceptance.py::test_custom_endpoint_and_exact_manual_model_reach_real_test_button"
+      ],
+      "success_assertions": [
+        "An exact manual name is retained for all 25 selectable providers after live refresh, survives a refresh error, and reaches local and remote Custom SDK probe requests unchanged."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I106",
+        "I107"
+      ],
+      "audit_note": "The second workflow proves manual text is not merely displayed: it becomes the production route model and the actual probe argument."
     },
     {
       "function_id": "F228",

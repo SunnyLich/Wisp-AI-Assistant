@@ -556,6 +556,7 @@ class SettingsDialog(QDialog):
         self._theme_shown_mode: str = ""
         self._theme_syncing: bool = False
         self._api_key_rows: list[dict] = []
+        self._removed_connection_providers: set[str] = set()
         self._model_section_rows: dict[str, list[dict]] = {
             "LLM": [], "VISION_LLM": [], "MEMORY_LLM": []
         }
@@ -724,6 +725,29 @@ class SettingsDialog(QDialog):
             secret_store.migrate_env_secrets(self._env)
         except Exception as exc:  # noqa: BLE001 — non-fatal: just means no .env keys to migrate
             _settings_log.warning("Secret migration from .env skipped: %s", exc)
+
+        # Removing a connection is staged like every other Settings edit.  Only
+        # clear its shared credential on Save, and only when no row for that
+        # provider remains.  This keeps Cancel non-destructive and handles a
+        # provider being removed then re-added before saving.
+        for provider in list(self._removed_connection_providers):
+            if any(_get(row["provider"]).strip() == provider for row in self._api_key_rows):
+                self._removed_connection_providers.discard(provider)
+                continue
+            try:
+                if provider == "copilot":
+                    from core.auth import copilot_auth
+
+                    copilot_auth.clear_token()
+                else:
+                    key_name = _PROVIDER_KEY_NAMES.get(provider)
+                    if key_name:
+                        secret_store.delete_secret(key_name)
+                self._removed_connection_providers.discard(provider)
+            except Exception as exc:  # noqa: BLE001 - reported with storage failures
+                label = _PROVIDER_LABELS.get(provider, provider)
+                _settings_log.error("Could not clear %s connection credential: %s", label, exc)
+                failures.append(f"{label}: {exc}")
 
         # LLM provider keys from the API key table
         for row in self._api_key_rows:
@@ -2744,10 +2768,14 @@ class SettingsDialog(QDialog):
             "provider": provider_combo,
             "alias":    alias_edit,
             "key":      key_edit,
+            "last_provider": _get(provider_combo).strip(),
         }
         self._sync_api_key_row_placeholder(row_info, stored=stored)
 
         remove_btn.clicked.connect(lambda: self._remove_api_key_row(row_info))
+        provider_combo.currentIndexChanged.connect(
+            lambda _: self._on_api_key_row_provider_changed(row_info)
+        )
         provider_combo.currentIndexChanged.connect(lambda _: self._sync_api_key_row_placeholder(row_info))
         provider_combo.currentIndexChanged.connect(lambda _: self._refresh_model_api_key_combos())
         provider_combo.currentIndexChanged.connect(self._refresh_connection_rows_filter)
@@ -2756,12 +2784,29 @@ class SettingsDialog(QDialog):
 
         self._api_key_rows_layout.addWidget(row_w)
         self._api_key_rows.append(row_info)
+        self._removed_connection_providers.discard(provider)
         self._refresh_model_api_key_combos()
         self._wire_change_tracking(row_w)
         self._refresh_search_index()
         self._refresh_connection_rows_filter()
         self._schedule_dirty_refresh()
         return row_info
+
+    def _on_api_key_row_provider_changed(self, row_info: dict) -> None:
+        """Stage removal of a provider replaced through a connection row."""
+
+        previous = str(row_info.get("last_provider") or "").strip()
+        provider = _get(row_info.get("provider")).strip()
+        row_info["last_provider"] = provider
+        if self._loading_values or previous == provider:
+            return
+        if previous and not any(
+            row is not row_info and _get(row["provider"]).strip() == previous
+            for row in self._api_key_rows
+        ):
+            self._removed_connection_providers.add(previous)
+        if provider:
+            self._removed_connection_providers.discard(provider)
 
     def _sync_api_key_row_placeholder(self, row_info: dict, *, stored: bool = False) -> None:
         """Refresh provider-specific API key placeholder text."""
@@ -2780,8 +2825,15 @@ class SettingsDialog(QDialog):
 
     def _remove_api_key_row(self, row_info: dict) -> None:
         """Remove api key row."""
+        provider = _get(row_info.get("provider")).strip()
         if row_info in self._api_key_rows:
             self._api_key_rows.remove(row_info)
+        if (
+            provider
+            and not self._loading_values
+            and not any(_get(row["provider"]).strip() == provider for row in self._api_key_rows)
+        ):
+            self._removed_connection_providers.add(provider)
         row_info["widget"].deleteLater()
         self._refresh_model_api_key_combos()
         self._refresh_connection_rows_filter()
