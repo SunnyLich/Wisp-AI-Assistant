@@ -28,11 +28,11 @@ The workflow manifest must preserve traceability back to the earlier inventory:
 
 Current honest status:
 
-- **261 / 472** functions are accepted through a production entry point with a successful observable result.
-- **50 / 472** have a name-matched candidate test that still needs code-path audit.
-- **161 / 472** are untested at the real-entry acceptance level.
-- **246 / 472** have completed dependency audits.
-- **86 / 86** declared A -> B interaction matrices are accepted. These include the earlier launcher, Settings, appearance, platform, local-file, onboarding, and provider matrices, plus planned chunking thresholds/counts, reasoning-effort route support, automatic elaboration eligibility and prompt selection, external transcript pull counts/namespaces, provider push/backup and export confirmation, and Wisp-versus-agent conversation ownership.
+- **280 / 472** functions are accepted through a production entry point with a successful observable result.
+- **47 / 472** have a name-matched candidate test that still needs code-path audit.
+- **145 / 472** are untested at the real-entry acceptance level.
+- **265 / 472** have completed dependency audits.
+- **97 / 97** declared A -> B interaction matrices are accepted. These include the earlier launcher, Settings, appearance, platform, local-file, onboarding, and provider matrices, plus planned chunking, automatic elaboration, external transcript synchronization/ownership, every provider-control option, and ChatGPT/GitHub/Copilot sign-in, status, sign-out, override, and credential-test relationships.
 
 The acceptance validator refuses to infer success coverage from section similarity, failure injection, or a shared internal helper. `tests/workflows/feature_interactions.json` separately records the behaviorally distinct state combinations for features that affect other features.
 

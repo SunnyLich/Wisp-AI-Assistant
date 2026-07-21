@@ -1572,6 +1572,187 @@
       ],
       "test_node_ids": ["runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix", "tests/test_settings_dialog_controls.py::test_app_settings_starts_with_conversation_harness_selector"],
       "status": "accepted"
+    },
+    {
+      "interaction_id": "I087",
+      "source_function_id": "F190",
+      "target_function_id": "F196",
+      "description": "The selected external execution provider determines the visible badge and controls dialog.",
+      "source_states": ["codex", "claude"],
+      "target_states": ["controls_window"],
+      "cases": [
+        {"source_state": "codex", "target_state": "controls_window", "expected_result": "The ChatGPT badge opens ChatGPT controls."},
+        {"source_state": "claude", "target_state": "controls_window", "expected_result": "The Claude badge opens Claude controls."}
+      ],
+      "test_node_ids": ["tests/test_provider_controls_acceptance.py::test_floating_provider_badge_opens_and_saves_real_controls", "tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I088",
+      "source_function_id": "F190",
+      "target_function_id": "F197",
+      "description": "The selected provider determines the model choices and the request field that receives them.",
+      "source_states": ["codex", "claude"],
+      "target_states": ["provider_default", "every_explicit_model"],
+      "cases": [
+        {"source_state": "codex", "target_state": "provider_default", "expected_result": "ChatGPT omits the model override."},
+        {"source_state": "codex", "target_state": "every_explicit_model", "expected_result": "Every offered Codex model reaches turn/start unchanged."},
+        {"source_state": "claude", "target_state": "provider_default", "expected_result": "Claude omits the model override."},
+        {"source_state": "claude", "target_state": "every_explicit_model", "expected_result": "Every offered Claude model reaches SDK options unchanged."}
+      ],
+      "test_node_ids": ["tests/test_provider_controls_acceptance.py::test_provider_dialog_exposes_exact_capability_matrix", "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save", "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request", "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I089",
+      "source_function_id": "F190",
+      "target_function_id": "F200",
+      "description": "Provider capability changes the reasoning-effort rows and runtime option.",
+      "source_states": ["codex", "claude"],
+      "target_states": ["provider_default", "low_through_max", "ultra"],
+      "cases": [
+        {"source_state": "codex", "target_state": "provider_default", "expected_result": "ChatGPT omits effort."},
+        {"source_state": "codex", "target_state": "low_through_max", "expected_result": "Each common effort reaches turn/start."},
+        {"source_state": "codex", "target_state": "ultra", "expected_result": "Ultra is offered and reaches turn/start."},
+        {"source_state": "claude", "target_state": "provider_default", "expected_result": "Claude omits effort."},
+        {"source_state": "claude", "target_state": "low_through_max", "expected_result": "Each common effort reaches SDK options."},
+        {"source_state": "claude", "target_state": "ultra", "expected_result": "Ultra is not offered for Claude."}
+      ],
+      "test_node_ids": ["tests/test_provider_controls_acceptance.py::test_provider_dialog_exposes_exact_capability_matrix", "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save", "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request", "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I090",
+      "source_function_id": "F190",
+      "target_function_id": "F201",
+      "description": "Provider capability changes the visible-reasoning choices and request representation.",
+      "source_states": ["codex", "claude"],
+      "target_states": ["detailed", "concise", "provider", "off"],
+      "cases": [
+        {"source_state": "codex", "target_state": "detailed", "expected_result": "Detailed reaches ChatGPT summary."},
+        {"source_state": "codex", "target_state": "concise", "expected_result": "Concise reaches ChatGPT summary."},
+        {"source_state": "codex", "target_state": "provider", "expected_result": "Provider summaries are not shown as a separate ChatGPT choice."},
+        {"source_state": "codex", "target_state": "off", "expected_result": "None reaches ChatGPT summary."},
+        {"source_state": "claude", "target_state": "detailed", "expected_result": "Detailed is not offered for Claude."},
+        {"source_state": "claude", "target_state": "concise", "expected_result": "Concise is not offered for Claude."},
+        {"source_state": "claude", "target_state": "provider", "expected_result": "Provider summaries enable adaptive summarized thinking."},
+        {"source_state": "claude", "target_state": "off", "expected_result": "Off disables Claude thinking display."}
+      ],
+      "test_node_ids": ["tests/test_provider_controls_acceptance.py::test_provider_dialog_exposes_exact_capability_matrix", "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save", "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request", "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I091",
+      "source_function_id": "F198",
+      "target_function_id": "F190",
+      "description": "Workspace selection changes the directory sent to each provider execution.",
+      "source_states": ["auto", "valid_explicit", "missing_explicit"],
+      "target_states": ["codex", "claude"],
+      "cases": [
+        {"source_state": "auto", "target_state": "codex", "expected_result": "ChatGPT uses automatic conversation workspace inference."},
+        {"source_state": "auto", "target_state": "claude", "expected_result": "Claude uses automatic conversation workspace inference."},
+        {"source_state": "valid_explicit", "target_state": "codex", "expected_result": "The selected directory overrides ChatGPT context."},
+        {"source_state": "valid_explicit", "target_state": "claude", "expected_result": "The selected directory overrides Claude context."},
+        {"source_state": "missing_explicit", "target_state": "codex", "expected_result": "A missing directory cannot override ChatGPT automatic context."},
+        {"source_state": "missing_explicit", "target_state": "claude", "expected_result": "A missing directory cannot override Claude automatic context."}
+      ],
+      "test_node_ids": ["tests/test_provider_controls_acceptance.py::test_provider_workspace_selection_runtime_matrix", "tests/test_provider_controls_acceptance.py::test_automatic_provider_workspace_source_matrix", "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I092",
+      "source_function_id": "F199",
+      "target_function_id": "F190",
+      "description": "Fast-mode state changes each provider's execution request.",
+      "source_states": ["off", "on"],
+      "target_states": ["codex", "claude"],
+      "cases": [
+        {"source_state": "off", "target_state": "codex", "expected_result": "ChatGPT omits priority service tier."},
+        {"source_state": "off", "target_state": "claude", "expected_result": "Claude receives fastMode false."},
+        {"source_state": "on", "target_state": "codex", "expected_result": "ChatGPT receives priority service tier."},
+        {"source_state": "on", "target_state": "claude", "expected_result": "Claude receives fastMode true."}
+      ],
+      "test_node_ids": ["tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save", "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request", "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I093",
+      "source_function_ids": ["F202", "F203", "F204", "F205"],
+      "target_function_id": "F190",
+      "description": "Every permission mode maps to the matching ChatGPT and Claude execution policy.",
+      "source_states": ["ask", "auto_edits", "full_access", "read_only"],
+      "target_states": ["codex", "claude"],
+      "cases": [
+        {"source_state": "ask", "target_state": "codex", "expected_result": "ChatGPT uses user-reviewed workspaceWrite."},
+        {"source_state": "ask", "target_state": "claude", "expected_result": "Claude uses default permission mode."},
+        {"source_state": "auto_edits", "target_state": "codex", "expected_result": "ChatGPT uses non-interactive workspaceWrite."},
+        {"source_state": "auto_edits", "target_state": "claude", "expected_result": "Claude uses acceptEdits."},
+        {"source_state": "full_access", "target_state": "codex", "expected_result": "ChatGPT uses dangerFullAccess."},
+        {"source_state": "full_access", "target_state": "claude", "expected_result": "Claude uses bypassPermissions."},
+        {"source_state": "read_only", "target_state": "codex", "expected_result": "ChatGPT uses readOnly."},
+        {"source_state": "read_only", "target_state": "claude", "expected_result": "Claude uses plan."}
+      ],
+      "test_node_ids": ["tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save", "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request", "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I094",
+      "source_function_ids": ["F206", "F208"],
+      "target_function_id": "F207",
+      "description": "ChatGPT sign-in/sign-out state determines the visible and runtime status result.",
+      "source_states": ["signed_out", "signed_in", "credential_read_error"],
+      "target_states": ["status"],
+      "cases": [
+        {"source_state": "signed_out", "target_state": "status", "expected_result": "Settings and brain status report Not logged in without a token."},
+        {"source_state": "signed_in", "target_state": "status", "expected_result": "Settings shows a truncated account identity and brain status reports configured without exposing tokens."},
+        {"source_state": "credential_read_error", "target_state": "status", "expected_result": "Settings and brain status show a controlled credential-store error."}
+      ],
+      "test_node_ids": ["tests/test_provider_auth_acceptance.py::test_chatgpt_settings_login_status_and_logout_real_button_workflow", "runtime/brain/tests/test_handler_config.py::test_auth_status_does_not_expose_tokens", "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I095",
+      "source_function_ids": ["F209", "F211"],
+      "target_function_id": "F210",
+      "description": "GitHub sign-in/sign-out state determines the visible and runtime status result.",
+      "source_states": ["signed_out", "signed_in", "credential_read_error"],
+      "target_states": ["status"],
+      "cases": [
+        {"source_state": "signed_out", "target_state": "status", "expected_result": "Settings and brain status report Not logged in."},
+        {"source_state": "signed_in", "target_state": "status", "expected_result": "Settings and brain status show username/scopes without exposing the token."},
+        {"source_state": "credential_read_error", "target_state": "status", "expected_result": "Settings and brain status show a controlled keychain error."}
+      ],
+      "test_node_ids": ["tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow", "runtime/brain/tests/test_handler_config.py::test_auth_status_does_not_expose_tokens", "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I096",
+      "source_function_id": "F212",
+      "target_function_id": "F209",
+      "description": "GitHub OAuth field values determine the device-login client and scopes.",
+      "source_states": ["bundled_default", "custom_override"],
+      "target_states": ["device_login"],
+      "cases": [
+        {"source_state": "bundled_default", "target_state": "device_login", "expected_result": "Blank fields use the bundled client ID and default scopes."},
+        {"source_state": "custom_override", "target_state": "device_login", "expected_result": "The exact custom client ID and scopes reach device login."}
+      ],
+      "test_node_ids": ["tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow", "tests/test_github_auth.py::GithubAuthTests::test_configured_client_id_prefers_user_override", "tests/test_github_auth.py::GithubAuthTests::test_configured_client_id_falls_back_to_bundled"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I097",
+      "source_function_id": "F213",
+      "target_function_id": "F214",
+      "description": "Copilot credential state and provider response determine the Test connection result.",
+      "source_states": ["stored_valid", "stored_rejected", "cleared"],
+      "target_states": ["test_result"],
+      "cases": [
+        {"source_state": "stored_valid", "target_state": "test_result", "expected_result": "The visible test button shows a successful connection."},
+        {"source_state": "stored_rejected", "target_state": "test_result", "expected_result": "The visible test button shows provider rejection."},
+        {"source_state": "cleared", "target_state": "test_result", "expected_result": "The visible test button reports that no credential is configured."}
+      ],
+      "test_node_ids": ["tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow", "runtime/brain/tests/test_handler_config.py::test_auth_copilot_set_and_test_call_shared_modules"],
+      "status": "accepted"
     }
   ]
 }

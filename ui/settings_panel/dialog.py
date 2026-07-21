@@ -2258,6 +2258,31 @@ class SettingsDialog(QDialog):
         gh_btns = github_row.findChildren(QPushButton)
         self._github_login_btn, self._github_logout_btn = gh_btns[0], gh_btns[1]
         auth_cv.addWidget(github_row)
+        auth_cv.addWidget(_sep(visible=True))
+
+        copilot_hdr = QLabel("GitHub Copilot token")
+        copilot_hdr.setStyleSheet("font-weight: 600;")
+        auth_cv.addWidget(copilot_hdr)
+        auth_cv.addWidget(
+            _desc_label(
+                "",
+                "Add a GitHub Copilot connection below, paste its token, then connect, test, or clear it here.",
+            )
+        )
+        self._copilot_status_lbl = QLabel()
+        self._copilot_status_lbl.setWordWrap(True)
+        self._set_status_label(self._copilot_status_lbl, None, "Checking status...")
+        auth_cv.addWidget(self._copilot_status_lbl)
+        copilot_row = self._button_row(
+            ("Connect token", self._copilot_save_token),
+            ("Test connection", self._copilot_test_token),
+            ("Clear token", self._copilot_clear_token),
+        )
+        copilot_btns = copilot_row.findChildren(QPushButton)
+        self._copilot_connect_btn = copilot_btns[0]
+        self._copilot_test_btn = copilot_btns[1]
+        self._copilot_clear_btn = copilot_btns[2]
+        auth_cv.addWidget(copilot_row)
         credentials_layout.addWidget(auth_card)
 
         # ── PROVIDER CONNECTIONS card ─────────────────────────────────────
@@ -2322,10 +2347,6 @@ class SettingsDialog(QDialog):
         self._connections_search.textChanged.connect(self._refresh_connection_rows_filter)
         self._connections_filter.currentIndexChanged.connect(self._refresh_connection_rows_filter)
 
-        self._copilot_status_lbl = QLabel()
-        self._copilot_status_lbl.setWordWrap(True)
-        self._copilot_test_btn = QPushButton()
-        self._copilot_clear_btn = QPushButton()
         credentials_layout.addWidget(api_keys_card)
 
         # ── CUSTOM PROVIDER card ──────────────────────────────────────────

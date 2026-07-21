@@ -3367,217 +3367,363 @@
     {
       "function_id": "F196",
       "function": "Open provider controls from the floating provider badge.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible floating ChatGPT/Claude provider badge -> deferred HarnessControlsDialog",
       "test_node_ids": [
-        "tests/test_harness_controls.py::test_codex_controls_save_provider_specific_values"
+        "tests/test_provider_controls_acceptance.py::test_floating_provider_badge_opens_and_saves_real_controls",
+        "tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Each visible provider badge opens the matching real controls window; its Save button persists, reloads, closes, and emits the live settings payload."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I087"
+      ],
+      "audit_note": "The in-process case proves Save/reload and the process-level UI-worker case proves the badge RPC reaches the production window."
     },
     {
       "function_id": "F197",
       "function": "Select provider-default or explicit agent model.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "provider controls Model combo -> real Save/reload -> ChatGPT turn/start or Claude SDK options",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "Provider default omits a model override and every explicit model offered for ChatGPT and Claude persists and reaches the corresponding provider request unchanged."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I088"
+      ],
+      "audit_note": "All current model rows, including concrete Claude versions and Codex models, are enumerated from the production dialog."
     },
     {
       "function_id": "F198",
       "function": "Choose or automatically detect the agent project/workspace folder.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "provider Project Browse/Auto buttons -> saved workspace -> supervisor override or UI-host conversation inference",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_provider_workspace_selection_runtime_matrix",
+        "tests/test_provider_controls_acceptance.py::test_automatic_provider_workspace_source_matrix",
+        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+      ],
+      "success_assertions": [
+        "For both providers, Browse saves a selected directory; Auto clears it; valid explicit paths override conversation context while missing/empty paths fall back to provider session, file context, attachment, then current working directory."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I091"
+      ],
+      "audit_note": "Uses real isolated directories/files and production workspace resolution; only the native folder chooser return is supplied."
     },
     {
       "function_id": "F199",
       "function": "Enable agent fast mode.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "provider Fast mode checkbox -> real Save/reload -> ChatGPT serviceTier or Claude fastMode SDK setting",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "Off and on persist for each provider; on selects ChatGPT priority service or Claude fastMode and off omits/disables the corresponding runtime option."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I092"
+      ],
+      "audit_note": "Both boolean states are exercised through the visible checkbox and both production adapters."
     },
     {
       "function_id": "F200",
       "function": "Choose agent reasoning effort: provider default, low, medium, high, xhigh, max, or ultra where supported.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "provider Reasoning effort combo -> real Save/reload -> provider request effort",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "Default, low, medium, high, xhigh, and max work for both providers; ChatGPT also exposes and sends ultra while Claude does not offer it."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I089"
+      ],
+      "audit_note": "Every provider-specific effort row is saved and asserted at the request boundary."
     },
     {
       "function_id": "F201",
       "function": "Choose detailed, concise, provider, or no visible reasoning summaries.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "provider Visible reasoning combo -> real Save/reload -> ChatGPT summary or Claude thinking option",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "ChatGPT detailed, concise, and off plus Claude provider-summary and off choices persist and produce their exact runtime request option."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I090"
+      ],
+      "audit_note": "The matrix reflects the different summary capabilities exposed by each provider."
     },
     {
       "function_id": "F202",
       "function": "Require approval for agent operations.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Permission mode Require approval -> real Save/reload -> provider approval policy",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "Both providers persist ask mode and request their interactive/default approval behavior; ChatGPT retains its user reviewer and workspace sandbox."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I093"
+      ],
+      "audit_note": "The external approval response itself remains a deterministic callback boundary."
     },
     {
       "function_id": "F203",
       "function": "Allow agent edits within the selected project.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Permission mode Allow within project -> real Save/reload -> provider project-write policy",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "Both providers persist auto_edits; ChatGPT sends never plus workspaceWrite and Claude sends acceptEdits."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I093"
+      ],
+      "audit_note": "The selected isolated project is the production writable-root boundary."
     },
     {
       "function_id": "F204",
       "function": "Grant full agent access.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Permission mode Full access -> real Save/reload -> provider unrestricted policy",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "Both providers persist full_access; ChatGPT sends dangerFullAccess without reviewer and Claude sends bypassPermissions."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I093"
+      ],
+      "audit_note": "The test inspects the real request but never grants unrestricted access to the test process."
     },
     {
       "function_id": "F205",
       "function": "Use plan-only/read-only agent mode.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Permission mode Plan only (read-only) -> real Save/reload -> provider read-only policy",
+      "test_node_ids": [
+        "tests/test_provider_controls_acceptance.py::test_every_provider_control_choice_persists_through_real_save",
+        "tests/test_provider_controls_acceptance.py::test_every_codex_control_choice_reaches_real_turn_request",
+        "tests/test_provider_controls_acceptance.py::test_every_claude_control_choice_reaches_real_sdk_options"
+      ],
+      "success_assertions": [
+        "Both providers persist read_only; ChatGPT sends a readOnly sandbox without reviewer and Claude sends plan mode."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I093"
+      ],
+      "audit_note": "The matrix proves the no-write request policy for both adapters."
     },
     {
       "function_id": "F206",
       "function": "Sign in to ChatGPT Plus/Pro in a browser.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections > ChatGPT Sign in button -> localhost PKCE browser OAuth -> keychain token -> status poll",
+      "test_node_ids": [
+        "tests/test_provider_auth_acceptance.py::test_chatgpt_settings_login_status_and_logout_real_button_workflow",
+        "tests/test_chatgpt_auth.py::test_browser_oauth_valid_callback_uses_pkce_and_persists_tokens",
+        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_streams_started_and_success"
+      ],
+      "success_assertions": [
+        "The visible Sign in button starts browser OAuth, a valid state/PKCE callback stores tokens, and the real poll changes Settings to the logged-in account."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I094"
+      ],
+      "audit_note": "Browser opening, callback HTTP exchange, secure storage, brain stream, and UI polling are covered at their production boundaries without a live account."
     },
     {
       "function_id": "F207",
       "function": "Check ChatGPT sign-in status.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings ChatGPT status refresh/poll -> shared OAuth credential reader -> visible status label",
+      "test_node_ids": [
+        "tests/test_provider_auth_acceptance.py::test_chatgpt_settings_login_status_and_logout_real_button_workflow",
+        "runtime/brain/tests/test_handler_config.py::test_auth_status_does_not_expose_tokens",
+        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+      ],
+      "success_assertions": [
+        "Signed out, signed in with truncated account identity, and credential-read error each render the correct non-secret visible state."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I094"
+      ],
+      "audit_note": "The secure credential reader is deterministic and token values are explicitly excluded from status payloads."
     },
     {
       "function_id": "F208",
       "function": "Sign out of ChatGPT.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections > ChatGPT Sign out button -> clear secure tokens -> status/model-route refresh",
+      "test_node_ids": [
+        "tests/test_provider_auth_acceptance.py::test_chatgpt_settings_login_status_and_logout_real_button_workflow",
+        "tests/test_chatgpt_auth.py::test_chunked_token_roundtrip_rewrite_and_clear",
+        "runtime/brain/tests/test_handler_config.py::test_auth_clear_handlers_call_shared_modules"
+      ],
+      "success_assertions": [
+        "The visible button removes all secure token chunks, refreshes dependent model choices, and returns the label to Not logged in."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I094"
+      ],
+      "audit_note": "Uses an isolated credential store; no developer login is touched."
     },
     {
       "function_id": "F209",
       "function": "Sign in to GitHub with the device/browser OAuth flow.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections > Sign in with GitHub button -> device code/browser -> validated user token -> status poll",
       "test_node_ids": [
-        "tests/test_github_auth.py::test_github_device_flow_cancellation_and_manual_browser_fallback"
+        "tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow",
+        "tests/test_github_auth.py::test_github_device_flow_pending_then_persists_validated_user",
+        "runtime/brain/tests/test_handler_config.py::test_auth_github_device_login_streams_code_and_success"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The visible button starts device auth, displays the copyable code, opens its verification URL, stores the validated GitHub user, and shows the login/scopes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I095",
+        "I096"
+      ],
+      "audit_note": "GitHub HTTP responses and browser process creation are deterministic external boundaries."
     },
     {
       "function_id": "F210",
       "function": "Check GitHub sign-in status.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings GitHub status refresh/poll -> shared OAuth credential reader -> visible login/scopes label",
+      "test_node_ids": [
+        "tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow",
+        "runtime/brain/tests/test_handler_config.py::test_auth_status_does_not_expose_tokens",
+        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+      ],
+      "success_assertions": [
+        "Signed out, signed in with username/scopes, and credential-read error each render correctly without exposing access tokens."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I095"
+      ],
+      "audit_note": "The UI and brain status contracts read the same secure credential module."
     },
     {
       "function_id": "F211",
       "function": "Sign out of GitHub.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections > GitHub Sign out button -> clear secure token -> GitHub/Copilot/model-route refresh",
+      "test_node_ids": [
+        "tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow",
+        "runtime/brain/tests/test_handler_config.py::test_auth_clear_handlers_call_shared_modules",
+        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+      ],
+      "success_assertions": [
+        "The visible button clears the GitHub credential, refreshes dependent Copilot/model state, and returns to Not logged in; failed removal is not reported as success."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I095"
+      ],
+      "audit_note": "The credential store is isolated and verified after clear."
     },
     {
       "function_id": "F212",
       "function": "Override the GitHub OAuth client ID and scopes.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "GitHub client-ID/scopes fields -> Sign in with GitHub -> device-login configuration",
+      "test_node_ids": [
+        "tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow",
+        "tests/test_github_auth.py::GithubAuthTests::test_configured_client_id_prefers_user_override",
+        "tests/test_github_auth.py::GithubAuthTests::test_configured_client_id_falls_back_to_bundled"
+      ],
+      "success_assertions": [
+        "Blank fields use the bundled client ID and default scopes; custom client ID and scopes are passed exactly into the real device flow."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I096"
+      ],
+      "audit_note": "Both configuration branches are exercised through visible fields and the login button."
     },
     {
       "function_id": "F213",
       "function": "Connect and clear GitHub Copilot credentials.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections > Copilot row token -> visible Connect token/Clear token buttons -> OS credential module",
+      "test_node_ids": [
+        "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow",
+        "runtime/brain/tests/test_handler_config.py::test_auth_copilot_set_and_test_call_shared_modules",
+        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+      ],
+      "success_assertions": [
+        "Connect stores and clears the typed token field with a secure-store status; Clear removes and verifies it, leaving the visible no-token state."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I097"
+      ],
+      "audit_note": "The audit found and fixed previously unwired Copilot controls; the OS keychain boundary is isolated."
     },
     {
       "function_id": "F214",
       "function": "Test the GitHub Copilot connection.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Connections > visible Copilot Test connection button -> production Copilot client probe -> status label",
       "test_node_ids": [
-        "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow",
+        "runtime/brain/tests/test_handler_config.py::test_auth_copilot_set_and_test_call_shared_modules"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "A valid token shows success; provider rejection and cleared/no credential show failure through the same visible test button."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I097"
+      ],
+      "audit_note": "The live provider request is a deterministic boundary; UI state and production client dispatch are real."
     },
     {
       "function_id": "F215",
