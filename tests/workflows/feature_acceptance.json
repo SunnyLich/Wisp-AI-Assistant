@@ -4468,15 +4468,19 @@
     {
       "function_id": "F254",
       "function": "Add, remove, and reorder Chat model fallbacks.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Chat model fallback Add/remove controls and row-drop priority handler",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_model_routes_add_inline_and_drag_to_reorder"
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Chat fallbacks can be added, reordered to priority 1, and removed through their production controls."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I114"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F255",
@@ -4501,113 +4505,157 @@
     {
       "function_id": "F256",
       "function": "Choose the primary provider/model for the Image model route.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Image model primary provider/model row",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_custom_provider_is_model_route_and_api_key_table_option"
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Image primary provider/model selection becomes the saved first route and reaches its route test."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I116",
+        "I117"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F257",
       "function": "Add, remove, and reorder Image model fallbacks.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Image model fallback Add/remove controls and row-drop priority handler",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_model_routes_add_inline_and_drag_to_reorder"
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Image fallbacks can be added, reordered to priority 1, and removed through their production controls."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I114"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F258",
       "function": "**Test Image model** from Settings.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Test Image model button and asynchronous route probe",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_open_requests_are_coalesced"
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The Image test button probes primary and fallback rows with the correct route and image flag and renders both successes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I116"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F259",
       "function": "Choose the primary provider/model for the Memory model route.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Memory model primary provider/model row",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_custom_provider_is_model_route_and_api_key_table_option"
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Memory primary provider/model selection becomes the saved first route and reaches its route test."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I116",
+        "I117"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F260",
       "function": "Add, remove, and reorder Memory model fallbacks.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Memory model fallback Add/remove controls and row-drop priority handler",
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_model_routes_add_inline_and_drag_to_reorder"
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Memory fallbacks can be added, reordered to priority 1, and removed through their production controls."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I114"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F261",
       "function": "**Test Memory model** from Settings.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Test Memory model button and asynchronous route probe",
       "test_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The Memory test button probes primary and fallback rows with the correct route and image flag and renders both successes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I116"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F262",
       "function": "Copy one route's provider/model rows to all model routes with **Apply to all**.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Apply to all button -> clone Chat rows into Image and Memory routes",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
+      ],
+      "success_assertions": [
+        "Two ordered Chat rows copy exactly into both Image and Memory routes through the visible Apply to all button."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I115"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F263",
       "function": "Drag model rows to change priority.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Model-route rowDropped signal -> priority list/layout/snapshot order",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
+      ],
+      "success_assertions": [
+        "A dropped fallback becomes priority 1 in the row list, layout, labels, and saved snapshot for every route."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I114"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F264",
       "function": "Refresh available model IDs for an individual route row.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Each route row refresh button -> background model listing -> live combo",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_every_model_route_add_remove_reorder_apply_and_test_workflow"
+      ],
+      "success_assertions": [
+        "The refresh button on Chat, Image, and Memory rows runs background listing, shows the live count, and preserves the exact manual selection."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I117"
+      ],
+      "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
     {
       "function_id": "F265",

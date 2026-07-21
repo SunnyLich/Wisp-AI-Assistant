@@ -758,3 +758,115 @@ def test_every_provider_reaches_its_real_chat_route_probe(
         llm._codex_client = None
         llm._dynamic_openai_clients.clear()
         _close(dialog, app)
+
+
+def test_every_model_route_add_remove_reorder_apply_and_test_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Chat, Image, and Memory routes share one complete visible row workflow."""
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from core.llm_clients import client as llm
+    from ui.settings_panel import dialog as settings_dialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    calls: list[tuple[str, str, str, bool]] = []
+    model_list_calls: list[str] = []
+
+    def test_route(provider, model, route_name, *, image=False, **_kwargs):
+        calls.append((provider, model, route_name, image))
+        return True, f"{route_name} route OK"
+
+    monkeypatch.setattr(llm, "test_route_connection", test_route)
+    monkeypatch.setattr(
+        llm,
+        "safe_list_models",
+        lambda provider, **_kwargs: (model_list_calls.append(provider) or ["live-model"], ""),
+    )
+    dialog = _new_dialog(monkeypatch)
+
+    def set_route(row: dict, model: str) -> None:
+        dialog._fill_credential_combo(row["api_key_combo"], "ollama")
+        row["api_key_combo"].setCurrentIndex(row["api_key_combo"].findData("ollama"))
+        dialog._fill_model_combo(row, [], "ollama", model)
+        assert dialog._model_value(row) == model
+
+    try:
+        dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("LLM"))
+        app.processEvents()
+        for section in ("LLM", "VISION_LLM", "MEMORY_LLM"):
+            dialog._model_route_buttons[section].click()
+            app.processEvents()
+            assert not dialog._model_route_cards[section].isHidden()
+            rows = dialog._model_section_rows[section]
+            for extra in list(rows)[1:]:
+                dialog._remove_model_section_row(section, extra)
+            set_route(rows[0], f"{section.lower()}-primary")
+
+            dialog._model_route_add_buttons[section].click()
+            fallback = rows[-1]
+            set_route(fallback, f"{section.lower()}-fallback")
+            dialog._model_route_rows_containers[section].rowDropped.emit(
+                fallback["widget"], 0
+            )
+            assert rows[0] is fallback
+            assert rows[0]["priority_lbl"].text() == "<b>1</b>"
+
+            old_primary = rows[1]
+            remove = next(
+                button
+                for button in old_primary["widget"].findChildren(QPushButton)
+                if button.text() == "✕"
+            )
+            remove.click()
+            assert rows == [fallback]
+
+        llm_rows = dialog._model_section_rows["LLM"]
+        set_route(llm_rows[0], "shared-primary")
+        dialog._model_route_add_buttons["LLM"].click()
+        set_route(llm_rows[-1], "shared-fallback")
+        apply_all = next(
+            button
+            for button in dialog._model_route_cards["LLM"].findChildren(QPushButton)
+            if button.text() == "Apply to all"
+        )
+        apply_all.click()
+        for section in ("LLM", "VISION_LLM", "MEMORY_LLM"):
+            assert [
+                (row["api_key_combo"].currentData(), dialog._model_value(row))
+                for row in dialog._model_section_rows[section]
+            ] == [("ollama", "shared-primary"), ("ollama", "shared-fallback")]
+
+            refresh = dialog._model_section_rows[section][0]["refresh_btn"]
+            refresh.click()
+            _wait_until(app, refresh.isEnabled)
+            assert refresh.toolTip() == "Live: 1 models"
+            assert dialog._model_value(dialog._model_section_rows[section][0]) == "shared-primary"
+        assert model_list_calls == ["ollama", "ollama", "ollama"]
+
+        test_specs = (
+            ("LLM", "Test Chat model", "LLM", False),
+            ("VISION_LLM", "Test Image model", "VISION_LLM", True),
+            ("MEMORY_LLM", "Test Memory model", "MEMORY_LLM", False),
+        )
+        for section, label, route_name, image in test_specs:
+            dialog._model_route_buttons[section].click()
+            button = next(
+                candidate
+                for candidate in dialog._model_route_cards[section].findChildren(QPushButton)
+                if candidate.text() == label
+            )
+            before = len(calls)
+            button.click()
+            _wait_until(app, lambda: not dialog._running_test_tokens)
+            assert calls[before:] == [
+                ("ollama", "shared-primary", route_name, image),
+                ("ollama", "shared-fallback", route_name, image),
+            ]
+            status = getattr(dialog, f"_{'llm' if section == 'LLM' else 'vision' if section == 'VISION_LLM' else 'memory'}_test_status_lbl")
+            assert "✓ Primary" in status.text()
+            assert "✓ Fallback 1" in status.text()
+    finally:
+        _close(dialog, app)
