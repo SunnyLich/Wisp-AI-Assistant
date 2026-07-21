@@ -16160,9 +16160,9 @@
         3017
       ],
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ],
-      "production_entry_point": "Production entry point exercised by tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button",
+      "production_entry_point": "Production entry point exercised by tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page",
       "scenarios": [
         "normal",
         "repeat",
@@ -16175,9 +16175,7 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [
         "function-specific app state"
@@ -16186,7 +16184,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.551,
+      "mapping_score": 0.56,
       "source_section": "settings_profiles"
     },
     {

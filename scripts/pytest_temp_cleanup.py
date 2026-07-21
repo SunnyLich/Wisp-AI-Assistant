@@ -108,16 +108,33 @@ def _process_is_running(pid: int) -> bool:
         return True
     if os.name == "nt":
         import ctypes
+        from ctypes import wintypes
 
         process_query_limited_information = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+        still_active = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        ctypes.set_last_error(0)
+        handle = kernel32.OpenProcess(
             process_query_limited_information,
             False,
             pid,
         )
         if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
-            return True
+            try:
+                exit_code = wintypes.DWORD()
+                if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return exit_code.value == still_active
+                # A query failure must preserve the directory instead of
+                # guessing that a possibly live process is dead.
+                return True
+            finally:
+                kernel32.CloseHandle(handle)
         # Access denied means the process exists but cannot be queried.
         return ctypes.get_last_error() == 5
     try:

@@ -60,19 +60,26 @@ FAILURE_TAIL_LINES = 80
 
 
 def _manifest_workflow_test_files(root: Path) -> tuple[str, ...]:
-    """Return every test file referenced by the expanded function manifest."""
+    """Return every test file referenced by trace and acceptance manifests."""
 
-    manifest_path = root / "tests" / "workflows" / "manifest.json"
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return ()
-    files = {
-        str(node_id).split("::", 1)[0].replace("\\", "/")
-        for record in manifest.get("workflows", [])
-        for node_id in record.get("test_node_ids", [])
-        if "::" in str(node_id)
-    }
+    files: set[str] = set()
+    manifest_records = (
+        ("manifest.json", "workflows"),
+        ("feature_acceptance.json", "records"),
+        ("feature_interactions.json", "interactions"),
+    )
+    for filename, record_key in manifest_records:
+        manifest_path = root / "tests" / "workflows" / filename
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        files.update(
+            str(node_id).split("::", 1)[0].replace("\\", "/")
+            for record in manifest.get(record_key, [])
+            for node_id in record.get("test_node_ids", [])
+            if "::" in str(node_id)
+        )
     return tuple(sorted(files))
 
 
@@ -764,7 +771,13 @@ def _main(argv: list[str] | None = None) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Run the suite and collect dead/current-run repository temp trees."""
 
-    from scripts.pytest_temp_cleanup import cleanup_stale_owned_basetemps
+    if __package__:
+        from scripts.pytest_temp_cleanup import cleanup_stale_owned_basetemps
+    else:
+        # ``python scripts/run_app_workflow_tests.py`` places only ``scripts``
+        # on sys.path.  Keep the documented direct entry point equivalent to
+        # ``python -m scripts.run_app_workflow_tests``.
+        from pytest_temp_cleanup import cleanup_stale_owned_basetemps
 
     root = _repo_root()
     cleanup_stale_owned_basetemps(root)

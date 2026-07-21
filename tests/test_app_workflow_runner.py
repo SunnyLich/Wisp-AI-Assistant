@@ -4,9 +4,29 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from types import SimpleNamespace
 
 from scripts import pytest_temp_cleanup, run_app_workflow_tests
+
+
+def test_documented_direct_script_entry_point_loads_cleanup_module():
+    """Running the script by path must work when the repo root is not on sys.path."""
+
+    script = run_app_workflow_tests.__file__
+    completed = subprocess.run(
+        [sys.executable, script, "--help"],
+        cwd=os.path.dirname(os.path.dirname(script)),
+        env={**os.environ, pytest_temp_cleanup.KEEP_TEMP_ENV: "1"},
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "ModuleNotFoundError" not in completed.stderr
 
 
 def test_strict_log_scan_flags_runtime_diagnostics(tmp_path):
@@ -66,7 +86,7 @@ def test_workflow_runner_covers_core_user_workflows():
 
 
 def test_workflow_runner_includes_every_manifest_referenced_file():
-    """The 472-function mapping is executable through the master entrypoint."""
+    """Trace, acceptance, and interaction mappings execute through the master."""
 
     root = run_app_workflow_tests._repo_root()
     mapped = set(run_app_workflow_tests._manifest_workflow_test_files(root))
@@ -74,6 +94,8 @@ def test_workflow_runner_includes_every_manifest_referenced_file():
 
     assert len(mapped) >= 60
     assert mapped - set(run_app_workflow_tests.APP_ARCHITECTURE_TESTS) <= selected
+    assert "tests/test_optional_install_acceptance.py" in selected
+    assert "tests/test_diagnostics_acceptance.py" in selected
 
 
 def test_workflow_runner_executes_every_direct_failure_evidence_node():

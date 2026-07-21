@@ -291,6 +291,159 @@
       ],
       "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"],
       "status": "accepted"
+    },
+    {
+      "interaction_id": "I016",
+      "source_function_id": "F441",
+      "target_function_id": "F445",
+      "description": "How the installer terminates determines whether an immediate app restart is valid.",
+      "source_states": ["successful_restart_apply", "failed", "cancelled"],
+      "target_states": ["restart_control"],
+      "cases": [
+        {"source_state": "successful_restart_apply", "target_state": "restart_control", "expected_result": "Restart is visible and its click reaches the application restart boundary."},
+        {"source_state": "failed", "target_state": "restart_control", "expected_result": "Restart remains hidden after a failed install."},
+        {"source_state": "cancelled", "target_state": "restart_control", "expected_result": "Restart remains hidden after user cancellation."}
+      ],
+      "test_node_ids": ["tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I017",
+      "source_function_id": "F441",
+      "target_function_id": "F446",
+      "description": "Failure versus user interruption changes the terminal detail that must remain in the optional-install artifacts.",
+      "source_states": ["failed_without_cancel", "cancelled_while_running"],
+      "target_states": ["retained_log_and_status"],
+      "cases": [
+        {"source_state": "failed_without_cancel", "target_state": "retained_log_and_status", "expected_result": "The resolver output and durable detailed failure message remain on disk."},
+        {"source_state": "cancelled_while_running", "target_state": "retained_log_and_status", "expected_result": "All output received before interruption and the cancellation marker remain on disk."}
+      ],
+      "test_node_ids": ["tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I018",
+      "source_function_id": "F448",
+      "target_function_id": "F449",
+      "description": "The packaged update-check result determines whether the download/apply flow becomes available.",
+      "source_states": ["newer_with_asset", "newer_without_host_asset", "up_to_date", "check_error"],
+      "target_states": ["next_update_action"],
+      "cases": [
+        {"source_state": "newer_with_asset", "target_state": "next_update_action", "expected_result": "The button becomes Download update and retains the selected asset."},
+        {"source_state": "newer_without_host_asset", "target_state": "next_update_action", "expected_result": "No download is offered and the missing host build is explained."},
+        {"source_state": "up_to_date", "target_state": "next_update_action", "expected_result": "The check action remains available and reports current status."},
+        {"source_state": "check_error", "target_state": "next_update_action", "expected_result": "The check action becomes retryable and displays the failure."}
+      ],
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_packaged_update_check_real_button_result_matrix",
+        "tests/test_diagnostics_acceptance.py::test_packaged_update_real_button_download_apply_retry_matrix"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I019",
+      "source_function_id": "F449",
+      "target_function_id": "F451",
+      "description": "Each download/apply outcome changes update status and whether the verified package remains retryable.",
+      "source_states": ["download_failed", "download_succeeded", "apply_cancelled", "apply_failed", "apply_started"],
+      "target_states": ["progress_and_retry_state"],
+      "cases": [
+        {"source_state": "download_failed", "target_state": "progress_and_retry_state", "expected_result": "The error is visible and Download update is enabled for retry."},
+        {"source_state": "download_succeeded", "target_state": "progress_and_retry_state", "expected_result": "The verified path is retained and Apply update becomes available."},
+        {"source_state": "apply_cancelled", "target_state": "progress_and_retry_state", "expected_result": "The verified path and Apply update action remain available."},
+        {"source_state": "apply_failed", "target_state": "progress_and_retry_state", "expected_result": "The helper error is visible and Apply update remains retryable."},
+        {"source_state": "apply_started", "target_state": "progress_and_retry_state", "expected_result": "Applying is shown, the action disables, and app exit is scheduled."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_packaged_update_real_button_download_apply_retry_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I020",
+      "source_function_id": "F450",
+      "target_function_id": "F451",
+      "description": "The origin/main pull result determines the final repo-update status and retry state.",
+      "source_states": ["fast_forwarded", "already_current", "pull_error"],
+      "target_states": ["repo_status_and_action"],
+      "cases": [
+        {"source_state": "fast_forwarded", "target_state": "repo_status_and_action", "expected_result": "Settings requests a restart and restores Pull latest."},
+        {"source_state": "already_current", "target_state": "repo_status_and_action", "expected_result": "Settings reports up to date and restores Pull latest."},
+        {"source_state": "pull_error", "target_state": "repo_status_and_action", "expected_result": "Settings displays the origin error and restores Pull latest for retry."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_repo_update_real_button_result_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I021",
+      "source_function_id": "F452",
+      "target_function_id": "F453",
+      "description": "Successful crash ZIP creation determines the exact artifact revealed to the user.",
+      "source_states": ["zip_created"],
+      "target_states": ["reveal_created_artifact"],
+      "cases": [
+        {"source_state": "zip_created", "target_state": "reveal_created_artifact", "expected_result": "Explorer/Finder receives the same existing ZIP that Settings names."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I022",
+      "source_function_id": "F454",
+      "target_function_id": "F455",
+      "description": "The crash bundle's exclusion policy determines what the user can inspect before sharing.",
+      "source_states": ["chats", "memory", "settings_and_environment", "keychain"],
+      "target_states": ["reviewable_zip"],
+      "cases": [
+        {"source_state": "chats", "target_state": "reviewable_zip", "expected_result": "No chat sentinel appears in any archive member."},
+        {"source_state": "memory", "target_state": "reviewable_zip", "expected_result": "No memory sentinel appears in any archive member."},
+        {"source_state": "settings_and_environment", "target_state": "reviewable_zip", "expected_result": "No settings or environment sentinel appears in any archive member."},
+        {"source_state": "keychain", "target_state": "reviewable_zip", "expected_result": "No keychain sentinel appears and secret storage is never read."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I023",
+      "source_function_id": "F456",
+      "target_function_id": "F457",
+      "description": "Recorded runtime events populate and continue streaming into an open Runtime Status window.",
+      "source_states": ["backlog_before_open", "new_event_while_open", "window_closed"],
+      "target_states": ["runtime_status_event_tree"],
+      "cases": [
+        {"source_state": "backlog_before_open", "target_state": "runtime_status_event_tree", "expected_result": "The existing error and collapsed details appear when the tray action opens the window."},
+        {"source_state": "new_event_while_open", "target_state": "runtime_status_event_tree", "expected_result": "The warning streams into the existing tree and Copy all output."},
+        {"source_state": "window_closed", "target_state": "runtime_status_event_tree", "expected_result": "Closing disables the live publisher so no dead window is targeted."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_tray_runtime_status_real_supervisor_to_window_workflow"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I024",
+      "source_function_id": "F459",
+      "target_function_id": "F460",
+      "description": "The user's exact-plan decision determines whether any Wisp-owned target is removed.",
+      "source_states": ["release_rejected", "release_confirmed", "source_confirmed"],
+      "target_states": ["isolated_target_removal"],
+      "cases": [
+        {"source_state": "release_rejected", "target_state": "isolated_target_removal", "expected_result": "No helper starts and all planned targets remain."},
+        {"source_state": "release_confirmed", "target_state": "isolated_target_removal", "expected_result": "Only the displayed packaged-app, data, optional-package, and model targets are removed."},
+        {"source_state": "source_confirmed", "target_state": "isolated_target_removal", "expected_result": "Only the displayed source-checkout, data, optional-package, and model targets are removed."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_settings_uninstall_exact_plan_and_isolated_self_removing_helper_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I025",
+      "source_function_id": "F461",
+      "target_function_id": "F462",
+      "description": "Packaged versus source ownership changes the literal target list carried by the self-removing native helper.",
+      "source_states": ["packaged_install", "source_checkout"],
+      "target_states": ["wait_delete_self_remove_helper"],
+      "cases": [
+        {"source_state": "packaged_install", "target_state": "wait_delete_self_remove_helper", "expected_result": "The helper carries the packaged root and never a source checkout."},
+        {"source_state": "source_checkout", "target_state": "wait_delete_self_remove_helper", "expected_result": "The helper carries the explicitly confirmed source root and source-deletion warning."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_settings_uninstall_exact_plan_and_isolated_self_removing_helper_matrix"],
+      "status": "accepted"
     }
   ]
 }

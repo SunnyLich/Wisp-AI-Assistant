@@ -2,10 +2,34 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 from scripts import pytest_temp_cleanup
+
+
+def test_child_process_recognizes_live_parent_pid():
+    """The Windows handle check must not truncate a live 64-bit process handle."""
+
+    root = Path(__file__).resolve().parents[1]
+    code = (
+        "from scripts.pytest_temp_cleanup import _process_is_running; "
+        f"print(_process_is_running({os.getpid()}))"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "True"
 
 
 def _config(root: Path, basetemp: Path | str | None) -> SimpleNamespace:

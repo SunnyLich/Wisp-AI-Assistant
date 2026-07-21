@@ -1,6 +1,6 @@
 # Runtime Workflow Test Plan
 
-Snapshot: 2026-07-20
+Snapshot: 2026-07-21
 
 ## Source documents
 
@@ -28,12 +28,12 @@ The workflow manifest must preserve traceability back to the earlier inventory:
 
 Current honest status:
 
-- **51 / 472** functions are accepted through a production entry point with a successful observable result.
+- **72 / 472** functions are accepted through a production entry point with a successful observable result.
 - **2 / 472** are reviewed as component-only: useful lower-level evidence, but not a full user entry chain.
-- **111 / 472** have a name-matched candidate test that still needs code-path audit.
-- **308 / 472** are untested at the real-entry acceptance level.
-- **35 / 472** have completed dependency audits.
-- **15** declared A -> B interaction matrices are accepted, including the complete 4-mode x 5-tool local-file matrix, the 2 x 2 bubble scroll/snap matrix, the 6-language x 8-Settings-page matrix, and all eight Reset Page scopes.
+- **105 / 472** have a name-matched candidate test that still needs code-path audit.
+- **293 / 472** are untested at the real-entry acceptance level.
+- **56 / 472** have completed dependency audits.
+- **25** declared A -> B interaction matrices are accepted, including the complete 4-mode x 5-tool local-file matrix, the 2 x 2 bubble scroll/snap matrix, the 6-language x 8-Settings-page matrix, all eight Reset Page scopes, every optional-installer terminal outcome, and all packaged/repo updater results.
 
 The acceptance validator refuses to infer success coverage from section similarity, failure injection, or a shared internal helper. `tests/workflows/feature_interactions.json` separately records the behaviorally distinct state combinations for features that affect other features.
 
@@ -49,6 +49,9 @@ The first foundation slice is merged into the existing workflow system:
 - Settings appearance acceptance now runs real Save clicks through real config reload and the production UI-host callback into already-running icon and bubble widgets. Four compound appearance profiles cover every scroll x snap boolean state, low/high geometry and timing, all color roles, and successful use of the bubble after live apply.
 - App-language acceptance saves every supported UI language and navigates all eight Settings pages after each translator change (48 cases). Assistant-language acceptance saves every offered state and verifies the exact prompt used by the runtime.
 - Remaining Settings actions now exercise the real built-in-profile QAction, setup-check report, Settings-to-onboarding entry, every page-scoped reset, and the isolated full-reset path for settings, keychain entries, and OAuth sessions.
+- Optional-installer acceptance now launches real child processes and drives success, resolver-failure, and cancellation outcomes through the visible Cancel, Copy log, Open log folder, Restart, and Close controls while verifying retained artifacts.
+- About/diagnostics acceptance now covers installed-version display, every packaged-update check result, download/apply retry and cancellation, every repo-pull result, actual bounded/redacted crash ZIP contents, and the tray-to-supervisor-to-live-Runtime-Status window.
+- Uninstall acceptance now builds both packaged and source plans with production safety validation, verifies every exact confirmation target, and executes the native self-removing helpers only against isolated temporary Wisp app/data/model trees.
 - `tests/workflows/manifest.json` contains all **472 / 472** machine-readable trace/candidate mappings, validated by `tests/test_workflow_manifest.py` against exact inventory text, all **3,296 / 3,296** failure references, and real pytest node IDs. This is not positive feature acceptance coverage.
 - `scripts/generate_workflow_manifest.py` reproducibly expands the inventory using curated test-family pools while preserving hand-verified records. It labels records as `verified`, `direct`, or broader `section` mappings so mapping completeness is not confused with direct workflow maturity.
 - The master runner loads every manifest-referenced file dynamically, and pytest automatically applies the `workflow` marker and runtime collector to every mapped node.

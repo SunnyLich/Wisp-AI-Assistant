@@ -5324,188 +5324,269 @@
     {
       "function_id": "F440",
       "function": "Watch live output and elapsed time while an optional component installs.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "OptionalInstallDialog auto-start timer -> real QProcess child -> merged output/elapsed widgets",
+      "test_node_ids": [
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"
+      ],
+      "success_assertions": [
+        "Success, resolver failure, and user-cancelled processes all stream a real package chunk while still running, update elapsed time, and mirror output to disk."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The three terminal outcomes use the production child-process and Qt signal path rather than calling output handlers directly."
     },
     {
       "function_id": "F441",
       "function": "Cancel a running optional installer.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Cancel button -> OptionalInstallDialog.cancel -> real QProcess terminate -> finished handler",
       "test_node_ids": [
-        "tests/test_optional_deps.py::test_optional_tts_installer_ensures_pip_before_running_install"
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Clicking Cancel while the real installer is active terminates it, records a nonzero terminal result, disables Cancel, and displays the cancelled state."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I016",
+        "I017"
+      ],
+      "audit_note": "The same test compares cancellation with natural success and failure terminal branches."
     },
     {
       "function_id": "F442",
       "function": "Copy the installer log.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Copy log button -> QApplication clipboard",
+      "test_node_ids": [
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"
+      ],
+      "success_assertions": [
+        "After success, failure, and cancellation, clicking Copy log places the exact complete visible installer log on the real Qt clipboard."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "All terminal outcomes prove the control remains usable and copies retained rather than synthetic text."
     },
     {
       "function_id": "F443",
       "function": "Open the installer log folder.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Open log folder button -> QDesktopServices local-file URL boundary",
+      "test_node_ids": [
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"
+      ],
+      "success_assertions": [
+        "After every terminal outcome, clicking Open log folder sends the exact retained-log directory to the operating-system URL boundary."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Only the external desktop launch is captured; button routing, folder construction, and QUrl conversion are production code."
     },
     {
       "function_id": "F444",
       "function": "Close the installer after it finishes.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Terminal finished handler -> enabled Close button -> QDialog close event",
+      "test_node_ids": [
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"
+      ],
+      "success_assertions": [
+        "Close is disabled while each installer runs, enabled after success/failure/cancellation, and a real click hides the dialog."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The outcome matrix proves the same invariant across every terminal branch."
     },
     {
       "function_id": "F445",
       "function": "Restart Wisp immediately when an installed component requires restart.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Successful staged status restart_apply -> visible Restart app now button -> QApplication restart boundary",
+      "test_node_ids": [
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"
+      ],
+      "success_assertions": [
+        "Restart is offered and routed only for successful restart-required installs, never after failure or cancellation."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I016"
+      ],
+      "audit_note": "The process-wide quit boundary is recorded so the test can continue; visibility and click routing are real."
     },
     {
       "function_id": "F446",
       "function": "Retain a log/status file for failed or interrupted optional installs.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Failure/cancellation finished handler -> durable status and mirrored log files",
+      "test_node_ids": [
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"
+      ],
+      "success_assertions": [
+        "A resolver failure retains its durable detailed status and output, while cancellation retains the streamed output and cancellation marker."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I017"
+      ],
+      "audit_note": "Both failure classes named by the inventory are exercised with a real subprocess."
     },
     {
       "function_id": "F447",
       "function": "Show the installed Wisp version.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings About page construction -> core.updater.current_version -> Current version label",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_packaged_update_check_real_button_result_matrix"
+      ],
+      "success_assertions": [
+        "The About page displays the installed version before any update action and keeps it visible through every check result."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The packaged result matrix re-creates the full Settings dialog for each check state."
     },
     {
       "function_id": "F448",
       "function": "Check GitHub Releases for a newer packaged build.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "About Check for updates button -> background update worker -> GitHub-release result state",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_packaged_update_check_real_button_result_matrix"
+      ],
+      "success_assertions": [
+        "Available asset, newer version without a host asset, up-to-date, and service-error results each produce the correct status, button, and retry state."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I018"
+      ],
+      "audit_note": "The network result is deterministic; the real Settings thread, Qt signal carrier, progress UI, and result state machine run unchanged."
     },
     {
       "function_id": "F449",
       "function": "Download and apply a packaged update through the update flow.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "About update button check -> download/retry -> confirmation -> apply/retry -> app-exit boundary",
       "test_node_ids": [
-        "tests/test_updater.py::test_download_update_verifies_sha256"
+        "tests/test_diagnostics_acceptance.py::test_packaged_update_real_button_download_apply_retry_matrix"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "A selected packaged release survives download failure, retries to a verified file, survives apply cancellation and helper failure, then reaches Applying and schedules app exit."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I018",
+        "I019"
+      ],
+      "audit_note": "Only release hosting and the detached apply helper are captured external boundaries; every visible state transition uses the production button."
     },
     {
       "function_id": "F450",
       "function": "Pull the latest `origin/main` for a supported source checkout.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Source-checkout About Pull latest button -> background apply_repo_update -> Settings result",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_repo_update_real_button_result_matrix"
+      ],
+      "success_assertions": [
+        "Updated, already-current, and origin-error results all show pulling progress then return to an enabled Pull latest action with the exact result."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I020"
+      ],
+      "audit_note": "The repository remote is a deterministic boundary; checkout-mode selection, worker threading, and UI reporting are real."
     },
     {
       "function_id": "F451",
       "function": "Report update progress and errors.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Updater check/download/apply/repo worker phases -> About status label and action state",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_packaged_update_check_real_button_result_matrix",
+        "tests/test_diagnostics_acceptance.py::test_packaged_update_real_button_download_apply_retry_matrix",
+        "tests/test_diagnostics_acceptance.py::test_repo_update_real_button_result_matrix"
+      ],
+      "success_assertions": [
+        "Checking, downloading, applying, and pulling progress are visible while active; every error returns an appropriate retry action without losing valid state."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I019",
+        "I020"
+      ],
+      "audit_note": "Covers every phase that changes the shared update status/button pair."
     },
     {
       "function_id": "F452",
       "function": "Create a bounded, redacted crash-report ZIP.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "About Create crash report button -> core.crash_report.create_crash_report -> ZIP on disk",
       "test_node_ids": [
-        "tests/test_crash_report.py::test_crash_report_bounds_each_log_tail"
+        "tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The actual Settings action creates a ZIP whose oversized log is limited to its final 512 KiB and whose log text has emails, API keys, and local paths redacted."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I021"
+      ],
+      "audit_note": "The produced archive is opened and inspected rather than accepting a mocked path."
     },
     {
       "function_id": "F453",
       "function": "Reveal the created crash report in Explorer/Finder.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Successful crash-report creation -> core.system.file_browser.reveal_path",
       "test_node_ids": [
-        "tests/test_crash_report.py::test_crash_report_bounds_each_log_tail"
+        "tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The file-browser boundary receives the exact newly created ZIP and Settings displays its filename."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I021"
+      ],
+      "audit_note": "Only Explorer/Finder launch is captured; report identity and success routing are real."
     },
     {
       "function_id": "F454",
       "function": "Exclude chats, memory, settings, environment files, and keychain files from the crash bundle.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Crash-report candidate-log collector and fixed metadata writer",
       "test_node_ids": [
-        "tests/test_crash_report.py::test_settings_crash_report_action_creates_and_reveals_bundle"
+        "tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Chat, memory, settings/environment, and keychain sentinels are absent from every archive member and the action never reads settings or secret storage."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I022"
+      ],
+      "audit_note": "The test creates every excluded category beside eligible logs before clicking the production action."
     },
     {
       "function_id": "F455",
       "function": "Review the crash ZIP before sharing it.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Successful crash-report action -> review-before-sharing confirmation message and user-openable ZIP",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip"
+      ],
+      "success_assertions": [
+        "Settings identifies the exact saved archive and explicitly tells the user to review the ZIP; the same ZIP is successfully opened and audited by the test."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I022"
+      ],
+      "audit_note": "Review is a user decision, so acceptance proves the archive and review surface exist and agree."
     },
     {
       "function_id": "F456",
@@ -5526,15 +5607,19 @@
     {
       "function_id": "F457",
       "function": "Show runtime status for supported worker-host configurations.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Tray Runtime Status QAction -> UI-host event -> FlowController -> UI-host dialog and live publisher",
       "test_node_ids": [
-        "tests/runtime/test_flows_runtime_log.py::test_open_runtime_status_sends_worker_rows_and_events"
+        "tests/test_diagnostics_acceptance.py::test_tray_runtime_status_real_supervisor_to_window_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Native, UI, brain, and audio running/stopped configurations render with PIDs; backlog and live events appear; refresh, copy, open-log-folder, and close controls all work."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I023"
+      ],
+      "audit_note": "The production tray signal, supervisor handlers, runtime log, UI dispatch, and Qt window are linked in one process while only the folder launch is captured."
     },
     {
       "function_id": "F458",
@@ -5555,46 +5640,70 @@
     {
       "function_id": "F459",
       "function": "Confirm the exact uninstall plan before removal.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings About Uninstall Wisp button -> run_uninstall_dialog -> exact-target critical confirmation",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_settings_uninstall_exact_plan_and_isolated_self_removing_helper_matrix"
+      ],
+      "success_assertions": [
+        "Release and source confirmations enumerate every exact target; No removes nothing, while Yes proceeds only with the displayed plan."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I024"
+      ],
+      "audit_note": "Plans are built by the production safety planner entirely under pytest temporary roots."
     },
     {
       "function_id": "F460",
       "function": "Uninstall the app, its data, settings, chats, memory, add-ons, tools, logs, updates, optional packages, and Wisp-owned local AI assets.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Confirmed uninstall plan -> rendered native helper -> isolated app/data/model target deletion",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_settings_uninstall_exact_plan_and_isolated_self_removing_helper_matrix"
+      ],
+      "success_assertions": [
+        "Confirmed release and source helpers remove temporary Wisp app trees, settings/chats/memory/add-ons/tools/logs/updates/optional-package data roots, and Wisp model cache targets; cancellation removes none."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I024"
+      ],
+      "audit_note": "The native helper scripts really execute, but every target is an isolated fake Wisp installation below tmp_path."
     },
     {
       "function_id": "F461",
       "function": "Remove a source checkout only when that checkout is explicitly included in the confirmed uninstall plan.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "build_uninstall_plan frozen/source branch -> explicit confirmation -> native helper target list",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_settings_uninstall_exact_plan_and_isolated_self_removing_helper_matrix"
+      ],
+      "success_assertions": [
+        "The release plan excludes the source checkout; the source plan names and warns about its checkout, and deletes it only after that exact plan is confirmed."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I025"
+      ],
+      "audit_note": "Both build kinds run through the same production Settings button and confirmation."
     },
     {
       "function_id": "F462",
       "function": "Run the uninstaller as a detached self-removing process after Wisp closes.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Confirmed plan -> core.uninstaller.launch_uninstaller -> native wait/delete/self-remove helper",
+      "test_node_ids": [
+        "tests/test_diagnostics_acceptance.py::test_settings_uninstall_exact_plan_and_isolated_self_removing_helper_matrix"
+      ],
+      "success_assertions": [
+        "Packaged and source helpers wait for the supplied Wisp PID, delete their literal plan targets, remove their own script, and schedule Wisp exit after launch."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I025"
+      ],
+      "audit_note": "Credential deletion and detached-process creation are deterministic boundaries; rendered helpers execute synchronously for proof and clean up isolated targets."
     },
     {
       "function_id": "F463",
