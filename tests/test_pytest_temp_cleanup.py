@@ -86,7 +86,7 @@ def test_pytest_configure_preserves_caller_basetemp(tmp_path):
 
 
 def test_pytest_unconfigure_removes_only_current_owned_basetemp(tmp_path, monkeypatch):
-    """One process cleans its own directory without touching sibling runs."""
+    """One process cleans its own directory without touching shared run state."""
 
     monkeypatch.delenv(pytest_temp_cleanup.KEEP_TEMP_ENV, raising=False)
     current = tmp_path / ".tmp_pytest" / "current"
@@ -99,7 +99,21 @@ def test_pytest_unconfigure_removes_only_current_owned_basetemp(tmp_path, monkey
     pytest_temp_cleanup.pytest_unconfigure(_config(tmp_path, current))
 
     assert not current.exists()
+    assert (tmp_path / ".tmp_pytest").is_dir()
     assert (sibling / "result.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_pytest_unconfigure_keeps_empty_shared_parent_for_concurrent_runs(tmp_path, monkeypatch):
+    """A finishing process cannot remove the parent another process is entering."""
+
+    monkeypatch.delenv(pytest_temp_cleanup.KEEP_TEMP_ENV, raising=False)
+    current = tmp_path / ".tmp_pytest" / "current"
+    current.mkdir(parents=True)
+
+    pytest_temp_cleanup.pytest_unconfigure(_config(tmp_path, current))
+
+    assert not current.exists()
+    assert (tmp_path / ".tmp_pytest").is_dir()
 
 
 def test_pytest_unconfigure_preserves_temp_when_requested(tmp_path, monkeypatch):

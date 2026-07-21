@@ -182,21 +182,21 @@ def test_query_forwards_tool_policy(record_ctx, monkeypatch):
     }
 
 
-def test_query_uses_planned_chunking_when_enabled_and_eligible(record_ctx, monkeypatch):
+@pytest.mark.parametrize("chunk_count", [2, 3, 4])
+def test_query_uses_planned_chunking_when_enabled_and_eligible(record_ctx, monkeypatch, chunk_count):
     """Verify eligible query streams planned visible chunks as one final reply."""
     from core.llm_clients import client as llm_client
 
     monkeypatch.setattr(handlers, "_offline_brain", lambda: False)
     monkeypatch.setattr(config, "PLANNED_CHUNKING", True, raising=False)
-    monkeypatch.setattr(config, "PLANNED_CHUNKING_CHUNKS", 3, raising=False)
+    monkeypatch.setattr(config, "PLANNED_CHUNKING_CHUNKS", chunk_count, raising=False)
     monkeypatch.setattr(config, "PLANNED_CHUNKING_MIN_PROMPT_CHARS", 0, raising=False)
     planned_calls: list[dict] = []
 
     def fake_planned(*args, **kwargs):
         planned_calls.append({"args": args, "kwargs": kwargs})
-        yield "First part."
-        yield " Second part."
-        yield " Final part."
+        for index in range(chunk_count):
+            yield ("" if index == 0 else " ") + f"Part {index + 1}."
 
     monkeypatch.setattr(llm_client, "stream_planned_chunk_response", fake_planned)
     monkeypatch.setattr(
@@ -212,10 +212,10 @@ def test_query_uses_planned_chunking_when_enabled_and_eligible(record_ctx, monke
         memory_enabled=False,
     )
 
-    assert result["text"] == "First part. Second part. Final part."
+    assert result["text"] == " ".join(f"Part {index + 1}." for index in range(chunk_count))
     assert _chunks(events) == [result["text"]]
     assert planned_calls
-    assert planned_calls[0]["kwargs"]["chunks"] == 3
+    assert planned_calls[0]["kwargs"]["chunks"] == chunk_count
     assert [data for event, data in events if event == "reply.done"] == [{"text": result["text"]}]
 
 
@@ -241,6 +241,35 @@ def test_query_uses_normal_stream_when_planned_chunking_is_disabled(record_ctx, 
 
     assert _chunks(events) == ["normal answer"]
     assert result["text"] == "normal answer"
+
+
+@pytest.mark.parametrize("enabled", [False, True], ids=["disabled", "enabled"])
+@pytest.mark.parametrize(
+    ("relation", "threshold_delta"),
+    [("below", 1), ("at", 0), ("above", -1)],
+)
+def test_planned_chunking_enable_by_prompt_threshold_matrix(monkeypatch, enabled, relation, threshold_delta):
+    """The feature flag and every prompt/threshold boundary choose the planned path exactly."""
+    prompt = "0123456789"
+    monkeypatch.setattr(config, "PLANNED_CHUNKING", enabled, raising=False)
+    monkeypatch.setattr(
+        config,
+        "PLANNED_CHUNKING_MIN_PROMPT_CHARS",
+        len(prompt) + threshold_delta,
+        raising=False,
+    )
+    built = types.SimpleNamespace(user_message=prompt, ambient_ctx="", screenshot_b64=None)
+
+    selected = handlers._planned_chunking_query_enabled(
+        built,
+        use_tools=False,
+        allow_screenshot_tool=False,
+        screenshot_tool_b64=None,
+        history=None,
+        file_access_mode="off",
+    )
+
+    assert selected is (enabled and relation != "below")
 
 
 @pytest.mark.parametrize(

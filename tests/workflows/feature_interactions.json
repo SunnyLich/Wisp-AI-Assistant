@@ -1399,6 +1399,179 @@
       ],
       "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history", "tests/test_unified_chat_harness.py::ChatToolLoopTypesTests::test_anthropic_chat_uses_unified_tool_loop"],
       "status": "accepted"
+    },
+    {
+      "interaction_id": "I078",
+      "source_function_id": "F181",
+      "target_function_id": "F182",
+      "description": "The planned-reply toggle and exact prompt-length boundary jointly choose planned or normal streaming.",
+      "source_states": ["disabled", "enabled"],
+      "target_states": ["below_minimum", "at_minimum", "above_minimum"],
+      "cases": [
+        {"source_state": "disabled", "target_state": "below_minimum", "expected_result": "Normal streaming is used."},
+        {"source_state": "disabled", "target_state": "at_minimum", "expected_result": "Normal streaming is used."},
+        {"source_state": "disabled", "target_state": "above_minimum", "expected_result": "Normal streaming is used."},
+        {"source_state": "enabled", "target_state": "below_minimum", "expected_result": "Normal streaming is used because the threshold is not met."},
+        {"source_state": "enabled", "target_state": "at_minimum", "expected_result": "Planned streaming is selected at the inclusive boundary."},
+        {"source_state": "enabled", "target_state": "above_minimum", "expected_result": "Planned streaming is selected."}
+      ],
+      "test_node_ids": ["runtime/brain/tests/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix", "runtime/brain/tests/test_handler_query.py::test_query_uses_normal_stream_when_planned_chunking_is_disabled"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I079",
+      "source_function_id": "F182",
+      "target_function_id": "F181",
+      "description": "The selected visible-part count controls the eligible planned answer stream.",
+      "source_states": ["two_parts", "three_parts", "four_parts"],
+      "target_states": ["eligible_planned_query"],
+      "cases": [
+        {"source_state": "two_parts", "target_state": "eligible_planned_query", "expected_result": "The planner receives 2 and the final reply contains two ordered parts."},
+        {"source_state": "three_parts", "target_state": "eligible_planned_query", "expected_result": "The planner receives 3 and the final reply contains three ordered parts."},
+        {"source_state": "four_parts", "target_state": "eligible_planned_query", "expected_result": "The planner receives 4 and the final reply contains four ordered parts."}
+      ],
+      "test_node_ids": ["runtime/brain/tests/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I080",
+      "source_function_id": "F183",
+      "target_function_id": "F147",
+      "description": "Chat reasoning effort changes supported Responses requests but must not leak to incompatible routes.",
+      "source_states": ["provider_default", "minimal", "low", "medium", "high"],
+      "target_states": ["openai_supported", "chatgpt_supported", "responses_unsupported", "non_responses_provider"],
+      "cases": [
+        {"source_state": "provider_default", "target_state": "openai_supported", "expected_result": "No explicit reasoning field is sent."},
+        {"source_state": "provider_default", "target_state": "chatgpt_supported", "expected_result": "No explicit reasoning field is sent."},
+        {"source_state": "provider_default", "target_state": "responses_unsupported", "expected_result": "No explicit reasoning field is sent."},
+        {"source_state": "provider_default", "target_state": "non_responses_provider", "expected_result": "No Responses reasoning field is sent."},
+        {"source_state": "minimal", "target_state": "openai_supported", "expected_result": "reasoning.effort is minimal."},
+        {"source_state": "minimal", "target_state": "chatgpt_supported", "expected_result": "reasoning.effort is minimal."},
+        {"source_state": "minimal", "target_state": "responses_unsupported", "expected_result": "The known-unsupported reasoning field is omitted."},
+        {"source_state": "minimal", "target_state": "non_responses_provider", "expected_result": "The Responses-only field is omitted."},
+        {"source_state": "low", "target_state": "openai_supported", "expected_result": "reasoning.effort is low."},
+        {"source_state": "low", "target_state": "chatgpt_supported", "expected_result": "reasoning.effort is low."},
+        {"source_state": "low", "target_state": "responses_unsupported", "expected_result": "The known-unsupported reasoning field is omitted."},
+        {"source_state": "low", "target_state": "non_responses_provider", "expected_result": "The Responses-only field is omitted."},
+        {"source_state": "medium", "target_state": "openai_supported", "expected_result": "reasoning.effort is medium."},
+        {"source_state": "medium", "target_state": "chatgpt_supported", "expected_result": "reasoning.effort is medium."},
+        {"source_state": "medium", "target_state": "responses_unsupported", "expected_result": "The known-unsupported reasoning field is omitted."},
+        {"source_state": "medium", "target_state": "non_responses_provider", "expected_result": "The Responses-only field is omitted."},
+        {"source_state": "high", "target_state": "openai_supported", "expected_result": "reasoning.effort is high."},
+        {"source_state": "high", "target_state": "chatgpt_supported", "expected_result": "reasoning.effort is high."},
+        {"source_state": "high", "target_state": "responses_unsupported", "expected_result": "The known-unsupported reasoning field is omitted."},
+        {"source_state": "high", "target_state": "non_responses_provider", "expected_result": "The Responses-only field is omitted."}
+      ],
+      "test_node_ids": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_every_chat_reasoning_effort_by_route_capability_matrix", "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_responses_chat_requests_configured_reasoning_effort"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I081",
+      "source_function_id": "F184",
+      "target_function_id": "F144",
+      "description": "Auto-elaborate configuration and the latest conversation state determine whether opening Chat sends an automatic follow-up.",
+      "source_states": ["disabled", "enabled"],
+      "target_states": ["short_assistant", "long_assistant", "user_last", "already_used", "force_new"],
+      "cases": [
+        {"source_state": "disabled", "target_state": "short_assistant", "expected_result": "Chat opens without sending."},
+        {"source_state": "disabled", "target_state": "long_assistant", "expected_result": "Chat opens without sending."},
+        {"source_state": "disabled", "target_state": "user_last", "expected_result": "Chat opens without sending."},
+        {"source_state": "disabled", "target_state": "already_used", "expected_result": "Chat opens without sending."},
+        {"source_state": "disabled", "target_state": "force_new", "expected_result": "A new empty chat opens without sending."},
+        {"source_state": "enabled", "target_state": "short_assistant", "expected_result": "The configured follow-up is sent once into the existing conversation."},
+        {"source_state": "enabled", "target_state": "long_assistant", "expected_result": "The long answer is left unchanged."},
+        {"source_state": "enabled", "target_state": "user_last", "expected_result": "A conversation awaiting an answer is not auto-submitted."},
+        {"source_state": "enabled", "target_state": "already_used", "expected_result": "The same answer is not elaborated twice."},
+        {"source_state": "enabled", "target_state": "force_new", "expected_result": "Starting a new conversation does not elaborate the prior one."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I082",
+      "source_function_id": "F185",
+      "target_function_id": "F184",
+      "description": "The saved elaborate prompt controls the exact automatic follow-up text.",
+      "source_states": ["localized_default", "custom"],
+      "target_states": ["eligible_short_answer"],
+      "cases": [
+        {"source_state": "localized_default", "target_state": "eligible_short_answer", "expected_result": "The localized built-in prompt reaches Chat send exactly."},
+        {"source_state": "custom", "target_state": "eligible_short_answer", "expected_result": "The custom prompt reaches Chat send exactly and is not replaced."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send", "tests/test_config_env.py::ConfigEnvTests::test_assistant_language_preserves_custom_chat_elaborate_prompt"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I083",
+      "source_function_id": "F186",
+      "target_function_ids": ["F187", "F188"],
+      "description": "Each external provider namespace independently contributes imported, updated, and unchanged pull results.",
+      "source_states": ["codex", "claude"],
+      "target_states": ["imported", "updated", "unchanged"],
+      "cases": [
+        {"source_state": "codex", "target_state": "imported", "expected_result": "A new ChatGPT row is created in the Codex namespace."},
+        {"source_state": "codex", "target_state": "updated", "expected_result": "Only the matching Codex row updates in place."},
+        {"source_state": "codex", "target_state": "unchanged", "expected_result": "The unchanged Codex row is counted without persistence."},
+        {"source_state": "claude", "target_state": "imported", "expected_result": "A new Claude row is created in the Claude namespace."},
+        {"source_state": "claude", "target_state": "updated", "expected_result": "Only the matching Claude row updates in place."},
+        {"source_state": "claude", "target_state": "unchanged", "expected_result": "The unchanged Claude row is counted without persistence."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I084",
+      "source_function_id": "F192",
+      "target_function_id": "F193",
+      "description": "Provider format and confirmation determine both transcript mutation and backup creation.",
+      "source_states": ["codex_declined", "codex_confirmed", "claude_declined", "claude_confirmed"],
+      "target_states": ["source_mutation", "backup"],
+      "cases": [
+        {"source_state": "codex_declined", "target_state": "source_mutation", "expected_result": "The Codex source bytes remain unchanged."},
+        {"source_state": "codex_declined", "target_state": "backup", "expected_result": "No backup is created."},
+        {"source_state": "codex_confirmed", "target_state": "source_mutation", "expected_result": "Pending Wisp turns append in Codex format."},
+        {"source_state": "codex_confirmed", "target_state": "backup", "expected_result": "A full backup exists before the append."},
+        {"source_state": "claude_declined", "target_state": "source_mutation", "expected_result": "The Claude source bytes remain unchanged."},
+        {"source_state": "claude_declined", "target_state": "backup", "expected_result": "No backup is created."},
+        {"source_state": "claude_confirmed", "target_state": "source_mutation", "expected_result": "Pending Wisp turns append with a valid Claude parent chain."},
+        {"source_state": "claude_confirmed", "target_state": "backup", "expected_result": "A full backup exists before the append."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_external_push_provider_by_confirmation_matrix", "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I085",
+      "source_function_ids": ["F194", "F195"],
+      "target_function_id": "F188",
+      "description": "Export provider and confirmation determine whether a new linked provider namespace is created.",
+      "source_states": ["codex_declined", "codex_confirmed", "claude_declined", "claude_confirmed"],
+      "target_states": ["export_result"],
+      "cases": [
+        {"source_state": "codex_declined", "target_state": "export_result", "expected_result": "No Codex file or link is created."},
+        {"source_state": "codex_confirmed", "target_state": "export_result", "expected_result": "One new parseable Codex session and link are created."},
+        {"source_state": "claude_declined", "target_state": "export_result", "expected_result": "No Claude file or link is created."},
+        {"source_state": "claude_confirmed", "target_state": "export_result", "expected_result": "One new parseable Claude session and link are created."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_external_export_provider_by_confirmation_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I086",
+      "source_function_ids": ["F189", "F190"],
+      "target_function_id": "F191",
+      "description": "Execution provider and conversation owner jointly determine Wisp history replay versus external-session resume.",
+      "source_states": ["wisp", "codex", "claude"],
+      "target_states": ["wisp_owned", "agent_owned"],
+      "cases": [
+        {"source_state": "wisp", "target_state": "wisp_owned", "expected_result": "The Wisp engine receives the local conversation."},
+        {"source_state": "wisp", "target_state": "agent_owned", "expected_result": "Wisp mode still uses the Wisp engine because no external agent is selected."},
+        {"source_state": "codex", "target_state": "wisp_owned", "expected_result": "ChatGPT receives full Wisp history without resuming and its link is cleared."},
+        {"source_state": "codex", "target_state": "agent_owned", "expected_result": "ChatGPT resumes its saved session with only the new turn."},
+        {"source_state": "claude", "target_state": "wisp_owned", "expected_result": "Claude receives full Wisp history without resuming and its link is cleared."},
+        {"source_state": "claude", "target_state": "agent_owned", "expected_result": "Claude resumes its saved session with only the new turn."}
+      ],
+      "test_node_ids": ["runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix", "tests/test_settings_dialog_controls.py::test_app_settings_starts_with_conversation_harness_selector"],
+      "status": "accepted"
     }
   ]
 }

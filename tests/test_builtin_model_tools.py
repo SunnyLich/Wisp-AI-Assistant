@@ -984,6 +984,40 @@ class BuiltinModelToolsTests(unittest.TestCase):
         finally:
             config.CHAT_REASONING_EFFORT = old_effort
 
+    def test_every_chat_reasoning_effort_by_route_capability_matrix(self):
+        """Every Settings effort is included only on supported Responses routes."""
+        old_effort = getattr(config, "CHAT_REASONING_EFFORT", "")
+        efforts = ("", "minimal", "low", "medium", "high")
+        routes = (
+            ("openai_supported", "openai", False),
+            ("chatgpt_supported", "chatgpt", False),
+            ("responses_unsupported", "openai", True),
+            ("non_responses_provider", "anthropic", False),
+        )
+        try:
+            for effort in efforts:
+                for route_name, provider, unsupported in routes:
+                    with self.subTest(effort=effort or "provider_default", route=route_name):
+                        config.CHAT_REASONING_EFFORT = effort
+                        llm._route_capabilities.clear()
+                        if unsupported:
+                            llm._get_route_capabilities(provider, "matrix-model").unsupported_parameters.add(
+                                "reasoning"
+                            )
+                        request = llm._with_responses_reasoning(
+                            {"model": "matrix-model", "input": "hello"},
+                            provider=provider,
+                            model="matrix-model",
+                        )
+                        should_include = bool(effort) and provider in {"openai", "chatgpt"} and not unsupported
+                        if should_include:
+                            self.assertEqual(request["reasoning"], {"effort": effort})
+                        else:
+                            self.assertNotIn("reasoning", request)
+        finally:
+            config.CHAT_REASONING_EFFORT = old_effort
+            llm._route_capabilities.clear()
+
     def test_chatgpt_stream_required_error_wording_is_detected(self):
         """Verify ChatGPT stream-required wording is treated as recoverable."""
         exc = Exception("stream isn't true")

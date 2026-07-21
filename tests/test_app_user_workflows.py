@@ -1225,6 +1225,479 @@ def test_chat_tool_loop_trace_toggle_reaches_visible_history(qapp, monkeypatch):
         qapp.processEvents()
 
 
+@pytest.mark.parametrize("enabled", [False, True], ids=["disabled", "enabled"])
+@pytest.mark.parametrize("opening_state", ["short", "long", "user_last", "already_used", "force_new"])
+def test_chat_auto_elaborate_opening_matrix(qapp, monkeypatch, enabled, opening_state):
+    """Opening real Chat auto-elaborates only one eligible short assistant reply."""
+    import hashlib
+
+    from PySide6.QtTest import QTest
+
+    import config
+    from core.conversation_store import store as conversation_store
+    from runtime.workers.ui_host import QtProtocolHost
+
+    answer = "A short answer." if opening_state != "long" else ("L" * 501)
+    role = "user" if opening_state == "user_last" else "assistant"
+    latest = {"id": "latest-answer", "role": role, "content": answer, "created_at": "now"}
+    conversation = {"id": "auto-elaborate", "messages": [latest], "context_policy": {}}
+    if opening_state == "already_used":
+        marker_source = "|".join((latest["id"], latest["created_at"], answer))
+        conversation["auto_elaborated_message"] = hashlib.sha256(
+            marker_source.encode("utf-8")
+        ).hexdigest()
+        conversation["auto_elaborate_turn_count"] = 1
+
+    monkeypatch.setattr(config, "CHAT_AUTO_ELABORATE", enabled, raising=False)
+    monkeypatch.setattr(config, "CHAT_ELABORATE_PROMPT", "Please expand this answer.", raising=False)
+    monkeypatch.setattr(
+        conversation_store,
+        "load_projects",
+        lambda: [{"id": "general", "name": "General"}],
+    )
+    sends = []
+    persisted = []
+
+    def send_fn(messages, **_kwargs):
+        sends.append([dict(item) for item in messages])
+        yield "A substantially expanded answer."
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._chat = None
+    host._all_conversations = [conversation]
+    host._active_conversation_idx = 0
+    host._active_project_id = "general"
+    host._watchdog = None
+    host._make_chat_send_fn = lambda: send_fn
+    host._persist_conversations = lambda: persisted.append(True)
+    host._set_active_project = lambda project_id: setattr(host, "_active_project_id", project_id)
+    host._create_project = lambda name: {"id": name.lower(), "name": name}
+    host._set_active_conversation = lambda idx: setattr(host, "_active_conversation_idx", idx)
+    host._chat_context_capture_requested = lambda _payload: None
+    host.emit = lambda *_args, **_kwargs: None
+
+    chat = None
+    try:
+        result = host._show_chat(force_new=opening_state == "force_new")
+        chat = host._chat
+        assert result == {"shown": True, "reused": False}
+        QTest.qWait(250)
+        qapp.processEvents()
+        expected_send = enabled and opening_state == "short"
+        assert bool(sends) is expected_send
+        if expected_send:
+            assert sends[0][-1]["content"] == "Please expand this answer."
+            assert conversation["auto_elaborated_message"]
+            assert persisted
+            chat.hide()
+            host._show_chat(force_new=False)
+            QTest.qWait(150)
+            qapp.processEvents()
+            assert len(sends) == 1
+    finally:
+        if chat is not None:
+            chat.close()
+            chat.deleteLater()
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    ["Please elaborate on that.", "Explain the tradeoffs and give one concrete example."],
+    ids=["localized_default", "custom"],
+)
+def test_chat_auto_elaborate_prompt_reaches_real_send(qapp, monkeypatch, prompt):
+    """Default and custom elaborate prompts reach the same real Chat send path exactly."""
+    from PySide6.QtTest import QTest
+
+    import config
+    from core.conversation_store import store as conversation_store
+    from runtime.workers.ui_host import QtProtocolHost
+
+    conversation = {
+        "id": "prompt-choice",
+        "messages": [{"id": "answer", "role": "assistant", "content": "Short."}],
+        "context_policy": {},
+    }
+    monkeypatch.setattr(config, "CHAT_AUTO_ELABORATE", True, raising=False)
+    monkeypatch.setattr(config, "CHAT_ELABORATE_PROMPT", prompt, raising=False)
+    monkeypatch.setattr(
+        conversation_store,
+        "load_projects",
+        lambda: [{"id": "general", "name": "General"}],
+    )
+    sends = []
+
+    def send_fn(messages, **_kwargs):
+        sends.append([dict(item) for item in messages])
+        yield "Expanded."
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._chat = None
+    host._all_conversations = [conversation]
+    host._active_conversation_idx = 0
+    host._active_project_id = "general"
+    host._watchdog = None
+    host._make_chat_send_fn = lambda: send_fn
+    host._persist_conversations = lambda: None
+    host._set_active_project = lambda value: setattr(host, "_active_project_id", value)
+    host._create_project = lambda name: {"id": name.lower(), "name": name}
+    host._set_active_conversation = lambda idx: setattr(host, "_active_conversation_idx", idx)
+    host._chat_context_capture_requested = lambda _payload: None
+    host.emit = lambda *_args, **_kwargs: None
+    chat = None
+    try:
+        host._show_chat(force_new=False)
+        chat = host._chat
+        QTest.qWait(250)
+        qapp.processEvents()
+        assert sends and sends[0][-1]["content"] == prompt
+    finally:
+        if chat is not None:
+            chat.close()
+            chat.deleteLater()
+        qapp.processEvents()
+
+
+def test_chat_external_transcript_pull_button_and_count_matrix(qapp, monkeypatch, tmp_path):
+    """The real Pull button imports/updates both namespaces and reports every count state."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMessageBox
+
+    from core.conversation_store import external_sync
+    from ui import chat_window as chat_window_mod
+    from ui.chat_window import ChatWindow
+
+    codex_home = tmp_path / ".codex"
+    claude_home = tmp_path / ".claude"
+    codex_path = codex_home / "sessions" / "shared.jsonl"
+    claude_path = claude_home / "projects" / "repo" / "shared.jsonl"
+
+    def write_jsonl(path, records):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(json.dumps(row) for row in records) + "\n", encoding="utf-8")
+
+    codex_records = [
+        {"type": "session_meta", "payload": {"id": "shared", "cwd": str(tmp_path)}},
+        {"type": "event_msg", "payload": {"type": "user_message", "message": "Codex question"}},
+    ]
+    claude_records = [
+        {
+            "type": "user",
+            "uuid": "u1",
+            "parentUuid": None,
+            "sessionId": "shared",
+            "cwd": str(tmp_path),
+            "message": {"role": "user", "content": "Claude question"},
+        }
+    ]
+    write_jsonl(codex_path, codex_records)
+    write_jsonl(claude_path, claude_records)
+    monkeypatch.setattr(
+        chat_window_mod,
+        "discover_external_conversations",
+        lambda: external_sync.discover_external_conversations(
+            codex_home=codex_home,
+            claude_home=claude_home,
+        ),
+    )
+    information = []
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda _parent, title, text: information.append((title, text)),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, title, text: warnings.append((title, text)),
+    )
+    conversations = []
+    persisted = []
+    window = ChatWindow(
+        conversations,
+        lambda _messages, **_kwargs: iter(()),
+        persist_fn=lambda: persisted.append(True),
+    )
+
+    def pull_and_wait():
+        previous = len(information)
+        QTest.mouseClick(window._external_sync_btn, Qt.MouseButton.LeftButton)
+        _pump_until(
+            qapp,
+            lambda: window._external_sync_btn.isEnabled() and len(information) == previous + 1,
+        )
+        return information[-1][1]
+
+    try:
+        window.show()
+        qapp.processEvents()
+        first = pull_and_wait()
+        assert "Imported 2, updated 0, unchanged 0." in first
+        assert {
+            (conv["external_source"]["provider"], conv["external_source"]["session_id"])
+            for conv in conversations
+        } == {("codex", "shared"), ("claude", "shared")}
+        assert len({conv["id"] for conv in conversations}) == 2
+        assert any("ChatGPT" in button.toolTip() for _idx, button in window._sidebar_btns)
+        assert any("Claude" in button.toolTip() for _idx, button in window._sidebar_btns)
+
+        codex_records.append(
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "agent_message",
+                    "phase": "final_answer",
+                    "message": "Codex answer",
+                },
+            }
+        )
+        write_jsonl(codex_path, codex_records)
+        second = pull_and_wait()
+        assert "Imported 0, updated 1, unchanged 1." in second
+        codex_conv = next(
+            conv for conv in conversations if conv["external_source"]["provider"] == "codex"
+        )
+        assert [message["content"] for message in codex_conv["messages"]] == [
+            "Codex question", "Codex answer"
+        ]
+
+        claude_records.append(
+            {
+                "type": "assistant",
+                "uuid": "a1",
+                "parentUuid": "u1",
+                "sessionId": "shared",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Claude answer"}]},
+            }
+        )
+        write_jsonl(claude_path, claude_records)
+        third = pull_and_wait()
+        assert "Imported 0, updated 1, unchanged 1." in third
+        claude_conv = next(
+            conv for conv in conversations if conv["external_source"]["provider"] == "claude"
+        )
+        assert [message["content"] for message in claude_conv["messages"]] == [
+            "Claude question", "Claude answer"
+        ]
+
+        fourth = pull_and_wait()
+        assert "Imported 0, updated 0, unchanged 2." in fourth
+        assert len(persisted) == 3
+        assert warnings == []
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("confirmed", [False, True], ids=["declined", "confirmed"])
+def test_chat_real_external_push_provider_by_confirmation_matrix(
+    qapp, monkeypatch, tmp_path, provider, confirmed
+):
+    """Both provider transcript formats are changed only after the real confirmation action."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMenu, QMessageBox, QPushButton
+
+    from core.conversation_store import external_sync
+    from ui import chat_window as chat_window_mod
+    from ui.chat_window import ChatWindow
+
+    root = tmp_path / f".{provider}"
+    if provider == "codex":
+        path = root / "sessions" / "push.jsonl"
+        records = [
+            {"type": "session_meta", "payload": {"id": "push", "cwd": str(tmp_path)}},
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "Original"}},
+        ]
+        parser = external_sync.parse_codex_session
+    else:
+        path = root / "projects" / "repo" / "push.jsonl"
+        records = [{
+            "type": "user",
+            "uuid": "u1",
+            "parentUuid": None,
+            "sessionId": "push",
+            "cwd": str(tmp_path),
+            "message": {"role": "user", "content": "Original"},
+        }]
+        parser = external_sync.parse_claude_session
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(row) for row in records) + "\n", encoding="utf-8")
+    conversation = parser(path)
+    assert conversation is not None
+    conversation["messages"].append({"role": "assistant", "content": "Wisp follow-up"})
+    original = path.read_bytes()
+    backups = tmp_path / "backups"
+    menus = []
+    information = []
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _pos: menus.append(menu))
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: (
+            QMessageBox.StandardButton.Yes if confirmed else QMessageBox.StandardButton.No
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda _parent, title, text: information.append((title, text)),
+    )
+    monkeypatch.setattr(
+        chat_window_mod,
+        "push_conversation_to_source",
+        lambda conv: external_sync.push_conversation_to_source(
+            conv,
+            backup_dir=backups,
+            source_root=root,
+        ),
+    )
+    persisted = []
+    window = ChatWindow(
+        [conversation],
+        lambda _messages, **_kwargs: iter(()),
+        persist_fn=lambda: persisted.append(True),
+    )
+    try:
+        window.show()
+        qapp.processEvents()
+        title_button = window._sidebar_btns[0][1]
+        row = title_button.parentWidget()
+        menu_button = next(
+            button for button in row.findChildren(QPushButton) if button is not title_button
+        )
+        QTest.mouseClick(menu_button, Qt.MouseButton.LeftButton)
+        provider_label = "ChatGPT" if provider == "codex" else "Claude"
+        push_action = next(
+            action for action in menus[-1].actions()
+            if action.text() == f"Push Wisp turns to {provider_label}"
+        )
+        assert push_action.isEnabled()
+        push_action.trigger()
+        qapp.processEvents()
+
+        if confirmed:
+            reparsed = parser(path)
+            assert reparsed is not None
+            assert [message["content"] for message in reparsed["messages"]] == [
+                "Original", "Wisp follow-up"
+            ]
+            assert list(backups.glob("*"))
+            assert persisted == [True]
+            assert information
+        else:
+            assert path.read_bytes() == original
+            assert not backups.exists()
+            assert persisted == []
+            assert information == []
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("confirmed", [False, True], ids=["declined", "confirmed"])
+def test_chat_real_external_export_provider_by_confirmation_matrix(
+    qapp, monkeypatch, tmp_path, provider, confirmed
+):
+    """Both export choices create a new transcript only after their real confirmation action."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMenu, QMessageBox, QPushButton
+
+    from core.conversation_store import external_sync
+    from ui import chat_window as chat_window_mod
+    from ui.chat_window import ChatWindow
+
+    codex_home = tmp_path / ".codex"
+    claude_home = tmp_path / ".claude"
+    conversation = {
+        "id": "wisp-native",
+        "messages": [
+            {"role": "user", "content": "Original question"},
+            {"role": "assistant", "content": "Wisp answer"},
+        ],
+        "context_policy": {},
+    }
+    menus = []
+    submenus = []
+    information = []
+    monkeypatch.setattr(QMenu, "popup", lambda menu, _pos: menus.append(menu))
+    original_add_menu = QMenu.addMenu
+
+    def capture_submenu(menu, *args):
+        submenu = original_add_menu(menu, *args)
+        submenus.append(submenu)
+        return submenu
+
+    monkeypatch.setattr(QMenu, "addMenu", capture_submenu)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: (
+            QMessageBox.StandardButton.Yes if confirmed else QMessageBox.StandardButton.No
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda _parent, title, text: information.append((title, text)),
+    )
+    monkeypatch.setattr(
+        chat_window_mod,
+        "export_conversation_as_new_session",
+        lambda conv, provider_key, cwd: external_sync.export_conversation_as_new_session(
+            conv,
+            provider_key,
+            cwd=cwd,
+            codex_home=codex_home,
+            claude_home=claude_home,
+        ),
+    )
+    persisted = []
+    window = ChatWindow(
+        [conversation],
+        lambda _messages, **_kwargs: iter(()),
+        persist_fn=lambda: persisted.append(True),
+    )
+    try:
+        window.show()
+        qapp.processEvents()
+        title_button = window._sidebar_btns[0][1]
+        row = title_button.parentWidget()
+        menu_button = next(
+            button for button in row.findChildren(QPushButton) if button is not title_button
+        )
+        QTest.mouseClick(menu_button, Qt.MouseButton.LeftButton)
+        export_menu = next(menu for menu in submenus if menu.title() == "Export as new conversation")
+        label = "ChatGPT" if provider == "codex" else "Claude"
+        next(action for action in export_menu.actions() if action.text() == label).trigger()
+        qapp.processEvents()
+
+        root = codex_home / "sessions" if provider == "codex" else claude_home / "projects"
+        exported = list(root.rglob("*.jsonl")) if root.exists() else []
+        if confirmed:
+            assert len(exported) == 1
+            assert conversation["external_source"]["provider"] == provider
+            assert persisted == [True]
+            assert information
+        else:
+            assert exported == []
+            assert "external_source" not in conversation
+            assert persisted == []
+            assert information == []
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
 def test_chat_attachment_extracts_persists_and_reopens(qapp, isolated_app_state: IsolatedAppState):
     """An actual attached file reaches the model and survives a fresh UI instance."""
     from core.conversation_store import store as conversation_store
@@ -1353,7 +1826,7 @@ def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, mo
     from core.llm_clients import client as llm_client
     from ui.settings_panel import dialog as settings_dialog
     from ui.settings_panel import env as settings_env
-    from ui.settings_panel.dialog import SettingsDialog, _get
+    from ui.settings_panel.dialog import SettingsDialog, _get, _set
     from ui.shared import theme
 
     env_path = tmp_path / "settings-contract.env"
@@ -1386,6 +1859,11 @@ def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, mo
             dialog._fields[key].setText(f"ctrl+shift+alt+{index}")
 
         dialog._fields["BUBBLE_WIDTH"].setText("612")
+        dialog._fields["WISP_PLANNED_CHUNKING"].setChecked(True)
+        dialog._fields["WISP_PLANNED_CHUNKING_CHUNKS"].setText("4")
+        dialog._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"].setText("120")
+        _set(dialog._fields["CHAT_REASONING_EFFORT"], "medium")
+        dialog._fields["CHAT_AUTO_ELABORATE"].setChecked(True)
         dialog._fields["CHAT_ELABORATE_PROMPT"].setText("Persisted through the real Apply button")
         qapp.processEvents()
         apply_button = dialog.findChild(QPushButton, "settingsApplyButton")
@@ -1396,13 +1874,31 @@ def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, mo
 
         saved = settings_env.read_settings_env()
         assert saved["BUBBLE_WIDTH"] == "612"
+        assert saved["WISP_PLANNED_CHUNKING"] == "True"
+        assert saved["WISP_PLANNED_CHUNKING_CHUNKS"] == "4"
+        assert saved["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"] == "120"
+        assert saved["CHAT_REASONING_EFFORT"] == "medium"
+        assert saved["CHAT_AUTO_ELABORATE"] == "True"
         assert saved["CHAT_ELABORATE_PROMPT"] == "Persisted through the real Apply button"
-        assert applied and {"BUBBLE_WIDTH", "CHAT_ELABORATE_PROMPT"} <= set(applied[-1]["changed_keys"])
+        assert applied and {
+            "BUBBLE_WIDTH",
+            "WISP_PLANNED_CHUNKING",
+            "WISP_PLANNED_CHUNKING_CHUNKS",
+            "WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS",
+            "CHAT_REASONING_EFFORT",
+            "CHAT_AUTO_ELABORATE",
+            "CHAT_ELABORATE_PROMPT",
+        } <= set(applied[-1]["changed_keys"])
         assert dialog.isVisible() is False or dialog.result() == 0
         assert not apply_button.isEnabled()
 
         reopened = SettingsDialog()
         assert _get(reopened._fields["BUBBLE_WIDTH"]) == "612"
+        assert reopened._fields["WISP_PLANNED_CHUNKING"].isChecked()
+        assert _get(reopened._fields["WISP_PLANNED_CHUNKING_CHUNKS"]) == "4"
+        assert _get(reopened._fields["WISP_PLANNED_CHUNKING_MIN_PROMPT_CHARS"]) == "120"
+        assert _get(reopened._fields["CHAT_REASONING_EFFORT"]) == "medium"
+        assert reopened._fields["CHAT_AUTO_ELABORATE"].isChecked()
         assert _get(reopened._fields["CHAT_ELABORATE_PROMPT"]) == "Persisted through the real Apply button"
     finally:
         dialog.close()

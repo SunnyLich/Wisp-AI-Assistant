@@ -199,7 +199,13 @@ def pytest_configure(config: object) -> None:
 
 
 def pytest_unconfigure(config: object) -> None:
-    """Delete this pytest process's owned basetemp after plugin teardown."""
+    """Delete this pytest process's owned basetemp after plugin teardown.
+
+    Keep the shared ``.tmp_pytest`` parent in place.  Removing that parent is
+    racy: a concurrent pytest process can observe it, then lose it immediately
+    before creating its own child directory.  The master workflow runner's
+    stale-temp pass removes the parent after it has checked all owned children.
+    """
 
     if _is_truthy(os.environ.get(KEEP_TEMP_ENV)):
         return
@@ -209,10 +215,3 @@ def pytest_unconfigure(config: object) -> None:
         return
 
     _remove_tree_with_retries(basetemp)
-
-    pytest_temp_root = (Path(config.rootpath).resolve() / ".tmp_pytest").resolve()
-    if basetemp.parent == pytest_temp_root:
-        try:
-            pytest_temp_root.rmdir()
-        except OSError:
-            pass

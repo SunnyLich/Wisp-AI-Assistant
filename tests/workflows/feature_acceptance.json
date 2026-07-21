@@ -3084,173 +3084,285 @@
     {
       "function_id": "F181",
       "function": "Split longer answers into planned chunks when enabled.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "LLM Advanced planned-chunking checkbox -> persisted config -> brain.query eligibility gate -> hidden plan/visible chunk stream",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens",
+        "runtime/brain/tests/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible",
+        "runtime/brain/tests/test_handler_query.py::test_query_uses_normal_stream_when_planned_chunking_is_disabled",
+        "tests/test_planned_chunking.py::test_planned_chunking_emits_visible_parts_from_hidden_plan"
+      ],
+      "success_assertions": [
+        "The visible setting persists; eligible enabled queries use a hidden plan and stable visible parts, while disabled queries retain the normal stream."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I078",
+        "I079"
+      ],
+      "audit_note": "Settings and brain/query/stream code are production; provider text is deterministic."
     },
     {
       "function_id": "F182",
       "function": "Set the number of planned chunks and the minimum prompt length.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "planned chunk-count/minimum fields -> settings persistence/config clamp -> brain.query planned selection",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens",
+        "runtime/brain/tests/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible",
+        "runtime/brain/tests/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix",
+        "tests/test_config_env.py::ConfigEnvTests::test_reload_parses_planned_chunking_flags"
+      ],
+      "success_assertions": [
+        "Counts 2/3/4 reach the planner, below/at/above threshold selects the correct path, and out-of-range persisted counts clamp to the documented range."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I078",
+        "I079"
+      ],
+      "audit_note": "All user-exposed count states and exact threshold boundaries are exercised."
     },
     {
       "function_id": "F183",
       "function": "Set chat reasoning effort.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "LLM Advanced reasoning-effort combo -> persisted CHAT_REASONING_EFFORT -> Responses request capability policy",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_every_chat_reasoning_effort_by_route_capability_matrix",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_responses_chat_requests_configured_reasoning_effort"
+      ],
+      "success_assertions": [
+        "Provider default/minimal/low/medium/high are included for supported OpenAI/ChatGPT Responses routes and omitted for unsupported or non-Responses routes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I080"
+      ],
+      "audit_note": "The outgoing provider call is deterministic; selection, serialization, and request construction are production."
     },
     {
       "function_id": "F184",
       "function": "Auto-elaborate the latest short answer when opening chat.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Auto-elaborate setting -> QtProtocolHost short-answer eligibility/reservation -> real ChatWindow automatic send",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens",
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
+      ],
+      "success_assertions": [
+        "Enabled sends once for a short latest assistant reply; disabled, long, user-last, already-used, and force-new states do not send, and reopening cannot loop on the generated expansion."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I081",
+        "I082"
+      ],
+      "audit_note": "The audit found and fixed the previously disconnected UI-host setting path."
     },
     {
       "function_id": "F185",
       "function": "Customize the auto-elaboration prompt.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "visible elaborate-prompt field -> settings persistence/localization -> automatic Chat send text",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens",
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send",
+        "tests/test_config_env.py::ConfigEnvTests::test_assistant_language_localizes_chat_elaborate_default_prompt",
+        "tests/test_config_env.py::ConfigEnvTests::test_assistant_language_preserves_custom_chat_elaborate_prompt"
+      ],
+      "success_assertions": [
+        "Both localized default and custom prompts reach the real send exactly; custom text persists while built-in text follows assistant language."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I082"
+      ],
+      "audit_note": "Settings and Chat send are real; model output is deterministic."
     },
     {
       "function_id": "F186",
       "function": "Pull local ChatGPT/Codex and Claude Code transcripts into Wisp.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Chat Pull ChatGPT + Claude button -> background local discovery/parsers -> conversation merge/sidebar rebuild",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix",
+        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only",
+        "tests/test_external_conversation_sync.py::test_parse_claude_follows_active_chain_and_ignores_tools"
+      ],
+      "success_assertions": [
+        "One real button imports and later updates valid Codex and Claude histories while filtering private/non-final/tool records."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I083"
+      ],
+      "audit_note": "Provider home folders are isolated; threading, parsing, merge, and UI refresh are production."
     },
     {
       "function_id": "F187",
       "function": "Report imported, updated, and unchanged transcript counts.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "external discovery/apply reports -> Chat information dialog",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
+      ],
+      "success_assertions": [
+        "The visible report distinguishes 2 imported, each provider updated while the other is unchanged, and both unchanged on a no-op pull."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I083"
+      ],
+      "audit_note": "All imported/updated/unchanged count outcomes are produced by real file changes."
     },
     {
       "function_id": "F188",
       "function": "Keep Wisp, ChatGPT, and Claude conversation namespaces distinct.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "provider plus external session identity -> Wisp conversation id/title/sidebar namespace",
       "test_node_ids": [
-        "tests/test_external_conversation_sync.py::test_export_wisp_native_conversation_as_new_claude_session"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix",
+        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Codex and Claude transcripts with the same external session id remain two distinct Wisp conversations with provider-prefixed rows and update only their own namespace."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I083",
+        "I086"
+      ],
+      "audit_note": "Uses deliberately colliding external session IDs to prove provider namespacing."
     },
     {
       "function_id": "F189",
       "function": "Continue a conversation using Wisp's own model engine.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Wisp execution selection -> brain.chat -> Wisp model stream with full local conversation",
+      "test_node_ids": [
+        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
+        "tests/test_settings_dialog_controls.py::test_app_settings_starts_with_conversation_harness_selector"
+      ],
+      "success_assertions": [
+        "Wisp mode uses the Wisp engine for both owner inputs and never invokes an external harness."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I086"
+      ],
+      "audit_note": "Model output is deterministic; Settings selector and brain route are production."
     },
     {
       "function_id": "F190",
       "function": "Continue a conversation using the selected ChatGPT/Codex or Claude agent.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "ChatGPT/Claude execution selection -> brain.chat -> selected harness start/resume",
+      "test_node_ids": [
+        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
+        "runtime/brain/tests/test_handler_chat.py::test_chat_harness_streams_thought_and_reply_and_returns_session"
+      ],
+      "success_assertions": [
+        "Both ChatGPT and Claude invoke only their selected harness, stream the answer, and resume or clear session metadata according to ownership."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I086"
+      ],
+      "audit_note": "External CLIs are deterministic; harness routing/session contracts are production."
     },
     {
       "function_id": "F191",
       "function": "Choose whether continued messages belong to Wisp or the selected agent.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "App conversation-owner combo -> brain.chat conversation_owner -> history transfer/resume metadata",
+      "test_node_ids": [
+        "tests/test_settings_dialog_controls.py::test_app_settings_starts_with_conversation_harness_selector",
+        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
+        "runtime/brain/tests/test_handler_chat.py::test_wisp_owned_harness_turn_sends_full_history_without_resuming"
+      ],
+      "success_assertions": [
+        "For both agents, Wisp ownership sends full history and clears provider linkage; agent ownership resumes the provider session and avoids replaying prior turns."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I086"
+      ],
+      "audit_note": "All provider by owner combinations are exercised."
     },
     {
       "function_id": "F192",
       "function": "Push new Wisp turns back into their source transcript after confirmation.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "external conversation options Push Wisp turns action -> confirmation -> provider-specific append/persist",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_chat_real_external_push_provider_by_confirmation_matrix",
+        "tests/test_external_conversation_sync.py::test_push_codex_turns_backs_up_and_round_trips",
+        "tests/test_external_conversation_sync.py::test_push_claude_turns_preserves_parent_chain"
+      ],
+      "success_assertions": [
+        "For Codex and Claude, decline leaves source untouched; confirm appends only pending Wisp turns and reparses to the complete history."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I084"
+      ],
+      "audit_note": "Real isolated JSONL files and actual menu actions are used."
     },
     {
       "function_id": "F193",
       "function": "Create a backup before editing an external transcript.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "confirmed external transcript push -> full copy2 backup -> append",
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_chat_real_external_push_provider_by_confirmation_matrix",
+        "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
+      ],
+      "success_assertions": [
+        "Each confirmed provider write creates a backup before mutation; decline creates none, and backup/locked-file failure preserves the original bytes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I084"
+      ],
+      "audit_note": "Backup and source files are real isolated files."
     },
     {
       "function_id": "F194",
       "function": "Export a Wisp conversation as a new ChatGPT conversation.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Wisp-native conversation options Export as new conversation > ChatGPT -> confirmation -> new Codex JSONL",
       "test_node_ids": [
-        "tests/test_external_conversation_sync.py::test_export_wisp_native_conversation_as_new_claude_session"
+        "tests/test_app_user_workflows.py::test_chat_real_external_export_provider_by_confirmation_matrix",
+        "tests/test_external_conversation_sync.py::test_export_wisp_native_conversation_as_new_codex_session"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Decline writes nothing; confirm creates one new parseable Codex session, links the Wisp conversation, and never overwrites an existing session."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I085"
+      ],
+      "audit_note": "Menu/submenu/confirmation and isolated transcript write are real."
     },
     {
       "function_id": "F195",
       "function": "Export a Wisp conversation as a new Claude conversation.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Wisp-native conversation options Export as new conversation > Claude -> confirmation -> new Claude JSONL",
       "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_chat_real_external_export_provider_by_confirmation_matrix",
         "tests/test_external_conversation_sync.py::test_export_wisp_native_conversation_as_new_claude_session"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Decline writes nothing; confirm creates one new parseable Claude session with title/history and links the Wisp conversation."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I085"
+      ],
+      "audit_note": "Menu/submenu/confirmation and isolated transcript write are real."
     },
     {
       "function_id": "F196",

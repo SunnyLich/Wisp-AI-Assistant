@@ -340,6 +340,61 @@ def test_wisp_owned_harness_turn_sends_full_history_without_resuming(record_ctx,
     }
 
 
+@pytest.mark.parametrize("provider", ["wisp", "codex", "claude"])
+@pytest.mark.parametrize("owner", ["wisp", "agent"])
+def test_chat_execution_provider_by_conversation_owner_matrix(
+    record_ctx, monkeypatch, provider, owner
+):
+    """Every execution provider/owner combination selects the correct continuation contract."""
+    import config
+    from core import harness_clients
+    from core.harness_clients.base import HarnessResult
+
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+    harness_calls = []
+
+    def fake_harness(selected_provider, prompt, **kwargs):
+        harness_calls.append((selected_provider, prompt, dict(kwargs)))
+        return HarnessResult(selected_provider, f"{selected_provider} answer", "new-session", "/repo")
+
+    monkeypatch.setattr(harness_clients, "run_harness", fake_harness)
+    monkeypatch.setattr(
+        handlers,
+        "_stream_chat_reply",
+        lambda *_args, **_kwargs: iter(["wisp answer"]),
+    )
+    events, ctx = record_ctx()
+    result = handlers.HANDLERS["brain.chat"](
+        ctx,
+        messages=[
+            {"role": "user", "content": "Earlier question"},
+            {"role": "assistant", "content": "Earlier answer"},
+            {"role": "user", "content": "Continue now"},
+        ],
+        memory_enabled=False,
+        harness_provider=provider,
+        conversation_owner=owner,
+        harness_session={"provider": provider, "session_id": "old-session", "cwd": "/repo"},
+    )
+
+    if provider == "wisp":
+        assert harness_calls == []
+        assert result["text"] == "wisp answer"
+        assert "harness" not in result
+    else:
+        assert len(harness_calls) == 1
+        selected_provider, prompt, kwargs = harness_calls[0]
+        assert selected_provider == provider
+        assert kwargs["session_id"] == ("old-session" if owner == "agent" else "")
+        assert ("Earlier question" in prompt) is (owner == "wisp")
+        assert "Continue now" in prompt
+        assert result["text"] == f"{provider} answer"
+        assert result["harness"]["conversation_owner"] == owner
+        assert result["harness"]["session_id"] == ("new-session" if owner == "agent" else "")
+        assert result["harness"]["clear_session"] is (owner == "wisp")
+    assert [data["text"] for event, data in events if event == "reply.done"] == [result["text"]]
+
+
 def test_changing_harness_workspace_starts_a_clean_provider_session(
     record_ctx,
     monkeypatch,

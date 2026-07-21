@@ -28,12 +28,11 @@ The workflow manifest must preserve traceability back to the earlier inventory:
 
 Current honest status:
 
-- **119 / 472** functions are accepted through a production entry point with a successful observable result.
-- **1 / 472** is reviewed as component-only: useful lower-level evidence, but not a full user entry chain.
-- **94 / 472** have a name-matched candidate test that still needs code-path audit.
-- **258 / 472** are untested at the real-entry acceptance level.
-- **103 / 472** have completed dependency audits.
-- **47** declared A -> B interaction matrices are accepted, including both general/rewrite action sets by assigned key and row click, the packaged/source launch-mode matrix, the 4-icon-state x 2-auto-hide matrix, icon-drag/provider-badge anchoring, all three autostart platforms in enabled/disabled states, the complete 4-mode x 5-tool local-file matrix, the 2 x 2 bubble scroll/snap matrix, the 6-language x 8-Settings-page matrix, all eight Reset Page scopes, every optional-installer terminal outcome, all packaged/repo updater results, every native selection/hotkey platform route, the complete 4-paste-method x 2-clipboard-policy matrix, and all nine TTS x STT onboarding choices.
+- **261 / 472** functions are accepted through a production entry point with a successful observable result.
+- **50 / 472** have a name-matched candidate test that still needs code-path audit.
+- **161 / 472** are untested at the real-entry acceptance level.
+- **246 / 472** have completed dependency audits.
+- **86 / 86** declared A -> B interaction matrices are accepted. These include the earlier launcher, Settings, appearance, platform, local-file, onboarding, and provider matrices, plus planned chunking thresholds/counts, reasoning-effort route support, automatic elaboration eligibility and prompt selection, external transcript pull counts/namespaces, provider push/backup and export confirmation, and Wisp-versus-agent conversation ownership.
 
 The acceptance validator refuses to infer success coverage from section similarity, failure injection, or a shared internal helper. `tests/workflows/feature_interactions.json` separately records the behaviorally distinct state combinations for features that affect other features.
 

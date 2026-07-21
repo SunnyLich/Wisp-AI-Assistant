@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import itertools
 import json
@@ -34,6 +35,8 @@ from ui.agent.activity_i18n import (
 from ui.i18n import localize_widget_tree, t
 
 log = logging.getLogger("wisp.ui_host")
+
+_CHAT_AUTO_ELABORATE_MAX_CHARS = 500
 
 
 def _configure_linux_ui_platform(
@@ -4369,6 +4372,54 @@ class QtProtocolHost:
         except Exception:
             return False
 
+    def _chat_auto_elaborate_prompt(self, *, force_new: bool = False) -> str:
+        """Return and reserve the configured one-shot prompt for a short latest answer."""
+        import config
+
+        if force_new or not bool(getattr(config, "CHAT_AUTO_ELABORATE", False)):
+            return ""
+        if not self._all_conversations:
+            return ""
+        idx = self._active_conversation_idx
+        if not isinstance(idx, int) or not (0 <= idx < len(self._all_conversations)):
+            idx = len(self._all_conversations) - 1
+        conversation = self._all_conversations[idx]
+        messages = conversation.get("messages") or []
+        if not messages or not isinstance(messages[-1], dict):
+            return ""
+        reserved_count = conversation.get("auto_elaborate_turn_count")
+        if (
+            isinstance(reserved_count, int)
+            and reserved_count < len(messages) <= reserved_count + 2
+        ):
+            return ""
+        latest = messages[-1]
+        answer = str(latest.get("content") or "").strip()
+        if str(latest.get("role") or "").lower() != "assistant":
+            return ""
+        if not answer or len(answer) > _CHAT_AUTO_ELABORATE_MAX_CHARS:
+            return ""
+        marker_source = "|".join(
+            (
+                str(latest.get("id") or ""),
+                str(latest.get("created_at") or ""),
+                answer,
+            )
+        )
+        marker = hashlib.sha256(marker_source.encode("utf-8")).hexdigest()
+        if conversation.get("auto_elaborated_message") == marker:
+            return ""
+        prompt = str(getattr(config, "CHAT_ELABORATE_PROMPT", "") or "").strip()
+        if not prompt:
+            return ""
+        conversation["auto_elaborated_message"] = marker
+        conversation["auto_elaborate_turn_count"] = len(messages)
+        try:
+            self._persist_conversations()
+        except Exception as exc:  # opening Chat must survive a failed marker save
+            log.warning("Could not persist auto-elaborate marker: %s", exc)
+        return prompt
+
     def _show_chat(self, force_new: bool = False) -> dict[str, Any]:
         """Show chat."""
         from ui.chat_window import ChatWindow
@@ -4376,6 +4427,12 @@ class QtProtocolHost:
         if self._chat is not None:
             if force_new:
                 self._chat.start_new_conversation()
+            else:
+                auto_message = self._chat_auto_elaborate_prompt(force_new=False)
+                if auto_message:
+                    from PySide6.QtCore import QTimer
+
+                    QTimer.singleShot(0, lambda: self._chat and self._chat._send(auto_message))
             self._chat.show()
             self._chat.raise_()
             self._chat.activateWindow()
@@ -4390,6 +4447,7 @@ class QtProtocolHost:
         if watchdog is not None:
             watchdog.expect_slow(10.0)
         try:
+            auto_message = self._chat_auto_elaborate_prompt(force_new=force_new)
             self._chat = ChatWindow(
                 conversations=self._all_conversations,
                 send_fn=self._make_chat_send_fn(),
@@ -4403,6 +4461,7 @@ class QtProtocolHost:
                 on_select=self._set_active_conversation,
                 on_context_preview=lambda payload: self.emit("ui.chat.context_preview", payload),
                 on_context_capture=self._chat_context_capture_requested,
+                auto_message=auto_message or None,
             )
             self._chat.destroyed.connect(lambda: setattr(self, "_chat", None))
             self._chat.show()
