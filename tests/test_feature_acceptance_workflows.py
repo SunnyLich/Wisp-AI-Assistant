@@ -55,6 +55,12 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     theme_calls: list[bool] = []
     monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
     monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_real_save_api_keys_to_keychain_for_workflow",
+        SettingsDialog._save_api_keys_to_keychain,
+        raising=False,
+    )
     monkeypatch.setattr(SettingsDialog, "_save_api_keys_to_keychain", lambda _self: True)
     monkeypatch.setattr(SettingsDialog, "_capability_warnings_for_values", lambda _self, _values: ([], {}))
     monkeypatch.setattr(SettingsDialog, "_set_warning_markers", lambda _self, _warnings: None)
@@ -112,6 +118,12 @@ def live_runtime_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     original_process_env = dict(os.environ)
     monkeypatch.setattr(settings_dialog, "ENV_PATH", env_path)
     monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_real_save_api_keys_to_keychain_for_workflow",
+        SettingsDialog._save_api_keys_to_keychain,
+        raising=False,
+    )
     monkeypatch.setattr(SettingsDialog, "_save_api_keys_to_keychain", lambda _self: True)
     monkeypatch.setattr(SettingsDialog, "_capability_warnings_for_values", lambda _self, _values: ([], {}))
     monkeypatch.setattr(SettingsDialog, "_set_warning_markers", lambda _self, _warnings: None)
@@ -2520,6 +2532,340 @@ def test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compressio
         assert len([line for line in block.splitlines() if line.startswith("- ")]) == 2
     finally:
         manager.shutdown()
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
+def test_saved_privacy_modes_change_exact_model_bound_text_and_restore_the_reply(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Save Off/Built-in/Advanced and inspect the exact production model input."""
+
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core import privacy_model, secret_store
+    from core.privacy_redaction import SensitiveEntity
+    from runtime.brain.wisp_brain import handlers
+    from ui.settings_panel.dialog import SettingsDialog
+
+    monkeypatch.setattr(secret_store, "has_secret", lambda _name: False)
+    monkeypatch.setattr(secret_store, "migrate_env_secrets", lambda _env: [])
+    monkeypatch.setattr(privacy_model, "model_status", lambda: {
+        "valid": True,
+        "model_downloaded": True,
+        "runtime_ready": True,
+    })
+    advanced_calls = []
+
+    def advanced_detector(text: str, *, source: str = ""):
+        advanced_calls.append((text, source))
+        if "Alice" not in text:
+            return []
+        start = text.index("Alice")
+        return [SensitiveEntity("person", start, start + 5, "Alice", "[PERSON]", source)]
+
+    monkeypatch.setattr(privacy_model, "detect_with_model", advanced_detector)
+    model_inputs: list[str] = []
+
+    def provider_stream(messages, _memory_context, **_kwargs):
+        model_text = messages[-1]["content"]
+        model_inputs.append(model_text)
+        yield f"Provider received: {model_text}"
+
+    monkeypatch.setattr(handlers, "_stream_chat_reply", provider_stream)
+    driver = QtUserDriver(qapp, timeout=3.0)
+    dialog = SettingsDialog()
+    try:
+        dialog.show()
+        driver.pump()
+        _unique_shortcuts(dialog)
+        if dialog._fields["PRIVACY_REVIEW_BEFORE_SEND"].isChecked():
+            driver.click(dialog._fields["PRIVACY_REVIEW_BEFORE_SEND"])
+        apply_button = dialog.findChild(QPushButton, "settingsApplyButton")
+        message = "Contact Alice at alex@example.com"
+        expected = {
+            "off": message,
+            "builtin": "Contact Alice at [EMAIL_1]",
+            "advanced": "Contact [PERSON_1] at [EMAIL_1]",
+        }
+        reports = {}
+        for index, mode in enumerate(("off", "builtin", "advanced")):
+            driver.select_combo_data(dialog._fields["PRIVACY_MODE"], mode)
+            driver.click(apply_button)
+            assert config.PRIVACY_MODE == mode
+            assert config.TRUST_PRIVACY_MODE is (mode != "off")
+            assert config.PRIVACY_AI_ENABLED is (mode == "advanced")
+            events = []
+            ctx = handlers.StreamContext(
+                lambda event, data, req_id: events.append((event, data, req_id)),
+                f"privacy-mode-{index}",
+            )
+            result = handlers.brain_chat(
+                ctx,
+                messages=[{"role": "user", "content": message}],
+                memory_enabled=False,
+                privacy_session_id=f"privacy-mode-{index}",
+                harness_provider="wisp",
+            )
+            assert model_inputs[-1] == expected[mode]
+            assert result["text"] == f"Provider received: {message}"
+            reports[mode] = result.get("privacy_report", {})
+            assert any(event == "reply.done" for event, _data, _req_id in events)
+
+        assert reports["off"] == {}
+        assert reports["builtin"]["categories"] == {"email": 1}
+        assert reports["advanced"]["categories"] == {"person": 1, "email": 1}
+        assert reports["advanced"]["privacy_mode"] == "advanced"
+        assert advanced_calls
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
+def test_privacy_review_runtime_redacted_full_and_cancel_decisions_block_the_send(
+    monkeypatch,
+):
+    """Resolve the real blocking brain review for every user decision."""
+
+    import threading
+
+    import config
+    from core.privacy_gateway import PrivacyReviewCanceled
+    from runtime.brain.wisp_brain import handlers
+
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", True)
+    monkeypatch.setattr(config, "PRIVACY_AI_ENABLED", False)
+    monkeypatch.setattr(config, "PRIVACY_REVIEW_BEFORE_SEND", True)
+    model_inputs: list[tuple[str, str]] = []
+
+    def provider_stream(messages, _memory_context, **_kwargs):
+        model_inputs.append((_kwargs["ctx"].req_id, messages[-1]["content"]))
+        yield f"Provider reply for {messages[-1]['content']}"
+
+    monkeypatch.setattr(handlers, "_stream_chat_reply", provider_stream)
+    for decision in ("redacted", "full", "cancel"):
+        emitted = []
+        outcome = {}
+        ctx = handlers.StreamContext(
+            lambda event, data, req_id: emitted.append((event, data, req_id)),
+            f"review-{decision}",
+        )
+        email = f"{decision}@example.com"
+
+        def run_chat():
+            try:
+                outcome["result"] = handlers.brain_chat(
+                    ctx,
+                    messages=[{"role": "user", "content": f"Email {email}"}],
+                    memory_enabled=False,
+                    privacy_session_id=f"review-{decision}",
+                    harness_provider="wisp",
+                )
+            except Exception as exc:  # expected only for Cancel
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=run_chat, name=f"privacy-review-{decision}")
+        worker.start()
+        wait_until(
+            lambda: any(event == "privacy.review.request" for event, _data, _req_id in emitted),
+            timeout=3.0,
+            description=f"{decision} privacy review request",
+        )
+        request = next(data for event, data, _req_id in emitted if event == "privacy.review.request")
+        assert email not in request["scrubbed_preview"]
+        assert "[EMAIL_1]" in request["scrubbed_preview"]
+        response = handlers.brain_privacy_review_respond(
+            approval_id=request["approval_id"],
+            decision=decision,
+        )
+        assert response["decision"] == decision
+        worker.join(timeout=3.0)
+        assert not worker.is_alive()
+        sent = [text for req_id, text in model_inputs if req_id == ctx.req_id]
+        if decision == "cancel":
+            assert isinstance(outcome.get("error"), PrivacyReviewCanceled)
+            assert sent == []
+        else:
+            assert "error" not in outcome
+            assert sent == ([f"Email {email}"] if decision == "full" else ["Email [EMAIL_1]"])
+            assert outcome["result"]["privacy_report"]["decision"] == decision
+
+
+def test_visible_privacy_review_buttons_return_every_runtime_decision(qapp, monkeypatch):
+    """Click Send redacted, Send full message, and Cancel send on the real sheet."""
+
+    from PySide6.QtWidgets import QDialog, QPushButton
+
+    from runtime.workers.ui_host import QtProtocolHost
+
+    expected = {
+        "Send redacted": (True, "redacted"),
+        "Send full message": (True, "full"),
+        "Cancel send": (False, "cancel"),
+    }
+    for index, (label, (approved, decision)) in enumerate(expected.items()):
+        def choose(dialog, button_label=label):
+            button = next(item for item in dialog.findChildren(QPushButton) if item.text() == button_label)
+            button.click()
+            return dialog.result()
+
+        monkeypatch.setattr(QDialog, "exec", choose)
+        result = QtProtocolHost._privacy_review_request(
+            object(),
+            approval_id=f"privacy-ui-{index}",
+            items=[{
+                "category": "email",
+                "source": "prompt",
+                "preview": "al...om",
+                "replacement": "[EMAIL_1]",
+            }],
+            scrubbed_preview="Email [EMAIL_1]",
+            count=1,
+            ai_enabled=False,
+        )
+        assert result == {
+            "approval_id": f"privacy-ui-{index}",
+            "approved": approved,
+            "decision": decision,
+        }
+        qapp.processEvents()
+
+
+def test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+    tmp_path,
+):
+    """Click install, repair, and remove while keeping model/network boundaries local."""
+
+    from PySide6.QtCore import QObject, Signal
+    from PySide6.QtWidgets import QMessageBox
+
+    from core import privacy_model, secret_store
+    import ui.settings_panel.dialog as dialog_module
+    from ui.settings_panel.dialog import SettingsDialog
+
+    state = {"valid": False, "model_downloaded": False, "runtime_ready": False}
+    monkeypatch.setattr(privacy_model, "model_status", lambda: dict(state))
+    monkeypatch.setattr(secret_store, "has_secret", lambda _name: False)
+    monkeypatch.setattr(secret_store, "migrate_env_secrets", lambda _env: [])
+    monkeypatch.setattr(QMessageBox, "question", lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes)
+    installer_records = []
+
+    class FakeInstaller(QObject):
+        install_finished = Signal(int)
+
+        def __init__(self, **kwargs):
+            super().__init__()
+            self.kwargs = kwargs
+            self.shown = False
+            self.exit_code = 0
+            installer_records.append(self)
+
+        def show(self):
+            self.shown = True
+
+        def raise_(self):
+            pass
+
+        def activateWindow(self):
+            pass
+
+    monkeypatch.setattr(dialog_module, "OptionalInstallDialog", FakeInstaller)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_privacy_model_install_paths",
+        lambda _self: (tmp_path / "privacy.log", tmp_path / "privacy.status.json"),
+    )
+    driver = QtUserDriver(qapp, timeout=3.0)
+    dialog = SettingsDialog()
+    try:
+        dialog.show()
+        driver.pump()
+        driver.click(dialog._privacy_model_install_btn)
+        assert installer_records[-1].shown is True
+        assert installer_records[-1].kwargs["command"][1:3] == ["-m", "runtime.workers.privacy_model_installer"]
+        assert installer_records[-1].kwargs["status_path"] == tmp_path / "privacy.status.json"
+        assert installer_records[-1].kwargs["env"]["HF_HUB_DISABLE_TELEMETRY"] == "1"
+
+        state.update(model_downloaded=True, runtime_ready=False, valid=False)
+        dialog._refresh_privacy_model_status()
+        assert dialog._privacy_model_install_btn.text() == "Repair advanced privacy model"
+        driver.click(dialog._privacy_model_install_btn)
+        assert len(installer_records) == 2 and installer_records[-1].shown is True
+
+        state.update(model_downloaded=True, runtime_ready=True, valid=True)
+        dialog._refresh_privacy_model_status()
+        driver.select_combo_data(dialog._fields["PRIVACY_MODE"], "advanced")
+        removals = []
+
+        def remove_model():
+            removals.append(True)
+            state.update(model_downloaded=False, runtime_ready=False, valid=False)
+            return True
+
+        monkeypatch.setattr(privacy_model, "remove_model", remove_model)
+        assert dialog._privacy_model_remove_btn.isVisible()
+        driver.click(dialog._privacy_model_remove_btn)
+        assert removals == [True]
+        assert dialog._fields["PRIVACY_MODE"].currentData() == "builtin"
+        assert not dialog._privacy_model_remove_btn.isVisible()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
+def test_provider_secret_save_is_keychain_only_and_reopens_masked(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Type one provider key, Save, and reopen without plaintext persistence."""
+
+    from PySide6.QtWidgets import QPushButton
+
+    from core import secret_store
+    from ui.settings_panel.dialog import SettingsDialog
+
+    env_path, _settings_env = live_runtime_settings
+    stored = {}
+    monkeypatch.setattr(secret_store, "has_secret", lambda name: name in stored)
+    monkeypatch.setattr(secret_store, "set_secret", lambda name, value: stored.__setitem__(name, value))
+    monkeypatch.setattr(secret_store, "migrate_env_secrets", lambda _env: [])
+    driver = QtUserDriver(qapp, timeout=3.0)
+    dialog = SettingsDialog()
+    reopened = None
+    try:
+        dialog.show()
+        driver.pump()
+        dialog._save_api_keys_to_keychain = dialog._real_save_api_keys_to_keychain_for_workflow
+        _unique_shortcuts(dialog)
+        row = dialog._add_api_key_row("openai", alias="Private provider")
+        driver.replace_text(row["key"], "sk-local-keychain-only")
+        driver.click(dialog.findChild(QPushButton, "settingsApplyButton"))
+        assert stored == {"OPENAI_API_KEY": "sk-local-keychain-only"}
+        assert "sk-local-keychain-only" not in env_path.read_text(encoding="utf-8")
+        assert row["key"].text() == ""
+        assert row["key"].echoMode().name == "Password"
+        assert "stored" in row["key"].placeholderText().lower()
+
+        reopened = SettingsDialog()
+        saved_row = next(item for item in reopened._api_key_rows if item["provider"].currentData() == "openai")
+        assert saved_row["key"].text() == ""
+        assert saved_row["key"].echoMode().name == "Password"
+        assert "stored" in saved_row["key"].placeholderText().lower()
+        assert "sk-local-keychain-only" not in repr(reopened._env)
+    finally:
+        if reopened is not None:
+            reopened.close()
+            reopened.deleteLater()
         dialog.close()
         dialog.deleteLater()
         driver.pump()
