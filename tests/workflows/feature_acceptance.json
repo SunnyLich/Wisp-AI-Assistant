@@ -6790,438 +6790,685 @@
     {
       "function_id": "F379",
       "function": "Start an agent task from the tray menu.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Tray Start agent task QAction -> deferred open_agent_task_dialog -> visible AgentTaskDialog -> submitted AgentTaskSpec",
       "test_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_preview_localizes_nested_agent_spec"
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/runtime/test_flows.py::test_addon_and_agent_tray_events_route_through_supervisor",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_fake_llm_completes_in_one_turn"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The actual tray action opens the task window, visible Start Task emits the complete resolved spec, and that spec shape completes a real deterministic agent run."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I164",
+        "I166"
+      ],
+      "audit_note": "Qt tray/dialog and runner are real; model output is deterministic and filesystem scope is isolated."
     },
     {
       "function_id": "F380",
       "function": "Copy task settings from the last agent task.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Copy from Last Task button -> persisted/class last AgentTaskSpec -> every task field",
       "test_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "A submitted task is persisted, copied into a fresh visible dialog, and restores objective, context, scope, fallbacks, agents, and parallel settings."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I164"
+      ],
+      "audit_note": "Uses the production serializer/loader and visible copy button under a temporary run root."
     },
     {
       "function_id": "F381",
       "function": "Set the task title and objective.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible task Title and Objective editors -> AgentTaskDialog._collect_spec -> on_submit",
       "test_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_title_field_uses_extra_window_width"
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "The exact entered title and multi-line objective survive preview, validation, and submission."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Real Qt editors and production validation/collection run unchanged."
     },
     {
       "function_id": "F382",
       "function": "Copy relevant context from the current application.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Copy current app context button -> topmost non-Wisp window -> shared document/browser reader -> privacy redaction/budget -> AgentTaskSpec.required_context -> runner prompt",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_task_workflows.py::test_agent_current_app_context_uses_external_window_reader_and_budget",
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+      ],
+      "success_assertions": [
+        "The control excludes Wisp's PID, identifies the external title/application, reads its content with existing context adapters, redacts secrets/URLs, caps the result at 12,000 characters, appends rather than erases manual context, and the combined text reaches the real agent prompt."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I169"
+      ],
+      "audit_note": "OS window/document extraction is deterministic in the boundary test; visible button, exclusion, formatting, privacy, truncation, every context-composition state, spec, copy-last, and prompt use are production code."
     },
     {
       "function_id": "F383",
       "function": "Add required task context manually.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Context editor -> AgentTaskSpec.required_context -> persisted/copy-last spec",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+      ],
+      "success_assertions": [
+        "Manual-only, app-only, and combined context states remain distinct; manually entered text appears in preview, submitted spec, copied task, and runner prompt."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I169"
+      ],
+      "audit_note": "Real manual editing, append behavior, complete composition matrix, spec collection, persistence, and prompt use are covered."
     },
     {
       "function_id": "F384",
       "function": "Choose an agent provider/model and fallback models.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible primary provider/model and fallback add/remove controls -> AgentTaskSpec model route -> AgentTaskRunner",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_runner_resolves_agent_provider_and_model_route"
+      ],
+      "success_assertions": [
+        "Copy from app loads the configured primary and first fallback; another visible fallback row is added in order, and the runner resolves task/agent provider-model routing."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I164"
+      ],
+      "audit_note": "Qt controls and runner routing are real; provider responses are deterministic."
     },
     {
       "function_id": "F385",
       "function": "Choose the task scope folder.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Browse button -> QFileDialog selection -> resolve_scope_folder -> AgentTaskSpec.scope_folder",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_toolbox_create_patch_and_read_are_scoped_and_logged"
+      ],
+      "success_assertions": [
+        "The selected temporary folder is resolved into the submitted spec and all real workspace operations remain inside it."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I166"
+      ],
+      "audit_note": "Only chooser response is supplied; folder resolution and scoped operations are real."
     },
     {
       "function_id": "F386",
       "function": "Configure allowed and blocked file globs.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Allow globs/Block globs editors -> AgentTaskSpec -> ScopedWorkspace listing/read/write gates",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_runner.py::ScopedWorkspaceTests::test_blocked_globs_hide_and_reject_files"
+      ],
+      "success_assertions": [
+        "Comma-separated patterns become exact ordered lists and the runtime hides/rejects blocked files while permitting allowed files."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I166"
+      ],
+      "audit_note": "UI parsing and scoped production enforcement are paired."
     },
     {
       "function_id": "F387",
       "function": "Use the coordinator, builder, and reviewer defaults.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "AgentTaskDialog default preset -> Coordinator/Builder/Reviewer AgentRoleSpec list",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_localized_roles_keep_runner_permissions"
+      ],
+      "success_assertions": [
+        "A fresh dialog submits the three default roles in order and their canonical runner permissions remain distinct."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I165",
+        "I166"
+      ],
+      "audit_note": "Default UI state and real role capability mapping are covered."
     },
     {
       "function_id": "F388",
       "function": "Add or remove agents.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible communication-map Add Agent/Remove Agent buttons -> task agent list and dependent route cleanup",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
+      ],
+      "success_assertions": [
+        "Adding creates a fourth editable agent; removing it deletes the agent and every communication referencing it."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I165"
+      ],
+      "audit_note": "Uses actual buttons and live shared task-dialog state."
     },
     {
       "function_id": "F389",
       "function": "Customize each agent's name, role, model, and instructions.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible agent Name/Role/Provider/Model/Responsibility fields -> AgentRoleSpec",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_runner_resolves_agent_provider_and_model_route"
+      ],
+      "success_assertions": [
+        "A custom Test Model researcher preserves its exact provider, model, and instructions, and provider/model overrides resolve at runtime."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I164",
+        "I165"
+      ],
+      "audit_note": "Visible editor state is paired with production runner routing."
     },
     {
       "function_id": "F390",
       "function": "Start with a parallel read-only briefing.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible parallel read-only briefing checkbox -> AgentTaskSpec -> AgentTaskRunner briefing round",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_parallel_read_only_round_allows_messages_but_denies_writes"
+      ],
+      "success_assertions": [
+        "The checked value reaches the spec; the runtime runs agents concurrently with read/message tools while denying mutations."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I166"
+      ],
+      "audit_note": "UI configuration and real parallel runner behavior are both covered."
     },
     {
       "function_id": "F391",
       "function": "Run implementer agents in parallel with file leases.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible parallel execution/max-agent controls -> AgentTaskSpec -> parallel work round -> FileLeaseRegistry",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_runner.py::ParallelWorkRoundTests::test_disjoint_files_are_written_in_parallel",
+        "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
+      ],
+      "success_assertions": [
+        "Parallel execution and max two workers reach the spec; disjoint writes overlap, while competing same-file writes grant exactly one lease."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I166"
+      ],
+      "audit_note": "Uses production thread pool, scoped tools, and lease registry with isolated files."
     },
     {
       "function_id": "F392",
       "function": "Add or remove agent-to-agent communications.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Add Communication/Remove Communication buttons -> task communication list",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
+      ],
+      "success_assertions": [
+        "A new exchange is appended and the selected exchange is removed through the actual map controls."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I165"
+      ],
+      "audit_note": "The live map and task-dialog lists remain synchronized."
     },
     {
       "function_id": "F393",
       "function": "Configure sender, recipient, trigger, and message for a communication.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible From/To/Phase/Trigger/Message fields -> AgentCommunicationSpec",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_runner_routes_agents_and_records_messages"
+      ],
+      "success_assertions": [
+        "The exact custom sender, recipient, review phase, trigger, and message persist, and runtime directed messages route the receiving agent."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I165"
+      ],
+      "audit_note": "Real map editing and runner message routing are paired."
     },
     {
       "function_id": "F394",
       "function": "Create paired two-way exchanges.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Create Pair Exchanges button -> complete directed agent-pair communication set",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
+      ],
+      "success_assertions": [
+        "Every distinct agent pair has both directed routes after one click without duplicate self-routes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I165"
+      ],
+      "audit_note": "Checks the full route cross-product in shared production state."
     },
     {
       "function_id": "F395",
       "function": "Reset the communication map to defaults.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Reset to Default button -> destructive confirmation -> default agents and communications",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
+      ],
+      "success_assertions": [
+        "After custom edits, confirmed reset restores the exact Coordinator/Builder/Reviewer and default exchanges."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I165"
+      ],
+      "audit_note": "The real warning and reset handler run; only Yes is supplied."
     },
     {
       "function_id": "F396",
       "function": "Open and refresh the Agent Communication Map.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Open Agents Communication Window and Refresh buttons -> reusable live AgentCommunicationMapWindow",
       "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow",
         "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Open shows the real map, refresh reflects current agents/exchanges, and arrow direction changes only when a reverse route exists."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I165"
+      ],
+      "audit_note": "Real offscreen Qt window, controls, and scene drawing are exercised."
     },
     {
       "function_id": "F397",
       "function": "Set explicit completion criteria.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Done when editor -> AgentTaskSpec.completion_criteria -> preview/submission",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow"
+      ],
+      "success_assertions": [
+        "The exact completion statement appears in the generated preview and submitted task spec."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Real editor and collector path are exercised."
     },
     {
       "function_id": "F398",
       "function": "Preview the generated task specification.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Preview Spec button -> validated AgentTaskSpec -> scrollable formatted preview",
       "test_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_preview_localizes_nested_agent_spec"
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_task_window_layout.py::test_agent_task_preview_dialog_uses_scrollable_text_view"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "success_assertions": [
+        "Preview validates and formats the current full spec, including title and completion criteria, in a read-only scrollable view."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "The workflow captures preview text at the modal presentation boundary; dialog structure is separately exercised."
     },
     {
       "function_id": "F399",
       "function": "Start or cancel the configured task.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Start Task and live Cancel buttons -> submitted spec/AgentRunControl -> AgentTaskRunner",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_fake_llm_completes_in_one_turn",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_runner_can_be_cancelled_before_first_turn"
+      ],
+      "success_assertions": [
+        "Start submits a valid task and the runner completes; Cancel sets the real cooperative cancellation flag, disables controls, and a cancelled runtime stops before work."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I164",
+        "I168"
+      ],
+      "audit_note": "Visible controls and real runner outcomes are paired."
     },
     {
       "function_id": "F400",
       "function": "Review and approve an agent permission request.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Live permission panel Approve button -> approval state/event -> waiting AgentToolbox operation",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_run_approval_request_can_be_approved",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_ask_permission_mode_invokes_approval_callback_without_ask_tool"
+      ],
+      "success_assertions": [
+        "The panel renders action/path details, Approve sets the exact state and releases the wait, and a real ask-mode mutation proceeds."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I167"
+      ],
+      "audit_note": "Qt choice, threading event, brain approval registry, and toolbox gate are production code."
     },
     {
       "function_id": "F401",
       "function": "Decline an agent permission request.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Live permission panel Decline button -> approval state/event -> denied AgentToolbox operation",
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_runner.py::AgentToolboxTests::test_approval_callback_can_decline_mutating_tools"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Decline sets false, releases the waiting request, and the real mutating tool leaves its target unchanged."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I167"
+      ],
+      "audit_note": "Visible denial is paired with production toolbox behavior."
     },
     {
       "function_id": "F402",
       "function": "Watch the live Meeting view and agent cards.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "AgentRunWindow Meeting tab -> parsed runner log -> live agent cards and directed arrows",
       "test_node_ids": [
-        "tests/runtime/test_ui_host_agent_meeting.py::test_mac_ui_agent_meeting_view_wheel_zoom_survives_redraw"
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/runtime/test_ui_host_agent_meeting.py::test_mac_ui_agent_run_dialog_recreates_meeting_room"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Coordinator, Builder, and Reviewer cards render, live turns/thoughts/messages update them, and both Qt-host implementations rebuild the meeting view."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Real log parser, state model, and graphics scenes are exercised offscreen."
     },
     {
       "function_id": "F403",
       "function": "View Live Log, Model Trace, and Final Report tabs.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "AgentRunWindow Live Log/Model Trace/Final Report tabs -> live signals and saved artifacts",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow"
+      ],
+      "success_assertions": [
+        "All four named tabs exist; queued trace flushes when selected and completion replaces trace/final views from the exact saved files."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Real tab widgets, live append logic, and artifact reads are covered."
     },
     {
       "function_id": "F404",
       "function": "Drag/resize agent cards and reset their layout.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Live card drag/resize completion callback -> persisted per-agent geometry -> visible Reset Layout button",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_task_window_layout.py::test_agent_meeting_view_wheel_zoom_persists_across_refit"
+      ],
+      "success_assertions": [
+        "A Builder card geometry change survives scene redraw at position/scale 1.4, Reset Layout clears it, and view zoom persists across refits."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "The workflow enters at the exact callback emitted by a completed graphics gesture; reset is an actual click."
     },
     {
       "function_id": "F405",
       "function": "Inspect agent status, health, messages, and shared-board activity.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Parsed live agent turn/thought/model/message events -> selected-card detail and Shared Board",
       "test_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_status_and_health_translate_dynamic_values"
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/runtime/test_ui_host_agent_meeting.py::test_mac_ui_agent_controls_and_shared_board_preserve_scroll"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Builder status, objective, one-call 1.5-second health, recent thought, directed review message, and a manual nudge render in the detail/board surfaces."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Uses production log parsing and both Qt-host state/rendering paths."
     },
     {
       "function_id": "F406",
       "function": "View the task diff.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Completed run diff.patch -> enabled View Diff button -> DiffViewer",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow"
+      ],
+      "success_assertions": [
+        "Completion enables the button only for an existing diff and clicking it opens the exact patch text."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Real artifact presence gate and viewer are exercised."
     },
     {
       "function_id": "F407",
       "function": "Open the task memory/result folder.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Completed run -> visible Open Memory Folder button -> guarded reveal boundary",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_task_window_layout.py::test_agent_run_folder_actions_use_controlled_reveal_helper"
+      ],
+      "success_assertions": [
+        "Completion enables the control and its click reveals the exact run directory."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Only Explorer/Finder/xdg-open creation is captured."
     },
     {
       "function_id": "F408",
       "function": "Open the task scope folder.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Open Scope Folder button -> guarded reveal boundary",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_task_window_layout.py::test_agent_run_folder_actions_use_controlled_reveal_helper"
+      ],
+      "success_assertions": [
+        "The click reveals the exact resolved scope from the running task spec."
+      ],
+      "dependency_status": "audited",
       "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "audit_note": "Only Explorer/Finder/xdg-open creation is captured."
     },
     {
       "function_id": "F409",
       "function": "Retry a task.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Completed run/history visible Retry button -> retry_spec_from_run -> launch_agent_run_window",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_history_retry_and_continue_specs"
+      ],
+      "success_assertions": [
+        "Both live-run and history Retry reopen a usable spec with the original title/objective/scope."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Launch presentation is captured; artifact parsing and spec creation are real."
     },
     {
       "function_id": "F410",
       "function": "Continue a completed or interrupted task.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Completed run/history visible Continue button -> continue_spec_from_run -> launch_agent_run_window",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_history_retry_and_continue_specs"
+      ],
+      "success_assertions": [
+        "Both Continue actions prefix the title and add the previous final plus useful run events to required context."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Launch presentation is captured; production continuation extraction is real."
     },
     {
       "function_id": "F411",
       "function": "Nudge a selected agent with a message.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Nudge Agent button -> AgentNudgeDialog -> AgentRunControl queue -> Shared Board/next prompt",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_runner_injects_manual_nudge_before_next_prompt"
+      ],
+      "success_assertions": [
+        "The exact target/message enters the real nudge queue, appears on the board, and is injected into the next runner prompt."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Modal response is supplied; button routing, control queue, rendering, and runner consumption are real."
     },
     {
       "function_id": "F412",
       "function": "Pause after the current turn and resume later.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Pause After Turn/Resume toggle -> AgentRunControl pause gate",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_control_pause_and_resume",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_control_routes_to_registered_run_control"
+      ],
+      "success_assertions": [
+        "First click requests a cooperative pause and changes to Resume; second clears the gate, and registered brain control routes do the same."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Visible control and real synchronization primitive are covered."
     },
     {
       "function_id": "F413",
       "function": "Cancel a running task.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible live Cancel button -> AgentRunControl.cancel -> AgentTaskRunner cancellation check",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
+        "tests/test_agent_runner.py::AgentRunnerTests::test_runner_can_be_cancelled_before_first_turn",
+        "tests/runtime/test_flows.py::test_agent_approval_and_cancel_route_to_brain"
+      ],
+      "success_assertions": [
+        "Cancel sets the runtime flag, changes visible status, disables further controls, and both local and supervisor-run paths stop the target run."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Real cooperative cancel and supervisor brain.cancel routing are exercised."
     },
     {
       "function_id": "F414",
       "function": "Open Agent Task History.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Tray Agent task history QAction -> AgentRunHistoryWindow -> production runs root",
       "test_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
+        "tests/runtime/test_flows.py::test_agent_history_routes_read_retry_and_continue_specs"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The tray action opens the real history window and a saved run is listed with its title."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Uses an isolated production-format runs root."
     },
     {
       "function_id": "F415",
       "function": "Review a historical task's Summary, Run Log, Model Trace, and Diff.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Selected AgentRunHistoryWindow item -> Summary/Run Log/Model Trace/Diff artifact tabs",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_history_reads_run_artifacts"
+      ],
+      "success_assertions": [
+        "One saved run loads its title/spec/final into Summary and exact run log, verbose trace, and patch into the other three tabs."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Real artifact files and both UI/brain readers are exercised."
     },
     {
       "function_id": "F416",
       "function": "Refresh history and reopen result folders.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible history Refresh/Open Memory Folder buttons -> rescan runs root and QDesktopServices",
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
+        "runtime/brain/tests/test_handler_agent.py::test_agent_history_lists_previous_runtime_runs_after_restart"
+      ],
+      "success_assertions": [
+        "Refresh discovers a newly written second run in newest-first order and Open Memory Folder receives the selected original run path."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I168"
+      ],
+      "audit_note": "Filesystem rescan is real; OS file-manager launch is captured."
     },
     {
       "function_id": "F417",

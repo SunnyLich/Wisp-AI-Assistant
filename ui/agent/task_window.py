@@ -19,6 +19,7 @@ from __future__ import annotations
 import html
 import json
 import math
+import os
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -146,6 +147,45 @@ _agent_run_windows: list[AgentRunWindow] = []
 _agent_task_dialogs: list[AgentTaskDialog] = []
 _agent_history_windows: list[AgentRunHistoryWindow] = []
 _diff_windows: list[DiffViewer] = []
+
+_AGENT_APP_CONTEXT_MAX_CHARS = 12_000
+_AGENT_APP_CONTEXT_TRUNCATED = "\n[Current application context truncated at 12,000 characters]"
+
+
+def _capture_current_app_context() -> str:
+    """Return bounded, redacted context from the topmost non-Wisp application."""
+    from core import context_fetcher
+    from core.llm_clients.client import read_active_document_for_context_with_debug
+    from core.privacy_redaction import redact_text
+
+    window = context_fetcher.get_active_window_info(exclude_pids={os.getpid()})
+    if not (window.title or window.process_name or window.url or window.hwnd):
+        return ""
+
+    active_window = asdict(window)
+    document_text, _debug = read_active_document_for_context_with_debug(
+        active_window=active_window,
+    )
+    if not document_text and (window.url or window.hwnd):
+        document_text = context_fetcher.fetch_browser_content_for_window(
+            url=window.url,
+            hwnd=int(window.hwnd or 0),
+        )
+
+    lines = ["Current application:"]
+    if window.title:
+        lines.append(f"Title: {window.title}")
+    if window.process_name:
+        lines.append(f"Application: {window.process_name}")
+    if window.url:
+        lines.append(f"URL: {window.url}")
+    if document_text:
+        lines.extend(("", "Relevant content:", document_text))
+    value = redact_text("\n".join(lines).strip())
+    if len(value) <= _AGENT_APP_CONTEXT_MAX_CHARS:
+        return value
+    keep = max(0, _AGENT_APP_CONTEXT_MAX_CHARS - len(_AGENT_APP_CONTEXT_TRUNCATED))
+    return value[:keep].rstrip() + _AGENT_APP_CONTEXT_TRUNCATED
 
 
 def make_agent_task_action(
@@ -493,7 +533,21 @@ class AgentTaskDialog(QDialog):
         form.addRow(t("Primary model"), model_widget)
         form.addRow(t("Fallback models"), self._fallback_section())
         form.addRow("Objective", self.objective_edit)
-        form.addRow("Context", self.required_context_edit)
+        context_wrapper = QWidget()
+        context_layout = QVBoxLayout(context_wrapper)
+        context_layout.setContentsMargins(0, 0, 0, 0)
+        context_layout.setSpacing(6)
+        context_layout.addWidget(self.required_context_edit)
+        context_button_row = QHBoxLayout()
+        self.copy_context_btn = QPushButton("Copy current app context")
+        self.copy_context_btn.setToolTip(
+            "Append readable text and window details from the application behind Wisp."
+        )
+        self.copy_context_btn.clicked.connect(self._copy_context_from_app)
+        context_button_row.addWidget(self.copy_context_btn)
+        context_button_row.addStretch()
+        context_layout.addLayout(context_button_row)
+        form.addRow("Context", context_wrapper)
         return box
 
     _FALLBACK_PROVIDERS = list(_PROVIDER_MODELS.keys())
@@ -632,6 +686,29 @@ class AgentTaskDialog(QDialog):
         if model:
             self.model_edit.setCurrentText(model)
         self._set_fallback_rows(getattr(config, "LLM_FALLBACKS", "") or "")
+
+    def _copy_context_from_app(self) -> None:
+        """Append a bounded snapshot from the current non-Wisp application."""
+        try:
+            context = _capture_current_app_context().strip()
+        except Exception as exc:  # noqa: BLE001 - desktop context is optional
+            QMessageBox.warning(
+                self,
+                t("Copy App Context"),
+                f"{t('Could not read the current application.')}\n{type(exc).__name__}: {exc}",
+            )
+            return
+        if not context:
+            QMessageBox.information(
+                self,
+                t("Copy App Context"),
+                t("No readable current-application context was found."),
+            )
+            return
+        existing = self.required_context_edit.toPlainText().strip()
+        self.required_context_edit.setPlainText(
+            f"{existing}\n\n{context}" if existing else context
+        )
 
     def _agents_group(self) -> QGroupBox:
         """Handle agents group for agent task dialog."""

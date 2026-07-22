@@ -19,7 +19,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -35,7 +35,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -51,7 +51,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -67,7 +67,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -83,7 +83,7 @@
         "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -99,7 +99,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -117,7 +117,7 @@
         "tests/runtime/test_app_logging.py::test_main_writes_crash_log_when_ui_worker_exits_nonzero"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -133,7 +133,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -149,7 +149,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_shutdown_continues_after_one_worker_raises"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -165,7 +165,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -181,7 +181,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -197,7 +197,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -213,7 +213,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -229,7 +229,7 @@
         "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -245,7 +245,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -261,7 +261,7 @@
         "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -277,7 +277,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -293,7 +293,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_shutdown_continues_after_one_worker_raises"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/test_autostart.py::test_start_on_login_selects_the_real_source_or_packaged_entry"
       ]
     },
     {
@@ -889,7 +889,7 @@
         "tests/test_settings_failure_matrix.py::test_invalid_settings_values_use_safe_widget_and_runtime_fallbacks"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change"
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"
       ]
     },
     {
@@ -905,7 +905,7 @@
         "tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change"
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"
       ]
     },
     {
@@ -921,7 +921,7 @@
         "tests/test_settings_failure_matrix.py::test_corrupt_settings_store_loads_safe_defaults"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change"
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"
       ]
     },
     {
@@ -937,7 +937,7 @@
         "tests/test_settings_failure_matrix.py::test_settings_write_and_resource_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change"
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"
       ]
     },
     {
@@ -953,7 +953,7 @@
         "tests/test_settings_failure_matrix.py::test_settings_cancel_discards_pending_change"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change"
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"
       ]
     },
     {
@@ -969,7 +969,7 @@
         "tests/test_settings_failure_matrix.py::test_settings_failed_live_reload_does_not_claim_restart_applied"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_tray_menu_rebuilds_after_language_change"
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix"
       ]
     },
     {
@@ -1081,7 +1081,7 @@
         "tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language"
+        "tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"
       ]
     },
     {
@@ -1097,7 +1097,7 @@
         "tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language"
+        "tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"
       ]
     },
     {
@@ -1113,7 +1113,7 @@
         "tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language"
+        "tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"
       ]
     },
     {
@@ -1129,7 +1129,7 @@
         "tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language"
+        "tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"
       ]
     },
     {
@@ -1145,7 +1145,7 @@
         "tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language"
+        "tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"
       ]
     },
     {
@@ -1161,7 +1161,7 @@
         "tests/test_onboarding.py::test_onboarding_provider_configuration_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_advanced_custom_route_persists_entered_model_endpoint_and_language"
+        "tests/test_onboarding_acceptance.py::test_onboarding_every_provider_model_endpoint_and_key_matrix"
       ]
     },
     {
@@ -1178,7 +1178,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ]
     },
     {
@@ -1194,7 +1194,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ]
     },
     {
@@ -1210,7 +1210,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ]
     },
     {
@@ -1226,7 +1226,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ]
     },
     {
@@ -1242,7 +1242,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ]
     },
     {
@@ -1258,7 +1258,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ]
     },
     {
@@ -1276,7 +1276,7 @@
         "tests/test_chatgpt_auth.py::test_token_storage_fails_closed_when_keyring_is_unavailable"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"
+        "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
       ]
     },
     {
@@ -1388,7 +1388,7 @@
         "tests/test_dev_environment_check.py::DevEnvironmentCheckTests::test_install_runtime_integrity_failure_matrix_is_classified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_no_local_speech_choice_skips_the_installer"
+        "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"
       ]
     },
     {
@@ -1404,7 +1404,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_no_local_speech_choice_skips_the_installer"
+        "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"
       ]
     },
     {
@@ -1420,7 +1420,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_no_local_speech_choice_skips_the_installer"
+        "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"
       ]
     },
     {
@@ -1436,7 +1436,7 @@
         "tests/test_overlay_bubble_visibility.py::test_tray_surface_failure_matrix_rebuilds_and_dispatches_without_blocking"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_no_local_speech_choice_skips_the_installer"
+        "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"
       ]
     },
     {
@@ -1452,7 +1452,7 @@
         "tests/test_onboarding.py::test_onboarding_choices_and_navigation_tolerate_missing_or_corrupt_saved_state"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_no_local_speech_choice_skips_the_installer"
+        "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"
       ]
     },
     {
@@ -1468,7 +1468,7 @@
         "tests/test_onboarding.py::test_onboarding_choices_and_navigation_tolerate_missing_or_corrupt_saved_state"
       ],
       "function_workflow_node_ids": [
-        "tests/test_onboarding.py::test_no_local_speech_choice_skips_the_installer"
+        "tests/test_app_user_workflows.py::test_all_live_local_file_tools_complete_real_operations"
       ]
     },
     {
@@ -1484,7 +1484,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -1500,7 +1500,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -1516,7 +1516,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -1532,7 +1532,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -1548,7 +1548,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -1564,7 +1564,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -1580,7 +1580,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_attachment_extracts_persists_and_reopens"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -3533,7 +3533,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3549,7 +3549,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3565,7 +3565,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3581,7 +3581,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3597,7 +3597,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3613,7 +3613,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3629,7 +3629,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3645,7 +3645,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3661,7 +3661,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3677,7 +3677,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3693,7 +3693,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3709,7 +3709,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3725,7 +3725,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3741,7 +3741,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3757,7 +3757,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3773,7 +3773,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3789,7 +3789,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3805,7 +3805,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3821,7 +3821,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3837,7 +3837,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3853,7 +3853,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3949,7 +3949,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3965,7 +3965,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -3984,7 +3984,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4000,7 +4000,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4016,7 +4016,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4032,7 +4032,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4048,7 +4048,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4064,7 +4064,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4080,7 +4080,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4096,7 +4096,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4112,7 +4112,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4128,7 +4128,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4144,7 +4144,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4160,7 +4160,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4176,7 +4176,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4192,7 +4192,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4208,7 +4208,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4224,7 +4224,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4240,7 +4240,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4256,7 +4256,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4272,7 +4272,7 @@
         "tests/runtime/test_flows.py::test_builtin_intent_actions_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4403,7 +4403,7 @@
         "tests/runtime/test_hotkey_tap_matching.py::test_parse_combo_rejects_bare_key"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4419,7 +4419,7 @@
         "tests/test_settings_dialog_controls.py::test_settings_reports_secondary_shortcut_conflicts_only_when_saving"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4435,7 +4435,7 @@
         "tests/runtime/test_hotkey_helper_lifecycle.py::test_direct_hotkey_start_reports_os_hook_rejection"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4451,7 +4451,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_hotkey_tap_reports_input_monitoring_permission_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4467,7 +4467,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_falls_back_to_listen_only_when_active_tap_unavailable"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4483,7 +4483,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_active_tap_swallows_matched_keydown"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4499,7 +4499,7 @@
         "tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4516,7 +4516,7 @@
         "tests/test_settings_dialog_controls.py::test_hidden_settings_dialog_is_replaced_without_clearing_new_one"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4532,7 +4532,7 @@
         "tests/test_overlay_bubble_visibility.py::test_wayland_icon_uses_compositor_move_and_press_menu"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4548,7 +4548,7 @@
         "tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4564,7 +4564,7 @@
         "tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4580,7 +4580,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -4596,7 +4596,7 @@
         "tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"
       ],
       "function_workflow_node_ids": [
-        "tests/test_intent_overlay.py::test_space_toggles_conversation_for_intent_and_action_overlays"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -5249,7 +5249,7 @@
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
       ]
     },
     {
@@ -5265,7 +5265,7 @@
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
       ]
     },
     {
@@ -5281,7 +5281,7 @@
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
       ]
     },
     {
@@ -5297,7 +5297,7 @@
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
       ]
     },
     {
@@ -5316,7 +5316,7 @@
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
       ]
     },
     {
@@ -5332,7 +5332,7 @@
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
       ]
     },
     {
@@ -5351,7 +5351,7 @@
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_uses_selected_codex_project"
+        "tests/test_app_user_workflows.py::test_selected_primary_and_all_configured_fallback_states_run_through_real_brain_query"
       ]
     },
     {
@@ -8236,7 +8236,7 @@
         "tests/runtime/test_hotkey_helper_lifecycle.py::test_direct_hotkey_start_reports_os_hook_rejection"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_dictation_transcript_confirmation_cancel_skips_paste"
+        "tests/runtime/test_flows.py::test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target"
       ]
     },
     {
@@ -8252,7 +8252,7 @@
         "tests/test_settings_dialog_controls.py::test_settings_reports_secondary_shortcut_conflicts_only_when_saving"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_dictation_transcript_confirmation_cancel_skips_paste"
+        "tests/runtime/test_flows.py::test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target"
       ]
     },
     {
@@ -8268,7 +8268,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_falls_back_to_listen_only_when_active_tap_unavailable"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_dictation_transcript_confirmation_cancel_skips_paste"
+        "tests/runtime/test_flows.py::test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target"
       ]
     },
     {
@@ -8284,7 +8284,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_active_tap_swallows_matched_keydown"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_dictation_transcript_confirmation_cancel_skips_paste"
+        "tests/runtime/test_flows.py::test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target"
       ]
     },
     {
@@ -12773,7 +12773,7 @@
         "tests/runtime/test_flows.py::test_stale_audio_warmup_events_cannot_overwrite_newer_notice"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_bubble_transcript.py::test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states"
       ]
     },
     {
@@ -12789,7 +12789,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_bubble_transcript.py::test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states"
       ]
     },
     {
@@ -12805,7 +12805,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_bubble_transcript.py::test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states"
       ]
     },
     {
@@ -12821,7 +12821,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_bubble_transcript.py::test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states"
       ]
     },
     {
@@ -12837,7 +12837,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_bubble_transcript.py::test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states"
       ]
     },
     {
@@ -13322,7 +13322,7 @@
         "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue"
+        "tests/test_bubble_transcript.py::test_reply_close_control_click_emits_stop_and_clears_the_bubble"
       ]
     },
     {
@@ -13340,7 +13340,7 @@
         "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue"
+        "tests/test_bubble_transcript.py::test_reply_close_control_click_emits_stop_and_clears_the_bubble"
       ]
     },
     {
@@ -13358,7 +13358,7 @@
         "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue"
+        "tests/test_bubble_transcript.py::test_reply_close_control_click_emits_stop_and_clears_the_bubble"
       ]
     },
     {
@@ -13376,7 +13376,7 @@
         "tests/test_bubble_transcript.py::test_notice_bubble_close_is_dismiss_only"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_bubble_stop_event_hides_bubble_and_cancels_current_tts_queue"
+        "tests/test_bubble_transcript.py::test_reply_close_control_click_emits_stop_and_clears_the_bubble"
       ]
     },
     {
@@ -13578,7 +13578,7 @@
         "tests/test_bubble_transcript.py::test_pending_speech_stops_following_latest_stream_text"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"
+        "tests/test_bubble_transcript.py::test_bubble_drag_moves_group_and_does_not_open_chat"
       ]
     },
     {
@@ -13594,7 +13594,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"
+        "tests/test_bubble_transcript.py::test_bubble_drag_moves_group_and_does_not_open_chat"
       ]
     },
     {
@@ -13610,7 +13610,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"
+        "tests/test_bubble_transcript.py::test_bubble_drag_moves_group_and_does_not_open_chat"
       ]
     },
     {
@@ -13626,7 +13626,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"
+        "tests/test_bubble_transcript.py::test_bubble_drag_moves_group_and_does_not_open_chat"
       ]
     },
     {
@@ -13642,7 +13642,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/test_overlay_bubble_visibility.py::test_bubble_chunk_restores_hidden_icon"
+        "tests/test_bubble_transcript.py::test_bubble_drag_moves_group_and_does_not_open_chat"
       ]
     },
     {
@@ -14044,7 +14044,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14060,7 +14060,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14076,7 +14076,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14092,7 +14092,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14108,7 +14108,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14124,7 +14124,7 @@
         "tests/test_bubble_transcript.py::test_pending_speech_stops_following_latest_stream_text"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14140,7 +14140,7 @@
         "tests/runtime/test_supervisor_ipc.py::test_ui_worker_freeze_watchdog_writes_log"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14156,7 +14156,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14172,7 +14172,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14188,7 +14188,7 @@
         "tests/test_bubble_transcript.py::test_bubble_runtime_callback_timer_and_invalid_render_matrix_is_contained"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14300,7 +14300,7 @@
         "tests/test_addon_manager.py::test_addon_enable_and_settings_round_trip"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14316,7 +14316,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14332,7 +14332,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14348,7 +14348,7 @@
         "tests/test_addon_manager.py::test_missing_permissions_deny_surfaces"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14364,7 +14364,7 @@
         "tests/test_addon_manager.py::test_addon_with_dependencies_waits_for_environment"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14380,7 +14380,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14396,7 +14396,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14412,7 +14412,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_bubble_transcript.py::test_document_view_keeps_legacy_bubble_text_width"
+        "tests/test_bubble_transcript.py::test_bubble_context_menu_copies_selected_and_full_text_and_runs_ui_lab_actions"
       ]
     },
     {
@@ -14639,7 +14639,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_send_fn_forwards_annotation_metadata"
+        "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"
       ]
     },
     {
@@ -14655,7 +14655,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_send_fn_forwards_annotation_metadata"
+        "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"
       ]
     },
     {
@@ -14671,7 +14671,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_send_fn_forwards_annotation_metadata"
+        "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"
       ]
     },
     {
@@ -14687,7 +14687,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_send_fn_forwards_annotation_metadata"
+        "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"
       ]
     },
     {
@@ -14703,7 +14703,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_send_fn_forwards_annotation_metadata"
+        "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"
       ]
     },
     {
@@ -14719,7 +14719,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_send_fn_forwards_annotation_metadata"
+        "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"
       ]
     },
     {
@@ -14735,7 +14735,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_send_fn_forwards_annotation_metadata"
+        "tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"
       ]
     },
     {
@@ -15429,7 +15429,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -15445,7 +15445,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -15461,7 +15461,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -15477,7 +15477,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -15493,7 +15493,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -15509,7 +15509,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -15525,7 +15525,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_sidebar_separates_project_chats_from_unheaded_general_history"
+        "tests/test_app_user_workflows.py::test_chat_project_by_new_entry_matrix"
       ]
     },
     {
@@ -16726,7 +16726,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16742,7 +16742,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16758,7 +16758,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16774,7 +16774,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16790,7 +16790,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16806,7 +16806,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16822,7 +16822,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16838,7 +16838,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16854,7 +16854,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16870,7 +16870,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16886,7 +16886,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16902,7 +16902,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16918,7 +16918,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_browser_on_fetches_context_from_chat_policy"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16934,7 +16934,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_conversation_context_skips_message_anchored_blocks"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16950,7 +16950,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_conversation_context_skips_message_anchored_blocks"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16966,7 +16966,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_conversation_context_skips_message_anchored_blocks"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16982,7 +16982,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_conversation_context_skips_message_anchored_blocks"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -16998,7 +16998,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_conversation_context_skips_message_anchored_blocks"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17014,7 +17014,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_conversation_context_skips_message_anchored_blocks"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17030,7 +17030,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_conversation_context_skips_message_anchored_blocks"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17046,7 +17046,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17062,7 +17062,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17078,7 +17078,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17094,7 +17094,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17110,7 +17110,7 @@
         "tests/runtime/test_native_context.py::test_paste_failure_matrix_is_controlled_at_native_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17127,7 +17127,7 @@
         "tests/runtime/test_flows.py::test_capture_worker_unavailable_does_not_escape_caller_workflow"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17144,7 +17144,7 @@
         "tests/runtime/test_flows.py::test_capture_worker_unavailable_does_not_escape_caller_workflow"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17160,7 +17160,7 @@
         "tests/test_snip_overlay.py::test_region_translation_uses_live_monitor_origin_and_dpi"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17176,7 +17176,7 @@
         "tests/test_snip_overlay.py::test_region_translation_uses_live_monitor_origin_and_dpi"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17193,7 +17193,7 @@
         "tests/test_snip_overlay.py::test_tiny_drag_cancels_instead_of_selecting"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17209,7 +17209,7 @@
         "tests/runtime/test_native_context.py::test_capture_worker_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17225,7 +17225,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17241,7 +17241,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17257,7 +17257,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17273,7 +17273,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17289,7 +17289,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17305,7 +17305,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17321,7 +17321,7 @@
         "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_github_context_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17337,7 +17337,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17353,7 +17353,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17369,7 +17369,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17385,7 +17385,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17401,7 +17401,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17417,7 +17417,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -17433,7 +17433,7 @@
         "tests/runtime/test_flows.py::test_context_policy_failure_contract_fails_closed_at_runtime_boundary"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_request_reuses_conversation_tool_context"
+        "tests/test_app_user_workflows.py::test_chat_real_context_chip_matrix_is_per_conversation_and_reaches_send"
       ]
     },
     {
@@ -18300,7 +18300,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -18316,7 +18316,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -18332,7 +18332,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -18348,7 +18348,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -18364,7 +18364,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -18380,7 +18380,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -18396,7 +18396,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -18748,7 +18748,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
       ]
     },
     {
@@ -18764,7 +18764,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
       ]
     },
     {
@@ -18780,7 +18780,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
       ]
     },
     {
@@ -18796,7 +18796,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
       ]
     },
     {
@@ -18812,7 +18812,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
       ]
     },
     {
@@ -18828,7 +18828,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
       ]
     },
     {
@@ -18844,7 +18844,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_ui_host_reply.py::test_chat_stream_preserves_progress_without_flattening_into_answer"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_opening_matrix"
       ]
     },
     {
@@ -18860,7 +18860,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send"
       ]
     },
     {
@@ -18876,7 +18876,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send"
       ]
     },
     {
@@ -18892,7 +18892,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send"
       ]
     },
     {
@@ -18908,7 +18908,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send"
       ]
     },
     {
@@ -18924,7 +18924,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send"
       ]
     },
     {
@@ -18940,7 +18940,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send"
       ]
     },
     {
@@ -18956,7 +18956,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/test_app_user_workflows.py::test_chat_auto_elaborate_prompt_reaches_real_send"
       ]
     },
     {
@@ -18972,7 +18972,7 @@
         "tests/test_harness_clients.py::test_codex_client_unavailable_is_reported_before_process_start"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -18988,7 +18988,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19004,7 +19004,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19020,7 +19020,7 @@
         "tests/test_external_conversation_sync.py::test_push_rejects_source_outside_provider_root"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19036,7 +19036,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19052,7 +19052,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19068,7 +19068,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19084,7 +19084,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19100,7 +19100,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_controls.py::test_codex_live_phases_are_translated"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19116,7 +19116,7 @@
         "tests/test_harness_clients.py::test_codex_client_unavailable_is_reported_before_process_start"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19132,7 +19132,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19148,7 +19148,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19164,7 +19164,7 @@
         "tests/test_external_conversation_sync.py::test_push_rejects_source_outside_provider_root"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19180,7 +19180,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19196,7 +19196,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19212,7 +19212,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19228,7 +19228,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -19244,7 +19244,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_sync_updates_in_place_and_preserves_wisp_tail"
+        "tests/test_app_user_workflows.py::test_chat_external_transcript_pull_button_and_count_matrix"
       ]
     },
     {
@@ -21137,7 +21137,7 @@
         "tests/test_harness_clients.py::test_codex_client_unavailable_is_reported_before_process_start"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21153,7 +21153,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21169,7 +21169,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21185,7 +21185,7 @@
         "tests/test_external_conversation_sync.py::test_push_rejects_source_outside_provider_root"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21201,7 +21201,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21217,7 +21217,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21233,7 +21233,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21249,7 +21249,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -21265,7 +21265,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_streams_reasoning_and_reply_separately"
+        "tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix"
       ]
     },
     {
@@ -22486,7 +22486,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
       ]
     },
     {
@@ -22502,7 +22502,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
       ]
     },
     {
@@ -22518,7 +22518,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
       ]
     },
     {
@@ -22534,7 +22534,7 @@
         "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
-        "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
+        "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
       ]
     },
     {
@@ -31561,7 +31561,7 @@
         "tests/test_optional_deps.py::test_require_optional_package_runtime_rejects_invalid_managed_install"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31577,7 +31577,7 @@
         "tests/test_speech_failure_matrix.py::test_missing_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31593,7 +31593,7 @@
         "tests/test_speech_failure_matrix.py::test_damaged_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31609,7 +31609,7 @@
         "tests/test_speech_failure_matrix.py::test_microphone_permission_failure_resets_recording_state"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31625,7 +31625,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31641,7 +31641,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31657,7 +31657,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31674,7 +31674,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_tts_producer_failure_does_not_escape_thread_or_claim_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31690,7 +31690,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -31708,7 +31708,7 @@
         "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
       ],
       "function_workflow_node_ids": [
-        "tests/test_optional_deps.py::test_stt_cuda_failure_hints_are_actionable"
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
       ]
     },
     {
@@ -32046,7 +32046,7 @@
         "tests/test_optional_deps.py::test_require_optional_package_runtime_rejects_invalid_managed_install"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32062,7 +32062,7 @@
         "tests/test_speech_failure_matrix.py::test_missing_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32078,7 +32078,7 @@
         "tests/test_speech_failure_matrix.py::test_damaged_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32094,7 +32094,7 @@
         "tests/test_speech_failure_matrix.py::test_microphone_permission_failure_resets_recording_state"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32110,7 +32110,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32126,7 +32126,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32142,7 +32142,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32159,7 +32159,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_tts_producer_failure_does_not_escape_thread_or_claim_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32175,7 +32175,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32191,7 +32191,7 @@
         "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_config_reload_schedules_prewarm_in_background"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32207,7 +32207,7 @@
         "tests/test_optional_deps.py::test_require_optional_package_runtime_rejects_invalid_managed_install"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32223,7 +32223,7 @@
         "tests/test_speech_failure_matrix.py::test_missing_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32239,7 +32239,7 @@
         "tests/test_speech_failure_matrix.py::test_damaged_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32255,7 +32255,7 @@
         "tests/test_speech_failure_matrix.py::test_microphone_permission_failure_resets_recording_state"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32271,7 +32271,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32287,7 +32287,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32303,7 +32303,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32320,7 +32320,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_tts_producer_failure_does_not_escape_thread_or_claim_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32336,7 +32336,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -32352,7 +32352,7 @@
         "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_state_events_drive_overlay"
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows"
       ]
     },
     {
@@ -33866,7 +33866,7 @@
         "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -33882,7 +33882,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -33898,7 +33898,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -33916,7 +33916,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -33932,7 +33932,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -33948,7 +33948,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -33964,7 +33964,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -33980,7 +33980,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_memory_crud_and_project_scope_workflow"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34124,7 +34124,7 @@
         "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34140,7 +34140,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34156,7 +34156,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34172,7 +34172,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34188,7 +34188,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34204,7 +34204,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34222,7 +34222,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34238,7 +34238,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
       ]
     },
     {
@@ -34384,7 +34384,7 @@
         "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34400,7 +34400,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34416,7 +34416,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34434,7 +34434,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34450,7 +34450,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34466,7 +34466,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34482,7 +34482,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34498,7 +34498,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_json_facts"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -34770,7 +34770,7 @@
         "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -34786,7 +34786,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -34802,7 +34802,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -34818,7 +34818,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -34834,7 +34834,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -34850,7 +34850,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -34866,7 +34866,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -34882,7 +34882,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
       ]
     },
     {
@@ -35026,7 +35026,7 @@
         "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -35042,7 +35042,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -35058,7 +35058,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -35074,7 +35074,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -35090,7 +35090,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -35106,7 +35106,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -35122,7 +35122,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -35138,7 +35138,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
       ]
     },
     {
@@ -36112,7 +36112,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
       ]
     },
     {
@@ -36128,7 +36128,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
       ]
     },
     {
@@ -36144,7 +36144,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
       ]
     },
     {
@@ -36160,7 +36160,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
       ]
     },
     {
@@ -36176,7 +36176,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
       ]
     },
     {
@@ -36192,7 +36192,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
       ]
     },
     {
@@ -36208,7 +36208,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
+        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
       ]
     },
     {
@@ -38873,7 +38873,7 @@
         "tests/test_mcp_context_server.py::test_disabled_server_refuses_to_serve"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -38889,7 +38889,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -38905,7 +38905,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -38921,7 +38921,7 @@
         "tests/test_addon_manager.py::test_missing_permissions_deny_surfaces"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -38937,7 +38937,7 @@
         "tests/test_addon_manager.py::test_addon_with_dependencies_waits_for_environment"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -38953,7 +38953,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -38969,7 +38969,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -38985,7 +38985,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -39664,7 +39664,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_query_begins_chat_conversation_before_tool_enabled_brain_call"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -39680,7 +39680,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_query_begins_chat_conversation_before_tool_enabled_brain_call"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -39696,7 +39696,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_query_begins_chat_conversation_before_tool_enabled_brain_call"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -39712,7 +39712,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_query_begins_chat_conversation_before_tool_enabled_brain_call"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -39728,7 +39728,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_query_begins_chat_conversation_before_tool_enabled_brain_call"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -39744,7 +39744,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_query_begins_chat_conversation_before_tool_enabled_brain_call"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -39760,7 +39760,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_query_begins_chat_conversation_before_tool_enabled_brain_call"
+        "tests/test_app_user_workflows.py::test_chat_tool_loop_trace_toggle_reaches_visible_history"
       ]
     },
     {
@@ -41408,7 +41408,7 @@
         "tests/test_addon_manager.py::test_addon_enable_and_settings_round_trip"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41424,7 +41424,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41440,7 +41440,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41456,7 +41456,7 @@
         "tests/test_addon_manager.py::test_missing_permissions_deny_surfaces"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41472,7 +41472,7 @@
         "tests/test_addon_manager.py::test_addon_with_dependencies_waits_for_environment"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41488,7 +41488,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41504,7 +41504,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41520,7 +41520,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_intent_overlay.py::test_addon_intent_rows_render_and_run_from_the_visible_picker"
       ]
     },
     {
@@ -41536,7 +41536,7 @@
         "tests/runtime/test_hotkey_tap_matching.py::test_parse_combo_rejects_bare_key"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"
       ]
     },
     {
@@ -41552,7 +41552,7 @@
         "tests/test_settings_dialog_controls.py::test_settings_reports_secondary_shortcut_conflicts_only_when_saving"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"
       ]
     },
     {
@@ -41568,7 +41568,7 @@
         "tests/runtime/test_hotkey_helper_lifecycle.py::test_direct_hotkey_start_reports_os_hook_rejection"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"
       ]
     },
     {
@@ -41584,7 +41584,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_hotkey_tap_reports_input_monitoring_permission_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"
       ]
     },
     {
@@ -41600,7 +41600,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_falls_back_to_listen_only_when_active_tap_unavailable"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"
       ]
     },
     {
@@ -41616,7 +41616,7 @@
         "tests/runtime/test_hotkey_tap_swallow.py::test_active_tap_swallows_matched_keydown"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_brain_addon_install_settings_actions_and_toggle_workflow"
+        "tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"
       ]
     },
     {
@@ -42020,7 +42020,7 @@
         "tests/test_mcp_context_server.py::test_disabled_server_refuses_to_serve"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42036,7 +42036,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42052,7 +42052,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42068,7 +42068,7 @@
         "tests/test_addon_manager.py::test_missing_permissions_deny_surfaces"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42087,7 +42087,7 @@
         "tests/test_addon_manager.py::test_addon_with_dependencies_waits_for_environment"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42103,7 +42103,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42119,7 +42119,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42135,7 +42135,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_mcp_bridge.py::test_mcp_bridge_tolerates_cp1252_bytes_in_server_output"
+        "tests/test_mcp_bridge.py::test_configured_mcp_server_discovers_and_executes_real_bridge_tools"
       ]
     },
     {
@@ -42683,7 +42683,7 @@
         "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_context_buffer_drop_priority_and_privacy_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42699,7 +42699,7 @@
         "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_context_buffer_drop_priority_and_privacy_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42715,7 +42715,7 @@
         "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_context_buffer_drop_priority_and_privacy_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42731,7 +42731,7 @@
         "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_context_buffer_drop_priority_and_privacy_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42747,7 +42747,7 @@
         "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_context_buffer_drop_priority_and_privacy_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42763,7 +42763,7 @@
         "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_context_buffer_drop_priority_and_privacy_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42779,7 +42779,7 @@
         "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42795,7 +42795,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42811,7 +42811,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42827,7 +42827,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42843,7 +42843,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42859,7 +42859,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42875,7 +42875,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42891,7 +42891,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -42907,7 +42907,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44080,7 +44080,7 @@
         "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44096,7 +44096,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44112,7 +44112,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44128,7 +44128,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44144,7 +44144,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44160,7 +44160,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44176,7 +44176,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44192,7 +44192,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44208,7 +44208,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_folder_reveal_failures_are_controlled"
+        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
       ]
     },
     {
@@ -44224,7 +44224,7 @@
         "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44240,7 +44240,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44256,7 +44256,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44272,7 +44272,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44288,7 +44288,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44304,7 +44304,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44320,7 +44320,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44336,7 +44336,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44352,7 +44352,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
+        "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
       ]
     },
     {
@@ -44512,7 +44512,7 @@
         "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44528,7 +44528,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44544,7 +44544,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44560,7 +44560,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44576,7 +44576,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44592,7 +44592,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44608,7 +44608,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44624,7 +44624,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44640,7 +44640,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44656,7 +44656,7 @@
         "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44672,7 +44672,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44688,7 +44688,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44704,7 +44704,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44720,7 +44720,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44736,7 +44736,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44752,7 +44752,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44768,7 +44768,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -44784,7 +44784,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_communication_map_uses_one_way_arrows_until_reverse_exists"
+        "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
       ]
     },
     {
@@ -47384,7 +47384,7 @@
         "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47400,7 +47400,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47416,7 +47416,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47432,7 +47432,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47448,7 +47448,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47464,7 +47464,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47480,7 +47480,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47496,7 +47496,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -47512,7 +47512,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_chat_history_projects_and_corruption_recovery_workflow"
+        "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
       ]
     },
     {
@@ -48656,7 +48656,7 @@
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ]
     },
     {
@@ -48672,7 +48672,7 @@
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ]
     },
     {
@@ -48688,7 +48688,7 @@
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ]
     },
     {
@@ -48704,7 +48704,7 @@
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ]
     },
     {
@@ -48720,7 +48720,7 @@
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ]
     },
     {
@@ -48736,7 +48736,7 @@
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ]
     },
     {
@@ -48752,7 +48752,7 @@
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_settings_has_reset_page_button"
+        "tests/test_feature_acceptance_workflows.py::test_reset_page_action_is_scoped_across_every_settings_page"
       ]
     },
     {
@@ -52832,7 +52832,7 @@
         "tests/test_platform_macos.py::MacPlatformTests::test_window_helpers_degrade_when_pyobjc_missing"
       ],
       "function_workflow_node_ids": [
-        "tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks"
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
       ]
     },
     {
@@ -52848,7 +52848,7 @@
         "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
       ],
       "function_workflow_node_ids": [
-        "tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks"
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
       ]
     },
     {
@@ -52865,7 +52865,7 @@
         "tests/test_platform_macos.py::MacHotkeyTests::test_accessibility_check_uses_application_services_trust"
       ],
       "function_workflow_node_ids": [
-        "tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks"
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
       ]
     },
     {
@@ -52881,7 +52881,7 @@
         "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
       ],
       "function_workflow_node_ids": [
-        "tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks"
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
       ]
     },
     {
@@ -52897,7 +52897,7 @@
         "tests/runtime/test_native_context.py::test_selection_capture_failure_matrix_returns_no_stale_text"
       ],
       "function_workflow_node_ids": [
-        "tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks"
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
       ]
     },
     {
@@ -52915,7 +52915,7 @@
         "tests/test_macos_helper_ipc.py::test_calls_fail_fast_after_shutdown"
       ],
       "function_workflow_node_ids": [
-        "tests/test_real_host_native_smoke.py::test_real_host_macos_permission_snapshot_is_ready_for_native_checks"
+        "tests/test_native_platform_acceptance.py::test_native_hotkey_macos_helper_runtime_event_and_cleanup"
       ]
     },
     {
@@ -53241,7 +53241,7 @@
         "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
       ],
       "function_workflow_node_ids": [
-        "tests/test_file_browser.py::test_reveal_file_uses_native_browser"
+        "tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix"
       ]
     },
     {
@@ -53257,7 +53257,7 @@
         "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
       ],
       "function_workflow_node_ids": [
-        "tests/test_file_browser.py::test_reveal_file_uses_native_browser"
+        "tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix"
       ]
     },
     {
@@ -53273,7 +53273,7 @@
         "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
       ],
       "function_workflow_node_ids": [
-        "tests/test_file_browser.py::test_reveal_file_uses_native_browser"
+        "tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix"
       ]
     },
     {
@@ -53289,7 +53289,7 @@
         "tests/test_file_browser.py::test_reveal_failure_matrix_surfaces_exact_os_faults"
       ],
       "function_workflow_node_ids": [
-        "tests/test_file_browser.py::test_reveal_file_uses_native_browser"
+        "tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix"
       ]
     }
   ]
