@@ -1009,7 +1009,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 19
+      "node_count": 20
     },
     {
       "path": "tests/test_chat_rendering.py",

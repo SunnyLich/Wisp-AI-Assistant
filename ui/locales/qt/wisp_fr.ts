@@ -5731,5 +5731,44 @@ Les caches partagés uv/pip et les modèles Hugging Face sans rapport ne seront 
     <message><source>Review the ZIP before attaching it to a bug report.</source><translation>Vérifiez le fichier ZIP avant de le joindre à un rapport d’incident.</translation></message>
     <message><source>Crash report could not be created.</source><translation>Le rapport d’incident n’a pas pu être créé.</translation></message>
     <message><source>Crash report failed</source><translation>Échec du rapport d’incident</translation></message>
+    <message><source>A conversation already uses that title.</source><translation>Une conversation utilise déjà ce titre.</translation></message>
+    <message><source>A profile named {profile} already exists.</source><translation>Un profil nommé {profile} existe déjà.</translation></message>
+    <message><source>Action keys must be one printable character.</source><translation>Les touches d’action doivent contenir un seul caractère imprimable.</translation></message>
+    <message><source>Action keys must be unique within each intent shortcut.</source><translation>Les touches d’action doivent être uniques dans chaque raccourci d’intention.</translation></message>
+    <message><source>Action prompt data is invalid.</source><translation>Les données de l’invite d’action ne sont pas valides.</translation></message>
+    <message><source>Add a GitHub Copilot connection below, paste its token, then connect, test, or clear it here.</source><translation>Ajoutez une connexion GitHub Copilot ci-dessous, collez son jeton, puis connectez-la, testez-la ou effacez-la ici.</translation></message>
+    <message><source>Conversation title cannot be empty.</source><translation>Le titre de la conversation ne peut pas être vide.</translation></message>
+    <message><source>Conversation title is invalid.</source><translation>Le titre de la conversation n’est pas valide.</translation></message>
+    <message><source>Copy App Context</source><translation>Copier le contexte de l’application</translation></message>
+    <message><source>Copy selected</source><translation>Copier la sélection</translation></message>
+    <message><source>Could not create {profile}: {error}</source><translation>Impossible de créer {profile} : {error}</translation></message>
+    <message><source>Could not delete {profile}: {error}</source><translation>Impossible de supprimer {profile} : {error}</translation></message>
+    <message><source>Could not read the current application.</source><translation>Impossible de lire l’application actuelle.</translation></message>
+    <message><source>Could not rename {profile}: {error}</source><translation>Impossible de renommer {profile} : {error}</translation></message>
+    <message><source>Create profile failed</source><translation>Échec de la création du profil</translation></message>
+    <message><source>Default</source><translation>Par défaut</translation></message>
+    <message><source>Delete conversation failed</source><translation>Échec de la suppression de la conversation</translation></message>
+    <message><source>Delete profile failed</source><translation>Échec de la suppression du profil</translation></message>
+    <message><source>Enter a valid HTTP(S) custom endpoint URL.</source><translation>Saisissez une URL de point de terminaison HTTP(S) personnalisé valide.</translation></message>
+    <message><source>Enter a valid profile name before finishing setup.</source><translation>Saisissez un nom de profil valide avant de terminer la configuration.</translation></message>
+    <message><source>Every action choice needs a key, label, and prompt.</source><translation>Chaque choix d’action nécessite une touche, un libellé et une invite.</translation></message>
+    <message><source>Every intent shortcut needs a name.</source><translation>Chaque raccourci d’intention doit avoir un nom.</translation></message>
+    <message><source>Finish the open task first</source><translation>Terminez d’abord la tâche ouverte</translation></message>
+    <message><source>Intent shortcut names cannot contain control characters.</source><translation>Les noms des raccourcis d’intention ne peuvent pas contenir de caractères de contrôle.</translation></message>
+    <message><source>Intent shortcut names must be unique.</source><translation>Les noms des raccourcis d’intention doivent être uniques.</translation></message>
+    <message><source>Invalid intent shortcut</source><translation>Raccourci d’intention non valide</translation></message>
+    <message><source>No readable current-application context was found.</source><translation>Aucun contexte lisible de l’application actuelle n’a été trouvé.</translation></message>
+    <message><source>Profile</source><translation>Profil</translation></message>
+    <message><source>Profile settings could not be saved: {error}</source><translation>Impossible d’enregistrer les paramètres du profil : {error}</translation></message>
+    <message><source>Rename conversation failed</source><translation>Échec du renommage de la conversation</translation></message>
+    <message><source>Rename profile failed</source><translation>Échec du renommage du profil</translation></message>
+    <message><source>Settings cannot close while {child} is active.</source><translation>Les paramètres ne peuvent pas être fermés tant que {child} est actif.</translation></message>
+    <message><source>That fact is invalid or duplicates an existing fact.</source><translation>Ce fait n’est pas valide ou duplique un fait existant.</translation></message>
+    <message><source>Unknown storage error.</source><translation>Erreur de stockage inconnue.</translation></message>
+    <message><source>Wisp could not delete the conversation: {error}</source><translation>Wisp n’a pas pu supprimer la conversation : {error}</translation></message>
+    <message><source>Wisp could not save the new conversation title: {error}</source><translation>Wisp n’a pas pu enregistrer le nouveau titre de la conversation : {error}</translation></message>
+    <message><source>an installer</source><translation>un programme d’installation</translation></message>
+    <message><source>the profile setup wizard</source><translation>l’assistant de configuration du profil</translation></message>
+    <message><source>usage credits required</source><translation>crédits d’utilisation requis</translation></message>
   </context>
 </TS>

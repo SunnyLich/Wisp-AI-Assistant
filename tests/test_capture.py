@@ -42,6 +42,13 @@ class CaptureTests(unittest.TestCase):
 
     def tearDown(self):
         self._modules_patch.stop()
+        core_pkg = sys.modules.get("core")
+        restored_capture = sys.modules.get("core.capture")
+        if core_pkg is not None:
+            if restored_capture is not None:
+                core_pkg.capture = restored_capture
+            elif hasattr(core_pkg, "capture"):
+                del core_pkg.capture
 
     def test_get_selected_text_returns_none_when_clipboard_fallback_raises(self):
         with mock.patch.object(self.capture, "_get_selected_text_uia", return_value=None), \
@@ -505,6 +512,16 @@ class CaptureTests(unittest.TestCase):
             )
 
         self.assertEqual(image, ("crop", (1, 2, 4, 6)))
+
+
+def test_capture_fixture_restores_package_module_identity():
+    """Later tests patch the same capture module that production imports."""
+    import importlib
+
+    import core
+
+    imported = importlib.import_module("core.capture")
+    assert core.capture is imported
 
 
 if __name__ == "__main__":

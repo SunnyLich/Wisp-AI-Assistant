@@ -5731,5 +5731,44 @@ Shared uv/pip caches and unrelated Hugging Face models will not be removed.</sou
     <message><source>Review the ZIP before attaching it to a bug report.</source><translation>将 ZIP 附加到错误报告前，请先检查其内容。</translation></message>
     <message><source>Crash report could not be created.</source><translation>无法创建崩溃报告。</translation></message>
     <message><source>Crash report failed</source><translation>崩溃报告创建失败</translation></message>
+    <message><source>A conversation already uses that title.</source><translation>已有对话使用该标题。</translation></message>
+    <message><source>A profile named {profile} already exists.</source><translation>名为 {profile} 的配置文件已存在。</translation></message>
+    <message><source>Action keys must be one printable character.</source><translation>操作键必须是单个可打印字符。</translation></message>
+    <message><source>Action keys must be unique within each intent shortcut.</source><translation>每个意图快捷方式中的操作键必须唯一。</translation></message>
+    <message><source>Action prompt data is invalid.</source><translation>操作提示数据无效。</translation></message>
+    <message><source>Add a GitHub Copilot connection below, paste its token, then connect, test, or clear it here.</source><translation>在下方添加 GitHub Copilot 连接并粘贴令牌，然后在此连接、测试或清除。</translation></message>
+    <message><source>Conversation title cannot be empty.</source><translation>对话标题不能为空。</translation></message>
+    <message><source>Conversation title is invalid.</source><translation>对话标题无效。</translation></message>
+    <message><source>Copy App Context</source><translation>复制应用上下文</translation></message>
+    <message><source>Copy selected</source><translation>复制所选内容</translation></message>
+    <message><source>Could not create {profile}: {error}</source><translation>无法创建 {profile}：{error}</translation></message>
+    <message><source>Could not delete {profile}: {error}</source><translation>无法删除 {profile}：{error}</translation></message>
+    <message><source>Could not read the current application.</source><translation>无法读取当前应用程序。</translation></message>
+    <message><source>Could not rename {profile}: {error}</source><translation>无法重命名 {profile}：{error}</translation></message>
+    <message><source>Create profile failed</source><translation>创建配置文件失败</translation></message>
+    <message><source>Default</source><translation>默认</translation></message>
+    <message><source>Delete conversation failed</source><translation>删除对话失败</translation></message>
+    <message><source>Delete profile failed</source><translation>删除配置文件失败</translation></message>
+    <message><source>Enter a valid HTTP(S) custom endpoint URL.</source><translation>请输入有效的 HTTP(S) 自定义端点 URL。</translation></message>
+    <message><source>Enter a valid profile name before finishing setup.</source><translation>完成设置前，请输入有效的配置文件名称。</translation></message>
+    <message><source>Every action choice needs a key, label, and prompt.</source><translation>每个操作选项都需要按键、标签和提示。</translation></message>
+    <message><source>Every intent shortcut needs a name.</source><translation>每个意图快捷方式都需要名称。</translation></message>
+    <message><source>Finish the open task first</source><translation>请先完成当前任务</translation></message>
+    <message><source>Intent shortcut names cannot contain control characters.</source><translation>意图快捷方式名称不能包含控制字符。</translation></message>
+    <message><source>Intent shortcut names must be unique.</source><translation>意图快捷方式名称必须唯一。</translation></message>
+    <message><source>Invalid intent shortcut</source><translation>无效的意图快捷方式</translation></message>
+    <message><source>No readable current-application context was found.</source><translation>未找到可读取的当前应用上下文。</translation></message>
+    <message><source>Profile</source><translation>配置文件</translation></message>
+    <message><source>Profile settings could not be saved: {error}</source><translation>无法保存配置文件设置：{error}</translation></message>
+    <message><source>Rename conversation failed</source><translation>重命名对话失败</translation></message>
+    <message><source>Rename profile failed</source><translation>重命名配置文件失败</translation></message>
+    <message><source>Settings cannot close while {child} is active.</source><translation>{child} 处于活动状态时无法关闭设置。</translation></message>
+    <message><source>That fact is invalid or duplicates an existing fact.</source><translation>该事实无效或与现有事实重复。</translation></message>
+    <message><source>Unknown storage error.</source><translation>未知存储错误。</translation></message>
+    <message><source>Wisp could not delete the conversation: {error}</source><translation>Wisp 无法删除对话：{error}</translation></message>
+    <message><source>Wisp could not save the new conversation title: {error}</source><translation>Wisp 无法保存新的对话标题：{error}</translation></message>
+    <message><source>an installer</source><translation>安装程序</translation></message>
+    <message><source>the profile setup wizard</source><translation>配置文件设置向导</translation></message>
+    <message><source>usage credits required</source><translation>需要使用额度</translation></message>
   </context>
 </TS>
