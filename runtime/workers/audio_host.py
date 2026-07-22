@@ -641,7 +641,11 @@ def play_file(path: str = "") -> dict[str, Any]:
 
     data, sample_rate = sf.read(path, dtype="float32")
     data = np.asarray(data, dtype=np.float32)
-    volume = max(0.0, min(2.0, float(getattr(config, "TTS_VOLUME", 1.0) or 1.0)))
+    configured_volume = getattr(config, "TTS_VOLUME", 1.0)
+    volume = max(
+        0.0,
+        min(2.0, float(1.0 if configured_volume is None else configured_volume)),
+    )
     if volume != 1.0:
         data = np.clip(data * volume, -1.0, 1.0).astype("float32", copy=False)
     channels = 1 if data.ndim == 1 else int(data.shape[1])

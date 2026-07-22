@@ -66,12 +66,62 @@ class TtsConnectionTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("CARTESIA_VOICE_ID", message)
 
+    def test_cartesia_connection_sends_voice_and_receives_audio(self):
+        calls = []
+
+        class FakeContext:
+            def push(self, text):
+                calls.append(("push", text))
+
+            def no_more_inputs(self):
+                calls.append(("done", None))
+
+            def receive(self):
+                return iter([types.SimpleNamespace(type="chunk", audio=b"cartesia-audio")])
+
+        class FakeWebSocket:
+            def context(self, **kwargs):
+                calls.append(("context", kwargs))
+                return FakeContext()
+
+        class FakeManager:
+            def __enter__(self):
+                return FakeWebSocket()
+
+            def __exit__(self, *_exc):
+                calls.append(("close", None))
+
+        class FakeCartesia:
+            def __init__(self, api_key):
+                calls.append(("key", api_key))
+                self.tts = types.SimpleNamespace(websocket_connect=lambda: FakeManager())
+
+        fake_module = types.ModuleType("cartesia")
+        fake_module.Cartesia = FakeCartesia
+        with patch.dict(sys.modules, {"cartesia": fake_module}):
+            ok, message = tts.test_connection(
+                "cartesia",
+                cartesia_api_key="test-cartesia-key",
+                cartesia_voice_id="voice-123",
+            )
+
+        self.assertTrue(ok)
+        self.assertIn("cartesia", message)
+        self.assertIn(("key", "test-cartesia-key"), calls)
+        context = next(value for kind, value in calls if kind == "context")
+        self.assertEqual(context["model_id"], "sonic-3")
+        self.assertEqual(context["voice"], {"mode": "id", "id": "voice-123"})
+        self.assertIn(("push", "ok"), calls)
+
     def test_elevenlabs_connection_succeeds_when_audio_arrives(self):
+        calls = []
+
         class FakeElevenLabs:
             def __init__(self, api_key):
-                self.api_key = api_key
+                calls.append(("key", api_key))
 
             def generate(self, **kwargs):
+                calls.append(("generate", kwargs))
                 yield b"audio"
 
         fake_module = types.ModuleType("elevenlabs.client")
@@ -81,10 +131,142 @@ class TtsConnectionTests(unittest.TestCase):
             ok, message = tts.test_connection(
                 "elevenlabs",
                 elevenlabs_api_key="eleven-key",
+                elevenlabs_voice_id="voice-id",
+                elevenlabs_model="model-id",
             )
 
         self.assertTrue(ok)
         self.assertIn("elevenlabs", message)
+        self.assertEqual(calls[0], ("key", "eleven-key"))
+        self.assertEqual(
+            calls[1],
+            (
+                "generate",
+                {
+                    "text": "ok",
+                    "stream": True,
+                    "output_format": "pcm_22050",
+                    "model": "model-id",
+                    "voice": "voice-id",
+                },
+            ),
+        )
+
+    def test_elevenlabs_runtime_stream_uses_saved_key_voice_and_model(self):
+        clients = []
+        requests = []
+
+        class FakeElevenLabs:
+            def __init__(self, api_key):
+                clients.append(api_key)
+
+            def generate(self, **kwargs):
+                requests.append(kwargs)
+                yield b"first-audio"
+                yield b"second-audio"
+
+        fake_module = types.ModuleType("elevenlabs.client")
+        fake_module.ElevenLabs = FakeElevenLabs
+
+        with patch.dict(sys.modules, {"elevenlabs.client": fake_module}), patch.object(
+            tts.macos_safety,
+            "audio_enabled",
+            return_value=True,
+        ), patch.multiple(
+            tts.config,
+            TTS_PROVIDER="elevenlabs",
+            ELEVENLABS_API_KEY="saved-eleven-key",
+            ELEVENLABS_VOICE_ID="saved-eleven-voice",
+            ELEVENLABS_MODEL="saved-eleven-model",
+        ):
+            audio = list(tts.stream_audio_from_chunks(iter(["Hello ", "world"])))
+
+        self.assertEqual(audio, [b"first-audio", b"second-audio"])
+        self.assertEqual(clients, ["saved-eleven-key"])
+        self.assertEqual(
+            requests,
+            [
+                {
+                    "text": "Hello world",
+                    "stream": True,
+                    "output_format": "pcm_22050",
+                    "model": "saved-eleven-model",
+                    "voice": "saved-eleven-voice",
+                }
+            ],
+        )
+
+    def test_openai_and_compatible_connections_send_exact_endpoint_model_and_voice(self):
+        clients = []
+        requests = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def iter_bytes(self):
+                return iter([b"pcm-audio"])
+
+        class FakeCreate:
+            def create(self, **kwargs):
+                requests.append(kwargs)
+                return FakeResponse()
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                clients.append(kwargs)
+                self.audio = types.SimpleNamespace(
+                    speech=types.SimpleNamespace(
+                        with_streaming_response=FakeCreate(),
+                    )
+                )
+
+        fake_module = types.ModuleType("openai")
+        fake_module.OpenAI = FakeOpenAI
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            openai_result = tts.test_connection(
+                "openai",
+                openai_api_key="test-openai-key",
+                openai_model="gpt-4o-mini-tts",
+                openai_voice="nova",
+            )
+            compatible_result = tts.test_connection(
+                "openai_compatible",
+                custom_base_url="https://speech.example/v1",
+                custom_api_key="test-custom-key",
+                custom_model="custom-tts-model",
+                custom_voice="custom-voice",
+            )
+
+        self.assertTrue(openai_result[0])
+        self.assertTrue(compatible_result[0])
+        self.assertEqual(
+            clients,
+            [
+                {"api_key": "test-openai-key", "base_url": None},
+                {"api_key": "test-custom-key", "base_url": "https://speech.example/v1"},
+            ],
+        )
+        self.assertEqual(
+            requests,
+            [
+                {
+                    "model": "gpt-4o-mini-tts",
+                    "voice": "nova",
+                    "input": "ok",
+                    "response_format": "pcm",
+                },
+                {
+                    "model": "custom-tts-model",
+                    "voice": "custom-voice",
+                    "input": "ok",
+                    "response_format": "pcm",
+                },
+            ],
+        )
 
     def test_gpt_sovits_requires_reference_audio(self):
         """Verify GPT-SoVITS connection requires reference audio."""
@@ -362,6 +544,45 @@ class TtsConnectionTests(unittest.TestCase):
         self.assertEqual(calls[0]["text"], "ok")
         self.assertEqual(calls[0]["voice"], "af_heart")
         self.assertEqual(calls[0]["lang_code"], "a")
+
+    def test_kokoro_connection_uses_configured_speed_and_sample_rate(self):
+        import config
+
+        calls = []
+
+        class FakeKPipeline:
+            def __init__(self, lang_code):
+                self.lang_code = lang_code
+
+            def __call__(self, text, voice, speed, split_pattern):
+                calls.append(
+                    {
+                        "lang_code": self.lang_code,
+                        "text": text,
+                        "voice": voice,
+                        "speed": speed,
+                        "split_pattern": split_pattern,
+                    }
+                )
+                yield text, "phonemes", np.array([0.0, 0.25, -0.25], dtype=np.float32)
+
+        fake_module = types.ModuleType("kokoro")
+        fake_module.KPipeline = FakeKPipeline
+        with patch.dict(sys.modules, {"kokoro": fake_module}), \
+             patch.object(config, "KOKORO_SPEED", 1.2), \
+             patch.object(config, "KOKORO_SAMPLE_RATE", 16000):
+            ok, message = tts.test_connection(
+                "kokoro",
+                kokoro_voice="af_heart",
+                kokoro_lang_code="a",
+                kokoro_device="cpu",
+            )
+            playback = tts.playback_format("kokoro")
+
+        self.assertTrue(ok)
+        self.assertIn("kokoro", message)
+        self.assertEqual(calls[0]["speed"], 1.2)
+        self.assertEqual(playback[0], 16000)
 
     def test_kokoro_connection_passes_supported_device(self):
         """Verify Kokoro receives the configured CUDA device when supported."""

@@ -901,6 +901,8 @@ def test_connection(
     cartesia_api_key: str | None = None,
     cartesia_voice_id: str | None = None,
     elevenlabs_api_key: str | None = None,
+    elevenlabs_voice_id: str | None = None,
+    elevenlabs_model: str | None = None,
     openai_api_key: str | None = None,
     openai_voice: str | None = None,
     openai_model: str | None = None,
@@ -922,6 +924,8 @@ def test_connection(
     cartesia_api_key = config.CARTESIA_API_KEY if cartesia_api_key is None else cartesia_api_key
     cartesia_voice_id = config.CARTESIA_VOICE_ID if cartesia_voice_id is None else cartesia_voice_id
     elevenlabs_api_key = config.ELEVENLABS_API_KEY if elevenlabs_api_key is None else elevenlabs_api_key
+    elevenlabs_voice_id = config.ELEVENLABS_VOICE_ID if elevenlabs_voice_id is None else elevenlabs_voice_id
+    elevenlabs_model = config.ELEVENLABS_MODEL if elevenlabs_model is None else elevenlabs_model
     openai_api_key = config.OPENAI_API_KEY if openai_api_key is None else openai_api_key
     custom_base_url = config.TTS_CUSTOM_BASE_URL if custom_base_url is None else custom_base_url
     custom_api_key = config.TTS_CUSTOM_API_KEY if custom_api_key is None else custom_api_key
@@ -1000,11 +1004,15 @@ def test_connection(
 
             with ssl_init_lock():
                 client = ElevenLabs(api_key=elevenlabs_api_key)
-            audio_stream = client.generate(
-                text="ok",
-                stream=True,
-                output_format="pcm_22050",
-            )
+            elevenlabs_request = {
+                "text": "ok",
+                "stream": True,
+                "output_format": "pcm_22050",
+                "model": elevenlabs_model or "eleven_turbo_v2_5",
+            }
+            if elevenlabs_voice_id:
+                elevenlabs_request["voice"] = elevenlabs_voice_id
+            audio_stream = client.generate(**elevenlabs_request)
             for chunk in audio_stream:
                 if chunk:
                     return True, "TTS route OK: elevenlabs"

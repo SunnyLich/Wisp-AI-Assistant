@@ -9275,7 +9275,12 @@ class SettingsDialog(QDialog):
             self._running_test_tokens.discard((test_key, token))
             if self._latest_test_token.get(test_key) != token:
                 continue
-            label = getattr(self, f"_{test_key}_status_lbl", None)
+            label_attr = (
+                "_kokoro_install_status_lbl"
+                if test_key == "kokoro_assets"
+                else f"_{test_key}_status_lbl"
+            )
+            label = getattr(self, label_attr, None)
             if isinstance(label, QLabel):
                 self._set_test_status(label, ok, message)
             if test_key == "kokoro_install" and ok:
@@ -9289,6 +9294,10 @@ class SettingsDialog(QDialog):
                 self._refresh_elevenlabs_install_status()
             elif test_key == "elevenlabs_install":
                 button = getattr(self, "_elevenlabs_install_btn", None)
+                if isinstance(button, QPushButton):
+                    button.setEnabled(True)
+            elif test_key == "kokoro_assets":
+                button = getattr(self, "_kokoro_assets_btn", None)
                 if isinstance(button, QPushButton):
                     button.setEnabled(True)
             elif test_key == "stt_install":
@@ -9404,6 +9413,8 @@ class SettingsDialog(QDialog):
         cartesia_api_key = self._effective_secret_value("CARTESIA_API_KEY")
         cartesia_voice_id = _get(self._fields["CARTESIA_VOICE_ID"]).strip()
         elevenlabs_api_key = self._effective_secret_value("ELEVENLABS_API_KEY")
+        elevenlabs_voice_id = _get(self._fields["ELEVENLABS_VOICE_ID"]).strip()
+        elevenlabs_model = _get(self._fields["ELEVENLABS_MODEL"]).strip()
         # OpenAI TTS reuses the OpenAI key managed in the Models tab's key table.
         openai_api_key = self._effective_secret_value_from_provider("openai")
         openai_voice = _get(self._fields["OPENAI_TTS_VOICE"]).strip()
@@ -9428,6 +9439,8 @@ class SettingsDialog(QDialog):
                 cartesia_api_key=cartesia_api_key,
                 cartesia_voice_id=cartesia_voice_id,
                 elevenlabs_api_key=elevenlabs_api_key,
+                elevenlabs_voice_id=elevenlabs_voice_id,
+                elevenlabs_model=elevenlabs_model,
                 openai_api_key=openai_api_key,
                 openai_voice=openai_voice,
                 openai_model=openai_model,

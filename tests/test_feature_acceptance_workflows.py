@@ -1042,6 +1042,360 @@ def test_conversation_engine_and_owner_settings_drive_runtime_dispatch_matrix(
             driver.pump()
 
 
+def test_tts_volume_speed_and_read_aloud_chunk_settings_drive_audio_runtime(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Save playback controls, then consume them in the audio and read-aloud paths."""
+
+    import sys
+    import types
+
+    import numpy as np
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core import audio_state
+    from runtime.supervisor.flows import FlowController
+    from runtime.workers import audio_host
+    from ui.settings_panel.dialog import SettingsDialog
+
+    driver = QtUserDriver(qapp, timeout=2.0)
+    dialog = SettingsDialog()
+    try:
+        _unique_shortcuts(dialog)
+        dialog._fields["TTS_VOLUME"].setValue(25)
+        dialog._fields["TTS_PLAYBACK_RATE"].setText("1.25")
+        dialog._fields["TTS_HOLD_PLAYBACK_RATE"].setText("1.80")
+        dialog._fields["TTS_READ_ALOUD_MIN_WORDS"].setText("2")
+        dialog._fields["TTS_READ_ALOUD_MAX_WORDS"].setText("4")
+        driver.pump()
+
+        save = dialog.findChild(QPushButton, "settingsApplyButton")
+        assert save is not None and save.isEnabled()
+        driver.click(save)
+
+        assert config.TTS_VOLUME == 0.25
+        assert config.TTS_PLAYBACK_RATE == 1.25
+        assert config.TTS_HOLD_PLAYBACK_RATE == 1.80
+        assert config.TTS_READ_ALOUD_MIN_WORDS == 2
+        assert config.TTS_READ_ALOUD_MAX_WORDS == 4
+        assert FlowController._read_aloud_chunks(
+            "one two. three four five six seven"
+        ) == ["one two.", "three four five six", "seven"]
+        assert FlowController._read_aloud_chunks("one.") == ["one."]
+        assert FlowController._read_aloud_chunks("one two three four") == [
+            "one two three four"
+        ]
+
+        audio_state.set_tts_speed_boost(False)
+        assert audio_host._current_tts_rate() == 1.25
+        audio_host.audio_speed_boost(True)
+        assert audio_host._current_tts_rate() == 1.80
+        audio_host.audio_speed_boost(False)
+
+        source = np.array([0.8, 0.4, -0.4, -0.8], dtype=np.float32)
+        writes = []
+
+        class FakeOutputStream:
+            def __init__(self, *, samplerate, channels, dtype):
+                assert samplerate == 22_050
+                assert channels == 1
+                assert dtype == "float32"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def write(self, data):
+                writes.append(np.array(data, copy=True))
+
+        monkeypatch.setitem(
+            sys.modules,
+            "sounddevice",
+            types.SimpleNamespace(OutputStream=FakeOutputStream, stop=lambda: None),
+        )
+        monkeypatch.setitem(
+            sys.modules,
+            "soundfile",
+            types.SimpleNamespace(read=lambda _path, dtype="float32": (source, 22_050)),
+        )
+
+        for volume in (0.0, 0.25, 1.0, 1.5):
+            config.TTS_VOLUME = volume
+            writes.clear()
+            assert audio_host.play_file("saved-volume.wav") == {
+                "played": True,
+                "stopped": False,
+            }
+            scaled = np.clip(source * volume, -1.0, 1.0).astype("float32")
+            expected = audio_host._speed_adjust_float_audio(scaled, 1.25)
+            assert np.allclose(np.concatenate(writes), expected)
+    finally:
+        audio_state.set_tts_speed_boost(False)
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
+def test_visible_test_tts_button_forwards_every_provider_configuration(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Click Test TTS for every provider and each Kokoro device choice."""
+
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core import tts
+    from ui.settings_panel.dialog import SettingsDialog, _set
+
+    driver = QtUserDriver(qapp, timeout=2.0)
+    dialog = SettingsDialog()
+    calls = []
+
+    def fake_test_connection(provider, **kwargs):
+        calls.append((provider, dict(kwargs)))
+        return True, f"TTS route OK: {provider}"
+
+    monkeypatch.setattr(tts, "test_connection", fake_test_connection)
+    try:
+        dialog.show()
+        dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("TTS / Voice"))
+        dialog._show_voice_feature("tts")
+        driver.pump()
+        _unique_shortcuts(dialog)
+        dialog._fields["CARTESIA_API_KEY"].setText("test-cartesia-key")
+        dialog._fields["CARTESIA_VOICE_ID"].setText("cartesia-voice")
+        dialog._fields["ELEVENLABS_API_KEY"].setText("test-elevenlabs-key")
+        dialog._fields["ELEVENLABS_VOICE_ID"].setText("elevenlabs-voice")
+        dialog._fields["ELEVENLABS_MODEL"].setText("elevenlabs-model")
+        dialog._fields["OPENAI_TTS_VOICE"].setText("nova")
+        dialog._fields["OPENAI_TTS_MODEL"].setText("gpt-4o-mini-tts")
+        dialog._fields["TTS_CUSTOM_BASE_URL"].setText("https://speech.example/v1")
+        dialog._fields["TTS_CUSTOM_API_KEY"].setText("test-custom-speech-key")
+        dialog._fields["TTS_CUSTOM_VOICE"].setText("custom-voice")
+        dialog._fields["TTS_CUSTOM_MODEL"].setText("custom-model")
+        dialog._fields["TTS_CUSTOM_SAMPLE_RATE"].setText("16000")
+        dialog._fields["GPT_SOVITS_URL"].setText("http://127.0.0.1:9880")
+        dialog._fields["GPT_SOVITS_REF_AUDIO_PATH"].setText("C:/voices/reference.wav")
+        dialog._fields["GPT_SOVITS_PROMPT_TEXT"].setText("reference transcript")
+        _set(dialog._fields["GPT_SOVITS_PROMPT_LANG"], "en")
+        _set(dialog._fields["GPT_SOVITS_TEXT_LANG"], "zh")
+        dialog._fields["GPT_SOVITS_SAMPLE_RATE"].setText("32000")
+        dialog._fields["KOKORO_VOICE"].setText("af_heart")
+        dialog._fields["KOKORO_LANG_CODE"].setText("a")
+        dialog._fields["KOKORO_SPEED"].setText("1.10")
+        dialog._fields["KOKORO_SAMPLE_RATE"].setText("24000")
+        openai_row = dialog._add_api_key_row("openai", alias="Speech")
+        openai_row["key"].setText("test-openai-speech-key")
+
+        scenarios = [
+            ("cartesia", None),
+            ("elevenlabs", None),
+            ("openai", None),
+            ("openai_compatible", None),
+            ("gpt_sovits", None),
+            ("kokoro", "auto"),
+            ("kokoro", "cpu"),
+            ("kokoro", "cuda"),
+        ]
+        test_button = dialog._tts_test_row.findChild(QPushButton)
+        assert test_button is not None and test_button.text() == "Test TTS"
+        for provider, device in scenarios:
+            _set(dialog._fields["TTS_PROVIDER"], provider)
+            if device is not None:
+                _set(dialog._fields["KOKORO_DEVICE"], device)
+            driver.pump()
+            assert test_button.isVisible()
+            expected_count = len(calls) + 1
+            driver.click(test_button)
+            driver.wait(lambda: len(calls) >= expected_count, f"{provider}/{device} TTS call")
+            driver.wait(
+                lambda: dialog._tts_test_status_lbl.text() == f"TTS route OK: {provider}",
+                f"{provider}/{device} TTS result",
+            )
+
+        by_state = {(provider, kwargs.get("kokoro_device")): kwargs for provider, kwargs in calls}
+        assert by_state[("cartesia", "auto")]["cartesia_api_key"] == "test-cartesia-key"
+        assert by_state[("cartesia", "auto")]["cartesia_voice_id"] == "cartesia-voice"
+        assert by_state[("elevenlabs", "auto")]["elevenlabs_api_key"] == "test-elevenlabs-key"
+        assert by_state[("elevenlabs", "auto")]["elevenlabs_voice_id"] == "elevenlabs-voice"
+        assert by_state[("elevenlabs", "auto")]["elevenlabs_model"] == "elevenlabs-model"
+        assert by_state[("openai", "auto")]["openai_api_key"] == "test-openai-speech-key"
+        assert by_state[("openai", "auto")]["openai_voice"] == "nova"
+        assert by_state[("openai", "auto")]["openai_model"] == "gpt-4o-mini-tts"
+        assert by_state[("openai_compatible", "auto")]["custom_base_url"] == "https://speech.example/v1"
+        assert by_state[("openai_compatible", "auto")]["custom_voice"] == "custom-voice"
+        assert by_state[("openai_compatible", "auto")]["custom_model"] == "custom-model"
+        assert by_state[("gpt_sovits", "auto")]["gpt_sovits_ref_audio_path"] == "C:/voices/reference.wav"
+        assert by_state[("gpt_sovits", "auto")]["gpt_sovits_prompt_text"] == "reference transcript"
+        assert by_state[("gpt_sovits", "auto")]["gpt_sovits_text_lang"] == "zh"
+        for device in ("auto", "cpu", "cuda"):
+            assert by_state[("kokoro", device)]["kokoro_voice"] == "af_heart"
+            assert by_state[("kokoro", device)]["kokoro_lang_code"] == "a"
+
+        save = dialog.findChild(QPushButton, "settingsApplyButton")
+        assert save is not None and save.isEnabled()
+        driver.click(save)
+        assert config.TTS_PROVIDER == "kokoro"
+        assert config.TTS_CUSTOM_SAMPLE_RATE == 16000
+        assert config.GPT_SOVITS_SAMPLE_RATE == 32000
+        assert config.KOKORO_DEVICE == "cuda"
+        assert config.KOKORO_SPEED == 1.10
+        assert config.KOKORO_SAMPLE_RATE == 24000
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
+def test_visible_speech_install_and_kokoro_asset_actions_reach_runtime_boundaries(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Click the real provider install, repair, and update controls."""
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from core import optional_deps, tts, tts_assets
+    from ui.settings_panel.dialog import SettingsDialog, _set
+
+    driver = QtUserDriver(qapp, timeout=2.0)
+    installs: list[dict[str, object]] = []
+    asset_calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(SettingsDialog, "_refresh_tts_optional_install_status", lambda _self: None)
+    monkeypatch.setattr(SettingsDialog, "_elevenlabs_installed", lambda _self: False)
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_kokoro_install_snapshot",
+        lambda _self: {
+            "installed": False,
+            "needs_gpu": False,
+            "needs_repair": False,
+            "mode": "cpu",
+        },
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_install_optional_tts_package",
+        lambda _self, **kwargs: installs.append(dict(kwargs)),
+    )
+    monkeypatch.setattr(
+        tts,
+        "prepare_kokoro_assets",
+        lambda voice: asset_calls.append(("repair", voice)) or {"voice": "voice.pt"},
+    )
+    monkeypatch.setattr(
+        tts_assets,
+        "apply_update",
+        lambda manifest, revision, *, voices: asset_calls.append(
+            ("update", (manifest, revision, tuple(voices)))
+        ),
+    )
+    monkeypatch.setattr(tts, "reset_connections", lambda: asset_calls.append(("reset", None)))
+    dialog = SettingsDialog()
+
+    try:
+        dialog.show()
+        dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("TTS / Voice"))
+        dialog._show_voice_feature("tts")
+        driver.pump()
+
+        _set(dialog._fields["TTS_PROVIDER"], "elevenlabs")
+        dialog._apply_elevenlabs_install_status(False)
+        driver.pump()
+        assert dialog._elevenlabs_install_btn.isVisible()
+        assert dialog._elevenlabs_install_btn.text() == "Install ElevenLabs"
+        driver.click(dialog._elevenlabs_install_btn)
+        assert len(installs) == 1
+        elevenlabs_plan = installs[-1]
+        assert elevenlabs_plan["packages"] == [optional_deps.ELEVENLABS_PACKAGE]
+        assert elevenlabs_plan["reinstall"] is False
+        assert elevenlabs_plan["external_plan_extra"]["settings_updates"] == {
+            "TTS_PROVIDER": "elevenlabs",
+            "WISP_TTS_PREFERENCE": "cloud",
+        }
+        assert dialog._fields["TTS_PROVIDER"].currentData() == "elevenlabs"
+
+        _set(dialog._fields["TTS_PROVIDER"], "kokoro")
+        _set(dialog._fields["KOKORO_DEVICE"], "cpu")
+        dialog._fields["KOKORO_VOICE"].setText("af_heart")
+        dialog._apply_kokoro_install_status(
+            installed=False,
+            mode="cpu",
+            torch_status={},
+            needs_gpu=False,
+        )
+        driver.pump()
+        assert dialog._kokoro_install_btn.isVisible()
+        assert dialog._kokoro_install_btn.text() == "Install Kokoro"
+        driver.click(dialog._kokoro_install_btn)
+        assert len(installs) == 2
+        kokoro_plan = installs[-1]
+        assert kokoro_plan["packages"] == optional_deps.kokoro_install_packages("cpu")
+        assert kokoro_plan["pre_install_packages"] == []
+        assert kokoro_plan["reinstall"] is False
+        assert kokoro_plan["external_plan_extra"]["settings_updates"] == {
+            "TTS_PROVIDER": "kokoro",
+            "WISP_TTS_PREFERENCE": "local",
+            "KOKORO_VOICE": "af_heart",
+            "KOKORO_LANG_CODE": "a",
+            "KOKORO_DEVICE": "cpu",
+        }
+
+        dialog._apply_kokoro_assets_status(
+            installed=True,
+            assets={"state": "damaged", "problems": ["model hash mismatch"]},
+        )
+        driver.pump()
+        assert dialog._kokoro_assets_btn.isVisible()
+        assert dialog._kokoro_assets_btn.text() == "Repair voice files"
+        driver.click(dialog._kokoro_assets_btn)
+        driver.wait(lambda: ("repair", "af_heart") in asset_calls, "Kokoro repair")
+        driver.wait(
+            lambda: dialog._kokoro_install_status_lbl.text() == "Kokoro voice files repaired.",
+            "Kokoro repair result",
+        )
+        assert dialog._kokoro_assets_btn.isEnabled()
+
+        dialog._apply_kokoro_assets_status(
+            installed=True,
+            assets={"state": "ready", "update_revision": "revision-2"},
+        )
+        driver.pump()
+        assert dialog._kokoro_assets_btn.text() == "Update voice model"
+        driver.click(dialog._kokoro_assets_btn)
+        driver.wait(
+            lambda: any(kind == "update" for kind, _value in asset_calls),
+            "Kokoro model update",
+        )
+        driver.wait(
+            lambda: dialog._kokoro_install_status_lbl.text() == "Kokoro voice model updated.",
+            "Kokoro update result",
+        )
+        update = next(value for kind, value in asset_calls if kind == "update")
+        assert update[0] is tts_assets.KOKORO
+        assert update[1:] == ("revision-2", ("af_heart",))
+        assert asset_calls[-1] == ("reset", None)
+        assert dialog._kokoro_assets_btn.isEnabled()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
 def test_builtin_profile_action_saves_and_reopens_as_the_active_runtime_profile(
     qapp,
     live_runtime_settings,
