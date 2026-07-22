@@ -9621,7 +9621,8 @@ class SettingsDialog(QDialog):
         model = _get(self._fields["STT_MODEL"]).strip() or "base"
         device = _get(self._fields["STT_DEVICE"]).strip() or "auto"
         compute_type = _get(self._fields["STT_COMPUTE_TYPE"]).strip() or "int8"
-        language = _get(self._fields["STT_LANGUAGE"]).strip() or "auto"
+        language = _get(self._fields["STT_LANGUAGE"]).strip()
+        language_label = language or "auto"
         beam_size = _get(self._fields["STT_BEAM_SIZE"]).strip() or "5"
 
         message = t(
@@ -9641,7 +9642,7 @@ class SettingsDialog(QDialog):
             model=model,
             device=device,
             compute_type=compute_type,
-            language=language,
+            language=language_label,
             beam_size=beam_size,
         )
         if sys.platform == "win32" and device.lower() in {"auto", "cuda"}:

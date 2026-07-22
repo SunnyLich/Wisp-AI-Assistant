@@ -1396,6 +1396,285 @@ def test_visible_speech_install_and_kokoro_asset_actions_reach_runtime_boundarie
         driver.pump()
 
 
+def test_visible_stt_install_button_covers_every_model_device_compute_language_and_beam(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Drive every STT selector state through the visible install action."""
+
+    from itertools import product
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog, _set
+
+    plans: list[dict[str, object]] = []
+    monkeypatch.setattr(SettingsDialog, "_refresh_stt_active_backend", lambda _self: None)
+    monkeypatch.setattr(SettingsDialog, "_refresh_tts_optional_install_status", lambda _self: None)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_install_optional_tts_package",
+        lambda _self, **kwargs: plans.append(dict(kwargs)),
+    )
+    driver = QtUserDriver(qapp, timeout=2.0)
+    dialog = SettingsDialog()
+    try:
+        dialog.show()
+        dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("TTS / Voice"))
+        dialog._show_voice_feature("stt")
+        driver.pump()
+        assert dialog._stt_download_btn.isVisible()
+        assert dialog._stt_download_btn.text() == "Install STT"
+
+        model_values = [
+            dialog._fields["STT_MODEL"].itemData(index)
+            for index in range(dialog._fields["STT_MODEL"].count())
+        ]
+        device_values = [
+            dialog._fields["STT_DEVICE"].itemData(index)
+            for index in range(dialog._fields["STT_DEVICE"].count())
+        ]
+        compute_values = [
+            dialog._fields["STT_COMPUTE_TYPE"].itemData(index)
+            for index in range(dialog._fields["STT_COMPUTE_TYPE"].count())
+        ]
+        beam_values = [
+            dialog._fields["STT_BEAM_SIZE"].itemData(index)
+            for index in range(dialog._fields["STT_BEAM_SIZE"].count())
+        ]
+        for model in model_values:
+            _set(dialog._fields["STT_MODEL"], model)
+            driver.pump()
+            assert (dialog._fields["STT_LANGUAGE"].findData("yue") >= 0) is (
+                model == "large-v3"
+            )
+
+        cases: set[tuple[str, str, str, str, str]] = set()
+        cases.update((model, "cpu", "int8", "", "5") for model in model_values)
+        cases.update(
+            ("base", device, compute, "en", "3")
+            for device, compute in product(device_values, compute_values)
+        )
+        cases.update(
+            ("large-v3", "cpu", "int8", language, "1")
+            for _label, language in dialog_mod._STT_LANGUAGE_OPTIONS
+        )
+        cases.update(("base", "cpu", "int8", "en", beam) for beam in beam_values)
+
+        cases = {
+            case
+            for case in cases
+            if case[3] != "yue" or case[0] == "large-v3"
+        }
+        expected_cases = set(cases)
+        for model, device, compute, language, beam in sorted(cases):
+            _set(dialog._fields["STT_MODEL"], model)
+            _set(dialog._fields["STT_DEVICE"], device)
+            _set(dialog._fields["STT_COMPUTE_TYPE"], compute)
+            _set(dialog._fields["STT_LANGUAGE"], language)
+            _set(dialog._fields["STT_BEAM_SIZE"], beam)
+            driver.pump()
+            driver.click(dialog._stt_download_btn)
+
+        observed_cases = set()
+        for plan in plans:
+            updates = plan["external_plan_extra"]["settings_updates"]
+            case = (
+                plan["external_plan_extra"]["stt_model"],
+                plan["external_plan_extra"]["stt_device"],
+                plan["external_plan_extra"]["stt_compute_type"],
+                updates["STT_LANGUAGE"],
+                updates["STT_BEAM_SIZE"],
+            )
+            observed_cases.add(case)
+            assert plan["packages"] == optional_deps.stt_install_packages(case[1])
+            assert plan["remove_artifacts"] == optional_deps.stt_remove_artifacts()
+            assert updates["WISP_STT_PREFERENCE"] == "local"
+        assert observed_cases == expected_cases
+        assert {case[0] for case in observed_cases} == set(model_values)
+        assert {case[1] for case in observed_cases} == set(device_values)
+        assert {case[2] for case in observed_cases} == set(compute_values)
+        assert {case[3] for case in observed_cases} == {
+            value for _label, value in dialog_mod._STT_LANGUAGE_OPTIONS
+        }
+        assert {case[4] for case in observed_cases} == set(beam_values)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
+def test_stt_runtime_consumes_every_model_device_compute_language_and_beam(
+    monkeypatch,
+):
+    """Run the production STT loader and transcriber across every saved state."""
+
+    from itertools import product
+    import sys
+    import types
+
+    import numpy as np
+
+    import config
+    from core import optional_deps, stt_device
+    from core.macos_helper import handlers
+    from ui.settings_panel import dialog as dialog_mod
+
+    constructor_calls: list[tuple[str, str, str]] = []
+
+    class FakeWhisperModel:
+        def __init__(self, model, *, device, compute_type):
+            constructor_calls.append((model, device, compute_type))
+
+        def transcribe(self, _audio, **_kwargs):
+            return [], None
+
+    fake_faster_whisper = types.ModuleType("faster_whisper")
+    fake_faster_whisper.WhisperModel = FakeWhisperModel
+    fake_ctranslate2 = types.SimpleNamespace(
+        __version__="test",
+        get_cuda_device_count=lambda: 1,
+        get_supported_compute_types=lambda _device, _index: {
+            "int8",
+            "int8_float16",
+            "float16",
+            "float32",
+        },
+    )
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_faster_whisper)
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ctranslate2)
+    monkeypatch.setattr(optional_deps, "require_optional_package_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        stt_device,
+        "windows_cuda_runtime_status",
+        lambda: {"checked": True, "valid": True, "errors": {}},
+    )
+
+    old_model = handlers._model
+    old_ready = handlers._model_ready
+    try:
+        models = [value for _label, value, _translation in dialog_mod._STT_MODEL_OPTIONS]
+        devices = [value for _label, value in dialog_mod._STT_DEVICE_OPTIONS]
+        computes = [value for _label, value in dialog_mod._STT_COMPUTE_OPTIONS]
+        for model, device, compute in product(models, devices, computes):
+            monkeypatch.setattr(config, "STT_MODEL", model)
+            monkeypatch.setattr(config, "STT_DEVICE", device)
+            monkeypatch.setattr(config, "STT_COMPUTE_TYPE", compute)
+            handlers._model = None
+            handlers._model_ready = False
+            handlers._get_model()
+            effective_device = "cpu" if device == "cpu" else "cuda"
+            effective_compute = (
+                "int8"
+                if effective_device == "cpu" and compute in {"float16", "int8_float16"}
+                else compute
+            )
+            assert constructor_calls[-1] == (model, effective_device, effective_compute)
+            assert handlers._model_ready is True
+
+        transcript_calls: list[dict[str, object]] = []
+
+        class FakeTranscriber:
+            def transcribe(self, _audio, **kwargs):
+                transcript_calls.append(dict(kwargs))
+                return [types.SimpleNamespace(text=" exact transcript ")], None
+
+        monkeypatch.setattr(handlers, "_get_model", lambda: FakeTranscriber())
+        languages = [value for _label, value in dialog_mod._STT_LANGUAGE_OPTIONS]
+        beams = [int(value) for _label, value in dialog_mod._STT_BEAM_OPTIONS]
+        audio = np.ones(int(0.5 * handlers._SAMPLE_RATE), dtype="float32")
+        for language, beam in product(languages, beams):
+            monkeypatch.setattr(config, "STT_LANGUAGE", language)
+            monkeypatch.setattr(config, "STT_BEAM_SIZE", beam)
+            assert handlers._transcribe_audio(audio, label="acceptance") == "exact transcript"
+            assert transcript_calls[-1] == {
+                "beam_size": beam,
+                "language": language or None,
+                "vad_filter": True,
+            }
+    finally:
+        handlers._model = old_model
+        handlers._model_ready = old_ready
+
+
+def test_saved_background_stt_chunk_settings_drive_live_overlapping_windows(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Save custom chunk timing and run the live background-window scheduler."""
+
+    import threading
+
+    import numpy as np
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core.macos_helper import handlers
+    from ui.settings_panel.dialog import SettingsDialog
+
+    monkeypatch.setattr(SettingsDialog, "_refresh_stt_active_backend", lambda _self: None)
+    driver = QtUserDriver(qapp, timeout=2.0)
+    dialog = SettingsDialog()
+    calls: list[tuple[str, int]] = []
+    stop_event = threading.Event()
+    old_chunks = list(handlers._chunks)
+    old_recording = handlers._recording
+    old_results = list(handlers._stt_bg_results)
+    try:
+        _unique_shortcuts(dialog)
+        for key, value in {
+            "STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS": "20",
+            "STT_BACKGROUND_CHUNK_STEP_SECONDS": "7",
+            "STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS": "3",
+            "STT_BACKGROUND_CHUNK_OVERLAP_SECONDS": "2",
+        }.items():
+            driver.replace_text(dialog._fields[key], value)
+        save = dialog.findChild(QPushButton, "settingsApplyButton")
+        assert save is not None and save.isEnabled()
+        driver.click(save)
+        assert config.STT_BACKGROUND_CHUNK_FIRST_TRIGGER_SECONDS == 20.0
+        assert config.STT_BACKGROUND_CHUNK_STEP_SECONDS == 7.0
+        assert config.STT_BACKGROUND_CHUNK_LIVE_DELAY_SECONDS == 3.0
+        assert config.STT_BACKGROUND_CHUNK_OVERLAP_SECONDS == 2.0
+
+        handlers._recording = True
+        handlers._stt_bg_results.clear()
+        handlers._chunks[:] = [
+            np.ones((int(31.0 * handlers._SAMPLE_RATE), 1), dtype="float32")
+        ]
+
+        def fake_transcribe(audio, *, label):
+            calls.append((label, len(audio)))
+            if len(calls) == 2:
+                stop_event.set()
+            return f"chunk {len(calls)}"
+
+        monkeypatch.setattr(handlers, "_transcribe_audio", fake_transcribe)
+        handlers._stt_background_worker(stop_event)
+        sample_rate = handlers._SAMPLE_RATE
+        assert calls == [
+            ("background 0.0-17.0s", int(17.0 * sample_rate)),
+            ("background 15.0-24.0s", int(9.0 * sample_rate)),
+        ]
+        assert [item["text"] for item in handlers._stt_bg_results] == ["chunk 1", "chunk 2"]
+    finally:
+        handlers._chunks[:] = old_chunks
+        handlers._recording = old_recording
+        handlers._stt_bg_results[:] = old_results
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
 def test_builtin_profile_action_saves_and_reopens_as_the_active_runtime_profile(
     qapp,
     live_runtime_settings,

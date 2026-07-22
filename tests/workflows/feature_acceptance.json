@@ -5145,79 +5145,138 @@
     {
       "function_id": "F289",
       "function": "Install local faster-whisper speech-to-text.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Install STT button -> confirmation -> device-specific faster-whisper package plan -> model verification -> production audio-worker STT runtime",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_stt_install_button_covers_every_model_device_compute_language_and_beam",
+        "tests/test_settings_dialog_controls.py::test_stt_install_uses_optional_installer",
+        "tests/test_optional_deps.py::test_optional_tts_installer_stt_prepare_requires_model_verification",
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
+      ],
+      "success_assertions": [
+        "Every visible STT selection reaches the exact package/removal/settings plan, post-install verification must load the model, and the same configured runtime constructs faster-whisper and transcribes audio."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I132",
+        "I133"
+      ],
+      "audit_note": "The Settings click, confirmation, plan construction, model verifier, production runtime loader, and transcription request are real; pip/model downloads, CUDA availability, and inference output are deterministic boundaries."
     },
     {
       "function_id": "F290",
       "function": "Choose Whisper model size.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Whisper model selector tiny/base/small/medium/large-v3 -> install settings plan -> audio-worker _get_model -> faster-whisper constructor",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_stt_install_button_covers_every_model_device_compute_language_and_beam",
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam",
+        "tests/test_settings_dialog_controls.py::test_stt_model_dropdown_preserves_saved_custom_value"
+      ],
+      "success_assertions": [
+        "All five offered model sizes reach both the installer plan and the exact runtime model constructor across every device/compute combination; a saved custom model remains representable."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I132",
+        "I133"
+      ],
+      "audit_note": "Selector rebuilding, field extraction, install settings, runtime model caching, and faster-whisper construction are real; model files and inference are deterministic."
     },
     {
       "function_id": "F291",
       "function": "Choose STT device and compute type.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "STT device and compute selectors -> package plan -> resolve_device/resolve_compute_type -> build_model/warmup",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_stt_install_button_covers_every_model_device_compute_language_and_beam",
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam",
+        "tests/test_optional_deps.py::test_stt_int8_cuda_fallback_uses_cpu_when_float16_is_unsupported",
+        "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
+      ],
+      "success_assertions": [
+        "All auto/CPU/CUDA x int8/int8_float16/float16/float32 combinations reach the installer and runtime; CPU downgrades incompatible half precision, GPU warmup self-heals supported failures, and explicit CUDA verification rejects an unnoticed CPU fallback."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I133"
+      ],
+      "audit_note": "Production package selection, CUDA detection, compute resolution, model construction, warmup, and fallback logic run unchanged; hardware/native libraries are deterministic."
     },
     {
       "function_id": "F292",
       "function": "Choose automatic or explicit speech language.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "STT language selector auto plus 13 explicit languages -> install settings -> audio-worker transcribe language argument",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_stt_install_button_covers_every_model_device_compute_language_and_beam",
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
+      ],
+      "success_assertions": [
+        "Auto-detect remains an empty saved value and reaches faster-whisper as None; every explicit language code reaches transcription across every beam size; Cantonese is offered only with large-v3."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I132",
+        "I134"
+      ],
+      "audit_note": "This workflow found and fixes the installer converting auto-detect into the invalid literal language 'auto'; Settings filtering, saved plan, and production transcribe arguments are real."
     },
     {
       "function_id": "F293",
       "function": "Configure Whisper beam size.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Whisper beam selector 1/3/5/8 -> install settings -> audio-worker transcribe beam_size",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_stt_install_button_covers_every_model_device_compute_language_and_beam",
+        "tests/test_feature_acceptance_workflows.py::test_stt_runtime_consumes_every_model_device_compute_language_and_beam"
+      ],
+      "success_assertions": [
+        "Every offered beam size reaches the install plan and the production transcription request for every automatic/explicit language state."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I134"
+      ],
+      "audit_note": "The visible selector, plan extraction, integer config, and faster-whisper request are production code; audio inference is deterministic."
     },
     {
       "function_id": "F294",
       "function": "Transcribe long recordings in overlapping background chunks.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Active microphone capture -> background STT scheduler -> settled overlapping window transcription -> stop-time tail -> overlap-aware transcript merge",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows",
+        "tests/test_stt_macos_safety.py::STTMacOSSafetyTests::test_background_stt_transcribes_settled_windows_while_recording",
+        "tests/test_stt_macos_safety.py::STTMacOSSafetyTests::test_stop_transcribes_tail_after_completed_background_chunks",
+        "tests/test_stt_macos_safety.py::STTMacOSSafetyTests::test_transcript_merge_removes_overlap_words"
+      ],
+      "success_assertions": [
+        "Long live audio is copied into settled overlapping windows while recording continues, stop transcribes only the uncovered tail, and duplicated overlap words merge into one transcript."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I135"
+      ],
+      "audit_note": "The production buffer slicing, scheduler, worker result list, stop path, and text merge run unchanged over deterministic PCM and transcription output."
     },
     {
       "function_id": "F295",
       "function": "Configure first STT chunk time, cadence, live-edge delay, and overlap.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Four advanced STT chunk fields -> Settings Save/config reload -> first-end/due/window scheduler calculations",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_saved_background_stt_chunk_settings_drive_live_overlapping_windows",
+        "tests/test_stt_macos_safety.py::STTMacOSSafetyTests::test_background_stt_window_schedule"
+      ],
+      "success_assertions": [
+        "Custom first-trigger, cadence, live-edge delay, and overlap values persist and produce exact first/next live windows with the required settled delay."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I135"
+      ],
+      "audit_note": "Real Settings persistence and production scheduler arithmetic drive a live background worker over deterministic audio."
     },
     {
       "function_id": "F296",
