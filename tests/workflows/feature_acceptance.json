@@ -5315,96 +5315,155 @@
     {
       "function_id": "F298",
       "function": "Dictate raw speech into the currently focused field.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Dictation hotkey press/release -> focused target snapshot -> STT transcript -> native.paste_text",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_dictation_shows_recording_ui_after_recording_starts",
+        "tests/runtime/test_flows.py::test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target",
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "Raw mode saves through Settings, records/transcribes on the production dictation events, skips model cleanup, and pastes the exact transcript into the captured PID/focus token."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I136",
+        "I139"
+      ],
+      "audit_note": "Settings persistence, hotkey state machine, target capture, audio request, and paste request are real; microphone/STT/native paste are worker boundaries."
     },
     {
       "function_id": "F299",
       "function": "Clean dictated speech with the LLM before pasting it.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Saved LLM cleanup dictation mode -> dictation hotkey release -> brain.rewrite stream -> native.paste_text",
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_dictation_raw_and_llm_cleanup_modes_reach_the_same_paste_target",
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow"
+      ],
+      "success_assertions": [
+        "LLM mode saves/reopens, sends the raw transcript through the production rewrite stream, and pastes the cleaned answer into the same previously captured target."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I136",
+        "I139"
+      ],
+      "audit_note": "Mode persistence, branch selection, rewrite request/stream accumulation, and target-preserving paste path are real; model and desktop workers are deterministic."
     },
     {
       "function_id": "F300",
       "function": "Install live-voice support.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Install live voice button -> confirmation -> pinned google-genai optional-package plan",
       "test_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_voice_blocks_voice_and_dictation_claims"
+        "tests/test_feature_acceptance_workflows.py::test_visible_live_voice_install_and_saved_session_configuration_reach_audio_runtime",
+        "tests/test_settings_dialog_controls.py::test_shared_speech_optional_install_cancellation_starts_no_installer"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The visible control confirms and launches the exact google-genai package plan; cancellation launches nothing, and new/reinstall state is preserved."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I137"
+      ],
+      "audit_note": "The Qt button, confirmation, package plan, and shared optional installer entry are real; package installation is a deterministic boundary."
     },
     {
       "function_id": "F301",
       "function": "Start and stop a hands-free Gemini Live conversation.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Live-conversation hotkey -> FlowController toggle -> audio.live.start/stop -> LiveVoiceSession lifecycle",
       "test_node_ids": [
-        "tests/runtime/test_audio_host_live.py::test_config_reload_stops_live_session"
+        "tests/test_feature_acceptance_workflows.py::test_visible_live_voice_install_and_saved_session_configuration_reach_audio_runtime",
+        "tests/runtime/test_flows_live_voice.py::test_toggle_hotkey_starts_then_stops_session",
+        "tests/test_live_voice.py::test_clean_stop_emits_single_user_ended",
+        "tests/runtime/test_audio_host_live.py::test_status_reflects_session_lifecycle"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The production toggle starts one configured hands-free session, reports connecting/listening, stops it once on the second toggle, and returns idle status without a duplicate end."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I137",
+        "I139"
+      ],
+      "audit_note": "Settings/config, supervisor toggle, audio handler, session thread lifecycle, state, and stop semantics are real; Gemini socket and audio devices are deterministic."
     },
     {
       "function_id": "F302",
       "function": "Display live user and assistant transcripts.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Gemini input/output transcription events -> LiveVoiceSession role mapping -> audio.live.transcript -> FlowController -> UI live transcript",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_live_voice_install_and_saved_session_configuration_reach_audio_runtime",
+        "tests/test_live_voice.py::test_transcript_role_mapping",
+        "tests/runtime/test_flows_live_voice.py::test_transcript_events_forward_to_bubble"
+      ],
+      "success_assertions": [
+        "User and assistant transcript fragments retain their roles across the session, audio-worker prefix, supervisor filter, and live transcript UI event; empty/unknown roles are ignored."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I137"
+      ],
+      "audit_note": "Message parsing, event forwarding, role filtering, and UI event shape are production behavior; server messages and the UI worker are deterministic."
     },
     {
       "function_id": "F303",
       "function": "Interrupt Wisp by speaking over it when full duplex is enabled.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Saved full-duplex mode -> LiveVoiceSession mic sender plus server interrupted message -> playback.clear/listening state",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_live_voice_install_and_saved_session_configuration_reach_audio_runtime",
+        "tests/test_live_voice.py::test_full_duplex_sends_while_playback_active",
+        "tests/test_live_voice.py::test_barge_in_clears_playback_and_returns_to_listening"
+      ],
+      "success_assertions": [
+        "With speaker mode off, microphone PCM continues while assistant playback is active; an interruption drops queued assistant audio and returns the session to listening."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I138"
+      ],
+      "audit_note": "The saved duplex flag, sender gate, playback buffer, interruption handler, and state transitions are real; audio callbacks and server messages are deterministic."
     },
     {
       "function_id": "F304",
       "function": "Pause the microphone while Wisp speaks in speaker/half-duplex mode.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Saved speaker/half-duplex mode -> LiveVoiceSession mic sender -> playback activity/hangover gate",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_visible_live_voice_install_and_saved_session_configuration_reach_audio_runtime",
+        "tests/test_live_voice.py::test_half_duplex_gates_mic_while_playback_active",
+        "tests/test_live_voice.py::test_playback_pull_pads_with_silence_and_tracks_hangover"
+      ],
+      "success_assertions": [
+        "With speaker mode on, microphone chunks are dropped while assistant audio or its hangover is active, then new microphone audio resumes after playback becomes inactive."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I138"
+      ],
+      "audit_note": "The Settings checkbox, runtime config snapshot, audio playback activity clock, and mic gate are production code; callbacks and clock progress are deterministic."
     },
     {
       "function_id": "F305",
       "function": "Choose the live-conversation provider, model, and voice.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Live provider/model/voice Settings -> Save/config reload -> audio_live_start -> LiveVoiceConfig/Gemini connector",
       "test_node_ids": [
-        "tests/runtime/test_flows_live_voice.py::test_live_voice_blocks_voice_and_dictation_claims"
+        "tests/test_feature_acceptance_workflows.py::test_visible_live_voice_install_and_saved_session_configuration_reach_audio_runtime",
+        "tests/runtime/test_audio_host_live.py::test_start_builds_session_from_config"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "The Google provider, both built-in and custom model states, all default/built-in/custom voice states, and both duplex modes remain representable; all 36 model x voice x duplex combinations reach the production audio session, and saved built-in/custom endpoints restart with exact values."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I137"
+      ],
+      "audit_note": "Real Settings widgets/value extraction, Save/config reload, audio handler, and immutable session config run unchanged; API credential/socket are deterministic boundaries."
     },
     {
       "function_id": "F306",

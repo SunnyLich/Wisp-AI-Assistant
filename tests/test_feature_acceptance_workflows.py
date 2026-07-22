@@ -1675,6 +1675,178 @@ def test_saved_background_stt_chunk_settings_drive_live_overlapping_windows(
         driver.pump()
 
 
+def test_visible_live_voice_install_and_saved_session_configuration_reach_audio_runtime(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Install live voice, save both duplex modes, and start the audio session."""
+
+    from itertools import product
+
+    from PySide6.QtWidgets import QMessageBox, QPushButton
+
+    import config
+    from core import live_voice, optional_deps
+    from core.macos_helper import handlers as stt_handlers
+    from runtime.workers import audio_host
+    from ui.settings_panel import dialog as dialog_mod
+    from ui.settings_panel.dialog import SettingsDialog, _set
+
+    installs: list[dict[str, object]] = []
+    sessions = []
+    events: list[tuple[str, dict]] = []
+
+    class FakeLiveSession:
+        def __init__(self, cfg, emit):
+            self.cfg = cfg
+            self.emit = emit
+            self.started = False
+            self._active = True
+            self.stop_reasons = []
+            sessions.append(self)
+
+        def start(self):
+            self.started = True
+
+        def request_stop(self, reason="user"):
+            self.stop_reasons.append(reason)
+
+        def join(self, _timeout=None):
+            self._active = False
+            return True
+
+        @property
+        def is_active(self):
+            return self._active
+
+        @property
+        def state(self):
+            return "listening" if self._active else "idle"
+
+    monkeypatch.setattr(SettingsDialog, "_refresh_live_voice_install_status", lambda _self: None)
+    monkeypatch.setattr(SettingsDialog, "_refresh_tts_optional_install_status", lambda _self: None)
+    monkeypatch.setattr(SettingsDialog, "_live_voice_installed", lambda _self: False)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "_install_optional_tts_package",
+        lambda _self, **kwargs: installs.append(dict(kwargs)),
+    )
+    monkeypatch.setattr(live_voice, "genai_available", lambda: True)
+    monkeypatch.setattr(live_voice, "LiveVoiceSession", FakeLiveSession)
+    monkeypatch.setattr(stt_handlers, "stt_is_recording", lambda: False)
+    audio_host._live_session = None
+    audio_host.set_event_sink(lambda name, data, _request_id: events.append((name, dict(data))))
+
+    driver = QtUserDriver(qapp, timeout=2.0)
+    dialog = SettingsDialog()
+
+    def set_model(value: str) -> None:
+        row = dialog._live_voice_model_row
+        if value == "custom-live-model":
+            driver.select_combo_data(row["model_combo"], dialog_mod._CUSTOM_MODEL_SENTINEL)
+            driver.replace_text(row["model_edit"], value)
+        else:
+            driver.select_combo_data(row["model_combo"], value)
+
+    def set_voice(value: str) -> None:
+        row = dialog._live_voice_voice_row
+        if value == "CustomVoice":
+            driver.select_combo_data(row["model_combo"], dialog_mod._CUSTOM_MODEL_SENTINEL)
+            driver.replace_text(row["model_edit"], value)
+        else:
+            driver.select_combo_data(row["model_combo"], value)
+
+    try:
+        dialog.show()
+        dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("TTS / Voice"))
+        dialog._show_voice_feature("live")
+        driver.pump()
+        assert dialog._live_voice_install_btn.isVisible()
+        assert dialog._live_voice_install_btn.text() == "Install live voice"
+        driver.click(dialog._live_voice_install_btn)
+        assert len(installs) == 1
+        assert installs[0]["packages"] == [optional_deps.GOOGLE_GENAI_PACKAGE]
+        assert installs[0]["reinstall"] is False
+
+        models = [value for _label, value in dialog_mod._LIVE_VOICE_MODEL_OPTIONS]
+        models.append("custom-live-model")
+        voices = [value for _label, value in dialog_mod._LIVE_VOICE_VOICE_OPTIONS]
+        voices.append("CustomVoice")
+        observed = set()
+        for model, voice, half_duplex in product(models, voices, (False, True)):
+            set_model(model)
+            set_voice(voice)
+            if dialog._fields["LIVE_VOICE_HALF_DUPLEX"].isChecked() != half_duplex:
+                driver.click(dialog._fields["LIVE_VOICE_HALF_DUPLEX"])
+            observed.add(
+                (
+                    dialog._live_voice_model_value(),
+                    dialog._live_voice_voice_value(),
+                    dialog._fields["LIVE_VOICE_HALF_DUPLEX"].isChecked(),
+                )
+            )
+        assert observed == set(product(models, voices, (False, True)))
+
+        monkeypatch.setattr(config, "GOOGLE_API_KEY", "test-google-live-key")
+        monkeypatch.setattr(config, "LIVE_VOICE_PROVIDER", "google")
+        for model, voice, half_duplex in sorted(observed):
+            monkeypatch.setattr(config, "LIVE_VOICE_MODEL", model)
+            monkeypatch.setattr(config, "LIVE_VOICE_VOICE_NAME", voice)
+            monkeypatch.setattr(config, "LIVE_VOICE_HALF_DUPLEX", half_duplex)
+            assert audio_host.audio_live_start() == {"started": True, "model": model}
+            session = sessions[-1]
+            assert (session.cfg.model, session.cfg.voice_name, session.cfg.half_duplex) == (
+                model,
+                voice,
+                half_duplex,
+            )
+            assert audio_host.audio_live_stop() == {"stopped": True}
+
+        _unique_shortcuts(dialog)
+        runtime_cases = [
+            (models[0], "Puck", False),
+            ("custom-live-model", "CustomVoice", True),
+        ]
+        for model, voice, half_duplex in runtime_cases:
+            set_model(model)
+            set_voice(voice)
+            if dialog._fields["LIVE_VOICE_HALF_DUPLEX"].isChecked() != half_duplex:
+                driver.click(dialog._fields["LIVE_VOICE_HALF_DUPLEX"])
+            save = dialog.findChild(QPushButton, "settingsApplyButton")
+            assert save is not None and save.isEnabled()
+            driver.click(save)
+            monkeypatch.setattr(config, "GOOGLE_API_KEY", "test-google-live-key")
+            result = audio_host.audio_live_start()
+            assert result == {"started": True, "model": model}
+            session = sessions[-1]
+            assert session.started is True
+            assert session.cfg.api_key == "test-google-live-key"
+            assert session.cfg.model == model
+            assert session.cfg.voice_name == voice
+            assert session.cfg.half_duplex is half_duplex
+            session.emit("transcript", {"role": "user", "text": "hello"})
+            session.emit("transcript", {"role": "assistant", "text": "hi"})
+            assert events[-2:] == [
+                ("audio.live.transcript", {"role": "user", "text": "hello"}),
+                ("audio.live.transcript", {"role": "assistant", "text": "hi"}),
+            ]
+            assert audio_host.audio_live_stop() == {"stopped": True}
+            assert session.stop_reasons == ["user"]
+    finally:
+        audio_host.audio_live_stop()
+        audio_host.set_event_sink(lambda *_args: None)
+        audio_host._live_session = None
+        dialog.close()
+        dialog.deleteLater()
+        driver.pump()
+
+
 def test_builtin_profile_action_saves_and_reopens_as_the_active_runtime_profile(
     qapp,
     live_runtime_settings,
