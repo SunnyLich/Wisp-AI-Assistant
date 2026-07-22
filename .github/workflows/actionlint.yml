@@ -4,9 +4,11 @@ name: Actionlint
 on:
   push:
     paths:
+      - ".github/actionlint.yaml"
       - ".github/workflows/**"
   pull_request:
     paths:
+      - ".github/actionlint.yaml"
       - ".github/workflows/**"
   workflow_dispatch:
 
