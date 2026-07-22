@@ -7,9 +7,32 @@ from pathlib import Path
 
 import pytest
 
-from scripts.runtime_test_harness import QtUserDriver
+from scripts.runtime_test_harness import QtUserDriver, wait_until
 
 pytestmark = pytest.mark.workflow
+
+
+@pytest.fixture
+def isolated_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Run the production memory manager against one disposable JSON store."""
+
+    import config
+    from core.memory_store import store
+
+    memory_dir = tmp_path / "memory"
+    fallback = memory_dir / "facts_fallback.json"
+    monkeypatch.setattr(store, "_MEMORY_DIR", str(memory_dir))
+    monkeypatch.setattr(store, "_FALLBACK_PATH", str(fallback))
+    monkeypatch.setattr(store, "_manager", None)
+    monkeypatch.setattr(config, "MEMORY_AUTO_CONSOLIDATE", False)
+    store.set_active_project(None)
+    manager = store.MemoryManager()
+    monkeypatch.setattr(store, "_manager", manager)
+    try:
+        yield manager, fallback
+    finally:
+        manager.shutdown()
+        store.set_active_project(None)
 
 
 @pytest.fixture
@@ -2203,4 +2226,300 @@ def test_intent_submit_escape_and_timeout_modes_use_real_widget_events(qapp, mon
                 overlay.deleteLater()
             except RuntimeError:
                 pass
+        driver.pump()
+
+
+def test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store(
+    isolated_memory,
+    monkeypatch,
+):
+    """Drive every supported memory command through chat/tool/brain handlers."""
+
+    import config
+    from core.llm_clients import client as llm_client
+    from core.memory_store import store
+    from runtime.brain.wisp_brain import handlers
+
+    manager, _fallback = isolated_memory
+    monkeypatch.setenv("WISP_BRAIN_FAKE_LLM", "1")
+    monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+    emitted: list[tuple[str, object, object]] = []
+
+    phrase_cases = (
+        ("Remember that I prefer concise weekly summaries.", "concise weekly summaries"),
+        ("Note that I use metric measurements for recipes.", "metric measurements"),
+        ("Keep in mind my accessibility preference is large text.", "large text"),
+    )
+    for project in (None, "alpha-project"):
+        for index, (message, fragment) in enumerate(phrase_cases):
+            scoped_message = message.replace(".", f" in scope {project or 'general'} {index}.")
+            ctx = handlers.StreamContext(
+                lambda event, data, req_id: emitted.append((event, data, req_id)),
+                f"remember-{project}-{index}",
+            )
+            result = handlers.brain_chat(
+                ctx,
+                messages=[{"role": "user", "content": scoped_message}],
+                memory_enabled=True,
+                memory_project=project,
+                harness_provider="wisp",
+            )
+            assert result["text"].startswith("[fake-chat]")
+            assert any(event == "reply.done" and req_id == ctx.req_id for event, _data, req_id in emitted)
+            assert any(
+                fragment in fact["text"] and (fact.get("project") or None) == project
+                for fact in manager.get_all_facts()
+            )
+
+    # The exact opt-in model tool entry executes the production scoped search.
+    store.set_active_project("alpha-project")
+    searched = llm_client._execute_model_tool(
+        "memory_search",
+        {"query": "concise weekly summaries", "top_k": 10},
+        allowed_tools=["memory_search"],
+    )
+    assert "concise weekly summaries" in searched
+    assert "scope alpha-project" in searched
+    store.set_active_project(None)
+    general_only = llm_client._execute_model_tool(
+        "memory_search",
+        {"query": "concise weekly summaries", "top_k": 10},
+        allowed_tools=["memory_search"],
+    )
+    assert "scope general" in general_only
+    assert "scope alpha-project" not in general_only
+    store.set_active_project("alpha-project")
+
+    # Model-decided saves preserve explicit General versus current-project scope.
+    for scope, expected_project in (("general", None), ("project", "alpha-project")):
+        saved = llm_client._execute_model_tool(
+            "memory_save",
+            {
+                "text": f"My {scope} code review preference is Tuesday morning.",
+                "scope": scope,
+            },
+            allowed_tools=["memory_save"],
+        )
+        assert saved.startswith("Stored to")
+        assert any(
+            fact["text"] == f"My {scope} code review preference is Tuesday morning."
+            and (fact.get("project") or None) == expected_project
+            for fact in manager.get_all_facts()
+        )
+
+    # Supported remove commands use the same brain runtime route as UI IPC.
+    doomed = next(fact for fact in manager.get_all_facts() if "project code review" in fact["text"])
+    deleted = handlers.brain_memory_delete(fact_id=doomed["id"])
+    assert deleted == {"ok": True, "id": doomed["id"]}
+    assert all(fact["id"] != doomed["id"] for fact in manager.get_all_facts())
+
+
+def test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping(
+    qapp,
+    isolated_memory,
+    monkeypatch,
+):
+    """Use the visible Memory Viewer for every persistent fact mutation."""
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QGroupBox, QMessageBox, QPushButton
+
+    import ui.memory_viewer as memory_viewer
+    from ui.i18n import t
+    from ui.memory_viewer import MemoryPanel, MemoryViewer, _FactRow
+
+    manager, _fallback = isolated_memory
+    projects = [
+        {"id": "alpha-project", "name": "Alpha"},
+        {"id": "beta-project", "name": "Beta"},
+    ]
+    monkeypatch.setattr(memory_viewer, "_load_projects", lambda: projects)
+    assert manager.add_fact_manual("I prefer concise general answers.", project=None)
+    assert manager.add_fact_manual("The Alpha release color is blue.", project="alpha-project")
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    driver = QtUserDriver(qapp, timeout=3.0)
+    viewer = MemoryViewer(manager)
+    try:
+        viewer.show()
+        panel = viewer.findChild(MemoryPanel)
+        assert panel is not None
+        driver.wait(lambda: not panel._loading, "initial memory viewer load")
+        assert viewer.windowTitle() == t("Long-term Memory")
+        assert {group.title() for group in panel.findChildren(QGroupBox)} >= {"General", "Alpha"}
+
+        # Add through the visible text, project, and Add controls.
+        driver.replace_text(panel._add_text, "The Beta release day is Thursday.")
+        driver.select_combo_data(panel._add_cat, "beta-project")
+        add_button = next(button for button in panel.findChildren(QPushButton) if button.text() == t("Add"))
+        driver.click(add_button)
+        driver.wait(
+            lambda: any(fact["text"] == "The Beta release day is Thursday." for fact in manager.get_all_facts()),
+            "manual fact persistence",
+        )
+        driver.wait(lambda: not panel._loading, "memory viewer refresh after add")
+
+        def rows():
+            return panel.findChildren(_FactRow)
+
+        beta_row = next(row for row in rows() if row._text_edit.text() == "The Beta release day is Thursday.")
+
+        # Edit by typing and pressing Enter, which emits QLineEdit.editingFinished.
+        driver.replace_text(beta_row._text_edit, "The Beta release day is Friday.")
+        QTest.keyClick(beta_row._text_edit, Qt.Key.Key_Return)
+        driver.pump()
+        driver.wait(
+            lambda: any(fact["text"] == "The Beta release day is Friday." for fact in manager.get_all_facts()),
+            "edited fact persistence",
+        )
+
+        # Move with the row's actual scope dropdown and verify refreshed grouping.
+        driver.select_combo_data(beta_row._proj_combo, "alpha-project")
+        driver.wait(
+            lambda: any(
+                fact["text"] == "The Beta release day is Friday."
+                and fact.get("project") == "alpha-project"
+                for fact in manager.get_all_facts()
+            ),
+            "fact project move",
+        )
+        driver.click(panel._refresh_btn)
+        driver.wait(lambda: not panel._loading, "memory viewer refresh after move")
+        assert "The Beta release day is Friday." in {
+            row._text_edit.text()
+            for group in panel.findChildren(QGroupBox)
+            if group.title() == "Alpha"
+            for row in group.findChildren(_FactRow)
+        }
+
+        # Delete through the row X button and require both store and visible row to update.
+        moved_row = next(row for row in rows() if row._text_edit.text() == "The Beta release day is Friday.")
+        delete_button = next(button for button in moved_row.findChildren(QPushButton) if button.text() == "X")
+        driver.click(delete_button)
+        driver.wait(
+            lambda: all(fact["text"] != "The Beta release day is Friday." for fact in manager.get_all_facts()),
+            "fact deletion persistence",
+        )
+        driver.wait(
+            lambda: all(row._text_edit.text() != "The Beta release day is Friday." for row in rows()),
+            "deleted fact row removal",
+        )
+
+        # Refresh must discover a fact persisted after the current UI snapshot.
+        assert manager.add_fact_manual("A newly refreshed durable fact.", project=None)
+        assert all(row._text_edit.text() != "A newly refreshed durable fact." for row in rows())
+        driver.click(panel._refresh_btn)
+        driver.wait(lambda: not panel._loading, "explicit memory refresh")
+        assert any(row._text_edit.text() == "A newly refreshed durable fact." for row in rows())
+    finally:
+        viewer.close()
+        viewer.deleteLater()
+        driver.pump()
+
+
+def test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression(
+    qapp,
+    live_runtime_settings,
+    isolated_memory,
+    monkeypatch,
+):
+    """Save every memory limit in Settings, then consume it in MemoryManager."""
+
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core.memory_store import store
+    from ui.settings_panel.dialog import SettingsDialog
+
+    _env_path, settings_env = live_runtime_settings
+    manager, _fallback = isolated_memory
+    timers = []
+
+    class ControlledTimer:
+        def __init__(self, interval, callback):
+            self.interval = interval
+            self.callback = callback
+            self.daemon = False
+            self.started = False
+            self.cancelled = False
+            timers.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    monkeypatch.setattr(store.threading, "Timer", ControlledTimer)
+
+    def memory_llm(prompt, max_tokens):
+        assert max_tokens in {200, 600}
+        if "extracting facts" in prompt:
+            return '[{"text":"I prefer concise answers every morning.","category":"general"}]'
+        return "Earlier turns were compressed without losing decisions."
+
+    monkeypatch.setattr(manager, "_call_memory_llm", memory_llm)
+    monkeypatch.setattr(store.macos_safety, "memory_background_llm_enabled", lambda: True)
+    driver = QtUserDriver(qapp, timeout=3.0)
+    dialog = SettingsDialog()
+    try:
+        dialog.show()
+        driver.pump()
+        _unique_shortcuts(dialog)
+        if not dialog._fields["MEMORY_AUTO_CONSOLIDATE"].isChecked():
+            driver.click(dialog._fields["MEMORY_AUTO_CONSOLIDATE"])
+        driver.replace_text(dialog._fields["MEMORY_CONSOLIDATION_INTERVAL"], "2")
+        driver.replace_text(dialog._fields["MEMORY_TOP_K"], "2")
+        driver.replace_text(dialog._fields["MEMORY_STM_TOKEN_BUDGET"], "12")
+        apply_button = dialog.findChild(QPushButton, "settingsApplyButton")
+        driver.click(apply_button)
+
+        saved = settings_env.read_settings_env()
+        assert saved["MEMORY_AUTO_CONSOLIDATE"] == "True"
+        assert saved["MEMORY_CONSOLIDATION_INTERVAL"] == "2"
+        assert saved["MEMORY_TOP_K"] == "2"
+        assert saved["MEMORY_STM_TOKEN_BUDGET"] == "12"
+        assert config.MEMORY_AUTO_CONSOLIDATE is True
+        assert config.MEMORY_CONSOLIDATION_INTERVAL == 2
+        assert config.MEMORY_TOP_K == 2
+        assert config.MEMORY_STM_TOKEN_BUDGET == 12
+
+        # record_turn starts the configured timer and compresses only after budget overflow.
+        for index in range(4):
+            manager.record_turn(
+                f"User durable workflow turn {index} has several remembered details.",
+                f"Assistant workflow response {index} preserves those important details.",
+            )
+            wait_until(lambda: not manager._compressing, timeout=3.0, description="STM compression")
+        assert timers and timers[0].interval == 120
+        assert timers[0].started is True and timers[0].daemon is True
+        assert any(entry["type"] == "compressed_block" for entry in manager._stm)
+
+        # Firing the controlled external clock runs the real consolidation tick and reschedules it.
+        timers[0].callback()
+        assert any(
+            fact["text"] == "I prefer concise answers every morning."
+            and fact["source"] == "summarizer"
+            for fact in manager.get_all_facts()
+        )
+        assert len(timers) >= 2 and timers[1].started is True
+
+        # The saved top-k value is the default used by the production retrieval API.
+        for fact_text in (
+            "I prefer dark interface themes.",
+            "My timezone is America Edmonton.",
+            "I use metric measurements for cooking.",
+        ):
+            assert manager.add_fact_manual(fact_text, project=None)
+        block = manager.retrieve_relevant("what do you remember about me?")
+        assert len([line for line in block.splitlines() if line.startswith("- ")]) == 2
+    finally:
+        manager.shutdown()
+        dialog.close()
+        dialog.deleteLater()
         driver.pump()

@@ -20,7 +20,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -80,6 +80,12 @@ class _MemoryPanelSignals(QObject):
     mutation_done = Signal(str)
 
 
+class _FactRowSignals(QObject):
+    """Marshal fact-row completion callbacks onto the owning Qt thread."""
+
+    succeeded = Signal(object)
+
+
 class _FactRow(QWidget):
     """A single editable fact row: [text input] [category] [delete]."""
 
@@ -92,6 +98,8 @@ class _FactRow(QWidget):
         self._fact_id = fact["id"]
         self._manager = manager
         self._read_only = read_only
+        self._signals = _FactRowSignals(self)
+        self._signals.succeeded.connect(lambda callback: callback())
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 2, 0, 2)
@@ -180,7 +188,7 @@ class _FactRow(QWidget):
                 _memory_log.warning("Memory %s failed: %s", action, exc)
             else:
                 if on_success is not None:
-                    QTimer.singleShot(0, on_success)
+                    self._signals.succeeded.emit(on_success)
 
         threading.Thread(
             target=worker,

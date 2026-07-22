@@ -5468,188 +5468,290 @@
     {
       "function_id": "F306",
       "function": "Store durable facts with phrases such as “remember that,” “note that,” or “keep in mind.”",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "brain.chat user message -> explicit-memory phrase parser -> active project scope -> MemoryManager JSON upsert",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
+      ],
+      "success_assertions": [
+        "Remember that, Note that, and Keep in mind each persist durable facts through a complete production chat turn in both General and project scope."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I140"
+      ],
+      "audit_note": "The real chat handler, parser, scope state, durability filter, JSON store, retrieval attempt, fake Wisp response, and reply events run; only the remote model is replaced."
     },
     {
       "function_id": "F307",
       "function": "Forget/remove remembered facts through supported memory commands.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "brain.memory.delete or visible Memory Viewer X -> MemoryManager.delete_fact -> JSON rewrite",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store",
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
+      ],
+      "success_assertions": [
+        "Both the supported runtime delete command and confirmed visible delete control remove the exact fact from persistence; the UI row also disappears."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "This covers supported delete entries, not an unsupported conversational forget parser."
     },
     {
       "function_id": "F308",
       "function": "Let the model search memory when a prompt needs it.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "opt-in memory_search model tool -> tool registry validation -> MemoryManager.retrieve_relevant",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_memory_search_is_opt_in"
+      ],
+      "success_assertions": [
+        "The model-facing memory_search tool returns the relevant durable fact and excludes facts belonging only to another project."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I140",
+        "I142"
+      ],
+      "audit_note": "The registered tool, input validation, active scope, retrieval router/fallback, and stored JSON are real; no manager result is mocked in the acceptance workflow."
     },
     {
       "function_id": "F309",
       "function": "Let the model save a durable memory when permitted.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "opt-in memory_save model tool -> tool registry validation -> MemoryManager.save_memory -> scoped JSON upsert",
       "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store",
         "tests/test_memory_quality.py::test_memory_save_tool_executor"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Model tool saves succeed in both explicit General and current-project scope and persist the exact accepted fact."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I141"
+      ],
+      "audit_note": "The production model tool registry/executor, durability filter, scope decision, and JSON store run unchanged."
     },
     {
       "function_id": "F310",
       "function": "Automatically extract long-term facts from conversations.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "recorded conversation turns -> configured consolidation timer tick -> memory LLM extraction -> summarizer JSON upsert",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
+      ],
+      "success_assertions": [
+        "A controlled clock tick extracts an accepted user preference from real STM and persists it with summarizer provenance."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I143",
+        "I145"
+      ],
+      "audit_note": "Turn storage, prompt construction, response parsing, durability filtering, and persistence are real; elapsed clock and memory-model response are deterministic boundaries."
     },
     {
       "function_id": "F311",
       "function": "Automatically consolidate memory on a configurable interval.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Memory Settings Save/config reload -> MemoryManager timer synchronization -> consolidation tick/reschedule",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression",
+        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+      ],
+      "success_assertions": [
+        "Enabling automatic consolidation at two minutes creates a started daemon timer at exactly 120 seconds; its tick consolidates and schedules the next timer."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I145"
+      ],
+      "audit_note": "Qt persistence, config reload, scheduling, callback, and reschedule logic are real; the wall clock is controlled."
     },
     {
       "function_id": "F312",
       "function": "Set how many facts are retrieved for a query.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Memory top-k Settings field -> Save/config reload -> default retrieve_relevant limit",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression",
+        "tests/test_app_user_workflows.py::test_settings_env_changes_reach_runtime_surfaces_workflow"
+      ],
+      "success_assertions": [
+        "The saved top-k value of two becomes the live default and an inventory query returns exactly two stored facts."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I142"
+      ],
+      "audit_note": "The visible field, settings file, config reload, scope filtering, sorting, and result formatting run unchanged."
     },
     {
       "function_id": "F313",
       "function": "Set the short-term-memory token budget before compression.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "STM token-budget Settings field -> Save/config reload -> record_turn budget check -> background compression",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
+      ],
+      "success_assertions": [
+        "A saved 12-token budget causes accumulated real turns to become a compressed STM block while retaining later raw turns."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I143"
+      ],
+      "audit_note": "Qt persistence, token estimation, background launch/guard, prompt construction, and STM replacement are real; memory-model summary text is deterministic."
     },
     {
       "function_id": "F314",
       "function": "Keep General memory separate from project memory.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "chat/model memory scope -> active project -> scoped JSON facts -> retrieve_relevant scope filter",
       "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store",
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "General facts remain available everywhere, project facts are returned only in their project, and both explicit phrases and model saves retain their chosen scope."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I140",
+        "I141",
+        "I142",
+        "I144"
+      ],
+      "audit_note": "Scope selection, persistence, active-project switching, and positive/negative retrieval results are production behavior."
     },
     {
       "function_id": "F315",
       "function": "Open the Long-term Memory viewer.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "MemoryViewer construction/show -> asynchronous MemoryPanel refresh -> visible Long-term Memory dialog",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping",
+        "tests/runtime/test_supervisor_ipc.py::test_ui_worker_show_memory_does_not_crash_or_block_event_loop"
+      ],
+      "success_assertions": [
+        "The real Long-term Memory dialog opens, completes its background load, and displays persisted facts."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "The real offscreen Qt dialog, worker thread, signals, and JSON manager execute."
     },
     {
       "function_id": "F316",
       "function": "View facts grouped by project.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "MemoryPanel refresh -> project list resolution -> General-first project QGroupBox rendering",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
+      ],
+      "success_assertions": [
+        "General and named project groups render separately, and a moved fact appears under its new project after refresh."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "Only the external project catalogue is deterministic; grouping and Qt rendering are real."
     },
     {
       "function_id": "F317",
       "function": "Add a fact manually and choose its project.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Add fact text/project/Add controls -> background add_fact_manual -> refresh",
       "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping",
         "tests/test_memory_quality.py::test_add_explicit_fact_defaults_to_active_project"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Typing a durable fact, choosing Beta, and clicking Add persists the exact fact under Beta and refreshes the editor."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "Qt input, scope selector, click signal, background mutation, JSON write, and refresh are real."
     },
     {
       "function_id": "F318",
       "function": "Click and edit a fact.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible fact QLineEdit edit/Enter -> editingFinished -> background MemoryManager.update_fact",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
+      ],
+      "success_assertions": [
+        "Typing a replacement fact and pressing Enter immediately persists the edited text."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "The actual editor event and asynchronous production update path run against JSON."
     },
     {
       "function_id": "F319",
       "function": "Move/change a fact's project.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible fact project combo -> currentIndexChanged -> MemoryManager.update_fact(project) -> regrouped refresh",
       "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping",
         "tests/test_settings_dialog_controls.py::test_memory_fact_project_move_failure_matrix_keeps_editor_retryable"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Changing Beta to Alpha persists the project/category change and refreshed grouping places the fact under Alpha."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "The actual combo signal, background JSON update, derived category, and grouped rendering are real."
     },
     {
       "function_id": "F320",
       "function": "Delete a fact.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible fact X -> confirmation -> background MemoryManager.delete_fact -> queued Qt row removal",
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping",
+        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+      ],
+      "success_assertions": [
+        "Confirming X removes the exact persisted fact and its visible editor row without requiring an extra refresh."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "This workflow found and fixes deletion completion being scheduled on a worker thread without a Qt event loop; completion is now marshalled to the UI thread by signal."
     },
     {
       "function_id": "F321",
       "function": "Refresh the memory list.",
-      "acceptance_status": "candidate_needs_audit",
-      "production_entry_point": "",
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Visible Refresh button -> background get_all_facts -> tokened loaded signal -> complete rerender",
       "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping",
         "tests/test_memory_quality.py::test_lightweight_fact_list_does_not_initialize_memory_manager"
       ],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "success_assertions": [
+        "Clicking Refresh discovers a fact persisted after the current UI snapshot and renders it without blocking."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I144"
+      ],
+      "audit_note": "The real button, disabled/loading state, worker, load token, signal, and Qt render path execute."
     },
     {
       "function_id": "F322",
