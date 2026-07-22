@@ -200,7 +200,7 @@ def test_supervisor_startup_failure_matrix_cleans_every_partial_worker(monkeypat
                     raise self.error
                 return {"pong": True}
 
-            def shutdown(self):
+            def shutdown(self, shutdowns=shutdowns):
                 shutdowns.append(self.name)
 
         supervisor = object.__new__(WispSupervisor)
@@ -781,7 +781,6 @@ def test_immediate_cancel_catches_stream_while_worker_is_still_queueing_it():
 def test_real_bubble_stop_click_cancels_real_brain_query_over_ipc(tmp_path, monkeypatch):
     """A real bubble click cancels the live query running in the real brain process."""
     import config
-
     from runtime.supervisor.flows import FlowController, PendingInvocation
 
     monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp")
@@ -885,7 +884,6 @@ def test_real_bubble_stop_click_cancels_real_brain_query_over_ipc(tmp_path, monk
 def test_real_intent_ui_routes_keep_in_wisp_and_rewrite_paste_back(tmp_path, monkeypatch):
     """Typing in the real picker drives both production branches and only rewrite pastes."""
     import config
-
     from runtime.supervisor.flows import FlowController
 
     monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp")
@@ -1011,7 +1009,6 @@ def test_real_intent_ui_routes_keep_in_wisp_and_rewrite_paste_back(tmp_path, mon
 def test_real_intent_failure_shows_recovery_recommendation_in_reply_bubble(tmp_path, monkeypatch):
     """A request failure entered through the picker becomes actionable visible UI."""
     import config
-
     from runtime.supervisor.flows import FlowController
 
     monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "wisp")

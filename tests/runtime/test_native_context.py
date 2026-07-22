@@ -6,8 +6,7 @@ import sys
 
 import pytest
 
-from core import capture
-from core import context_fetcher
+from core import capture, context_fetcher
 from core.platform import linux_atspi
 from runtime.workers import native_host
 

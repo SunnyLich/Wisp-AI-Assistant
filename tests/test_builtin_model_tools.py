@@ -110,7 +110,11 @@ class BuiltinModelToolsTests(unittest.TestCase):
             RuntimeError("provider API request is rate-limited"),
         )
         for fault in faults:
-            fake = SimpleNamespace(models=SimpleNamespace(list=lambda: (_ for _ in ()).throw(fault)))
+            fake = SimpleNamespace(
+                models=SimpleNamespace(
+                    list=lambda fault=fault: (_ for _ in ()).throw(fault)
+                )
+            )
             with self.subTest(failure=str(fault)), patch.object(
                 llm.sdk_clients,
                 "openai_client",

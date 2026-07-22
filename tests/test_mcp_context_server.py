@@ -220,7 +220,7 @@ def test_selected_text_failure_matrix_is_returned_as_mcp_tool_errors(monkeypatch
     for fault in faults:
         monkeypatch.setattr(
             "core.capture.get_selected_text",
-            lambda **_kw: (_ for _ in ()).throw(fault),
+            lambda fault=fault, **_kw: (_ for _ in ()).throw(fault),
         )
         content, is_error = context_server._safe_call_tool("get_selected_text", {})
         assert is_error is True

@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 from dotenv import dotenv_values
 
-
 pytestmark = [
     pytest.mark.workflow,
     pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed"),
@@ -121,7 +120,7 @@ def test_provider_dialog_exposes_exact_capability_matrix(
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from ui.harness_controls import HarnessControlsDialog, _CLAUDE_MODELS, _CODEX_MODELS
+    from ui.harness_controls import _CLAUDE_MODELS, _CODEX_MODELS, HarnessControlsDialog
 
     app = QApplication.instance() or QApplication(sys.argv)
     dialog = HarnessControlsDialog(provider)

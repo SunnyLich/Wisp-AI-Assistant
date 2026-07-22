@@ -1,7 +1,7 @@
 """Tests for test memory quality."""
 
-import json
 import builtins
+import json
 import threading
 import time
 from unittest.mock import patch

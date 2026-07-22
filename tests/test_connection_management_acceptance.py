@@ -6,10 +6,8 @@ import importlib.util
 import os
 import sys
 import time
-from pathlib import Path
 
 import pytest
-
 
 pytestmark = [
     pytest.mark.workflow,
@@ -237,7 +235,6 @@ def test_connection_save_keychain_remove_last_and_cancel_matrix(
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QPushButton
 
-    from ui.settings_panel import dialog as settings_dialog
 
     app = QApplication.instance() or QApplication(sys.argv)
     persisted: dict[str, str] = {}
@@ -531,7 +528,9 @@ def test_custom_endpoint_and_exact_manual_model_reach_real_test_button(
             test_button.click()
             _wait_until(
                 app,
-                lambda: len(client_calls) == index and not dialog._running_test_tokens,
+                lambda index=index: (
+                    len(client_calls) == index and not dialog._running_test_tokens
+                ),
             )
 
             assert client_calls[-1] == {
@@ -769,7 +768,6 @@ def test_every_model_route_add_remove_reorder_apply_and_test_workflow(
     from PySide6.QtWidgets import QApplication, QPushButton
 
     from core.llm_clients import client as llm
-    from ui.settings_panel import dialog as settings_dialog
 
     app = QApplication.instance() or QApplication(sys.argv)
     calls: list[tuple[str, str, str, bool]] = []

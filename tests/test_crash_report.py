@@ -12,9 +12,10 @@ from core.crash_report import create_crash_report
 
 
 def test_crash_report_redacts_logs_and_excludes_unrelated_user_data(tmp_path, monkeypatch):
+    import urllib.request
+
     from core import secret_store
     from ui.settings_panel import env as settings_env
-    import urllib.request
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("crash report touched excluded settings/keychain/network data")

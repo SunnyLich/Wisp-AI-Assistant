@@ -145,8 +145,11 @@ def test_github_device_flow_failure_matrix_is_in_band(monkeypatch):
         monkeypatch.setattr(github_auth, "_post_form", post_form)
         github_auth.start_device_login(
             lambda _url, _code: None,
-            lambda _tokens: finished.set(),
-            lambda error: (errors.append(error), finished.set()),
+            lambda _tokens, finished=finished: finished.set(),
+            lambda error, errors=errors, finished=finished: (
+                errors.append(error),
+                finished.set(),
+            ),
         )
         assert finished.wait(5)
         assert expected in errors[-1].lower()

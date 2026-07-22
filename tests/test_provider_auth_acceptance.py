@@ -9,7 +9,6 @@ import webbrowser
 
 import pytest
 
-
 pytestmark = [
     pytest.mark.workflow,
     pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 not installed"),

@@ -282,6 +282,7 @@ def test_intent_overlay_project_conversation_and_context_chip_workflow(qapp, mon
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QMenu
+
     import config
     from runtime.supervisor.flows import FlowController
     from ui.intent_overlay import IntentOverlay
@@ -366,6 +367,7 @@ def test_real_intent_overlay_paste_shortcut_attaches_clipboard_file(qapp, tmp_pa
 
     from PySide6.QtCore import QMimeData, Qt, QUrl
     from PySide6.QtTest import QTest
+
     from ui.intent_overlay import IntentOverlay
 
     path = tmp_path / "clipboard-notes.txt"
@@ -2427,7 +2429,6 @@ def test_selected_primary_and_all_configured_fallback_states_run_through_real_br
 ):
     """Enter at brain.query and exercise success, failure, empty, and cooldown routing."""
     import config
-
     from core.llm_clients import client as llm_client
 
     _ensure_brain_path()

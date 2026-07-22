@@ -63,7 +63,7 @@ def test_combined_lock_installs_do_not_pin_conflicting_versions() -> None:
         assert conflicts == {}
 
 
-def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
+def test_optional_installer_uses_exact_known_compatible_package_specs(monkeypatch) -> None:
     """Optional package installs should not float into runtime-lock conflicts."""
     from core import optional_deps
 
@@ -137,6 +137,7 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
         "tokenizers==0.22.2",
         "setuptools==81.0.0",
     ]
+    monkeypatch.setattr(optional_deps.sys, "platform", "win32")
     assert optional_deps.kokoro_torch_install_packages("cuda") == [
         "--index-url",
         optional_deps.PYTORCH_CUDA_WHEEL_INDEX,
@@ -153,9 +154,11 @@ def test_optional_installer_uses_exact_known_compatible_package_specs() -> None:
     ]
 
 
-def test_stt_and_kokoro_use_one_order_independent_shared_dependency_lock() -> None:
+def test_stt_and_kokoro_use_one_order_independent_shared_dependency_lock(monkeypatch) -> None:
     """Installing either speech stack cannot replace the other's shared versions."""
     from core import optional_deps
+
+    monkeypatch.setattr(optional_deps.sys, "platform", "win32")
 
     def pinned(requirements: list[str]) -> dict[str, str]:
         result: dict[str, str] = {}

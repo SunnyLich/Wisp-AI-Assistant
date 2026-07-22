@@ -389,7 +389,7 @@ class LlmFallbackTests(unittest.TestCase):
                 llm._route_cooldowns.clear()
                 attempts = []
 
-                def factory(provider, model):
+                def factory(provider, model, attempts=attempts, failure=failure):
                     attempts.append((provider, model))
                     if provider == "primary":
                         raise failure
@@ -436,7 +436,7 @@ class LlmFallbackTests(unittest.TestCase):
                 llm._route_cooldowns.clear()
                 attempts = []
 
-                def factory(provider, model):
+                def factory(provider, model, attempts=attempts, failure=failure):
                     attempts.append((provider, model))
                     if provider == "primary":
                         raise failure

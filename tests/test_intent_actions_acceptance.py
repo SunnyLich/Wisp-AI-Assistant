@@ -38,7 +38,9 @@ def test_every_general_and_rewrite_action_runs_by_key_and_click(qapp) -> None:
         for caller_idx, glyph, prompt in expected:
             overlay = IntentOverlay(caller_idx=caller_idx)
             chosen: list[tuple[str, str]] = []
-            overlay.intent_chosen.connect(lambda key, text: chosen.append((key, text)))
+            overlay.intent_chosen.connect(
+                lambda key, text, chosen=chosen: chosen.append((key, text))
+            )
             try:
                 overlay.show()
                 driver.pump()
@@ -57,7 +59,10 @@ def test_every_general_and_rewrite_action_runs_by_key_and_click(qapp) -> None:
                         Qt.MouseButton.LeftButton,
                         pos=overlay._row_rects[row_index].center(),
                     )
-                driver.wait(lambda: bool(chosen), f"{selection_mode} selection for {glyph}")
+                driver.wait(
+                    lambda chosen=chosen: bool(chosen),
+                    f"{selection_mode} selection for {glyph}",
+                )
                 assert chosen == [(glyph, prompt)]
             finally:
                 try:

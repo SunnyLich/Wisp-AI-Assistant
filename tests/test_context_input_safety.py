@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 from PySide6.QtCore import QMimeData, QUrl
 
-from core.conversation_store import store as conversation_store
 from core import attachment_source
+from core.conversation_store import store as conversation_store
 from core.llm_clients import documents
 from runtime.supervisor import flow_estimates
 from ui import drop_zone

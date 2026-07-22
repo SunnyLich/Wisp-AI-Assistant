@@ -351,8 +351,8 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
     from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 
     import config
-    from runtime.supervisor.flows import FlowController
     from runtime.supervisor import tool_modes
+    from runtime.supervisor.flows import FlowController
     from runtime.workers import hotkey_helper
     from ui.intent_overlay import IntentOverlay
     from ui.settings_panel.dialog import SettingsDialog
@@ -694,6 +694,7 @@ def test_settings_navigation_search_and_cancel_are_real_user_workflows(qapp, iso
     """Navigate every page, filter it, then prove Cancel discards a real edit."""
 
     from PySide6.QtWidgets import QLineEdit, QPushButton
+
     from ui.settings_panel.dialog import SettingsDialog
 
     env_path, settings_env, _theme_calls = isolated_settings
@@ -762,6 +763,7 @@ def test_every_theme_mode_saves_applies_and_reopens(qapp, isolated_settings, the
     """Every Theme choice survives the real Save changes action and reopen."""
 
     from PySide6.QtWidgets import QPushButton
+
     from ui.settings_panel.dialog import SettingsDialog
 
     _env_path, settings_env, theme_calls = isolated_settings
@@ -1128,7 +1130,7 @@ def test_every_app_and_assistant_language_pair_runs_every_localized_builtin_inte
                         overlay = IntentOverlay(caller_idx=caller_idx)
                         chosen = []
                         overlay.intent_chosen.connect(
-                            lambda key, prompt: chosen.append((key, prompt))
+                            lambda key, prompt, chosen=chosen: chosen.append((key, prompt))
                         )
                         try:
                             overlay.show()
@@ -1143,7 +1145,7 @@ def test_every_app_and_assistant_language_pair_runs_every_localized_builtin_inte
                                 pos=overlay._row_rects[intent_idx].center(),
                             )
                             driver.wait(
-                                lambda: bool(chosen),
+                                lambda chosen=chosen: bool(chosen),
                                 f"localized intent {app_language}/{assistant_language}/"
                                 f"{caller_idx}/{intent_idx}",
                             )
@@ -1285,7 +1287,9 @@ def test_conversation_engine_and_owner_settings_drive_runtime_dispatch_matrix(
             harness_calls.clear()
             events = []
             ctx = handlers.StreamContext(
-                lambda event, data, request_id: events.append((event, data, request_id)),
+                lambda event, data, request_id, events=events: events.append(
+                    (event, data, request_id)
+                ),
                 269,
             )
             result = handlers.HANDLERS["brain.chat"](
@@ -1504,9 +1508,14 @@ def test_visible_test_tts_button_forwards_every_provider_configuration(
             assert test_button.isVisible()
             expected_count = len(calls) + 1
             driver.click(test_button)
-            driver.wait(lambda: len(calls) >= expected_count, f"{provider}/{device} TTS call")
             driver.wait(
-                lambda: dialog._tts_test_status_lbl.text() == f"TTS route OK: {provider}",
+                lambda expected_count=expected_count: len(calls) >= expected_count,
+                f"{provider}/{device} TTS call",
+            )
+            driver.wait(
+                lambda provider=provider: (
+                    dialog._tts_test_status_lbl.text() == f"TTS route OK: {provider}"
+                ),
                 f"{provider}/{device} TTS result",
             )
 
@@ -1860,9 +1869,9 @@ def test_stt_runtime_consumes_every_model_device_compute_language_and_beam(
 ):
     """Run the production STT loader and transcriber across every saved state."""
 
-    from itertools import product
     import sys
     import types
+    from itertools import product
 
     import numpy as np
 
@@ -2034,7 +2043,7 @@ def test_visible_live_voice_install_and_saved_session_configuration_reach_audio_
     from core.macos_helper import handlers as stt_handlers
     from runtime.workers import audio_host
     from ui.settings_panel import dialog as dialog_mod
-    from ui.settings_panel.dialog import SettingsDialog, _set
+    from ui.settings_panel.dialog import SettingsDialog
 
     installs: list[dict[str, object]] = []
     sessions = []
@@ -2792,6 +2801,8 @@ def test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compressio
         driver.pump()
         _unique_shortcuts(dialog)
         if not dialog._fields["MEMORY_AUTO_CONSOLIDATE"].isChecked():
+            advanced_row = dialog._tab_base_names.index("Advanced")
+            driver.select_list_row(dialog._settings_nav, advanced_row)
             driver.click(dialog._fields["MEMORY_AUTO_CONSOLIDATE"])
         driver.replace_text(dialog._fields["MEMORY_CONSOLIDATION_INTERVAL"], "2")
         driver.replace_text(dialog._fields["MEMORY_TOP_K"], "2")
@@ -2909,7 +2920,9 @@ def test_saved_privacy_modes_change_exact_model_bound_text_and_restore_the_reply
             assert config.PRIVACY_AI_ENABLED is (mode == "advanced")
             events = []
             ctx = handlers.StreamContext(
-                lambda event, data, req_id: events.append((event, data, req_id)),
+                lambda event, data, req_id, events=events: events.append(
+                    (event, data, req_id)
+                ),
                 f"privacy-mode-{index}",
             )
             result = handlers.brain_chat(
@@ -2960,12 +2973,14 @@ def test_privacy_review_runtime_redacted_full_and_cancel_decisions_block_the_sen
         emitted = []
         outcome = {}
         ctx = handlers.StreamContext(
-            lambda event, data, req_id: emitted.append((event, data, req_id)),
+            lambda event, data, req_id, emitted=emitted: emitted.append(
+                (event, data, req_id)
+            ),
             f"review-{decision}",
         )
         email = f"{decision}@example.com"
 
-        def run_chat():
+        def run_chat(outcome=outcome, ctx=ctx, email=email, decision=decision):
             try:
                 outcome["result"] = handlers.brain_chat(
                     ctx,
@@ -2980,7 +2995,10 @@ def test_privacy_review_runtime_redacted_full_and_cancel_decisions_block_the_sen
         worker = threading.Thread(target=run_chat, name=f"privacy-review-{decision}")
         worker.start()
         wait_until(
-            lambda: any(event == "privacy.review.request" for event, _data, _req_id in emitted),
+            lambda emitted=emitted: any(
+                event == "privacy.review.request"
+                for event, _data, _req_id in emitted
+            ),
             timeout=3.0,
             description=f"{decision} privacy review request",
         )
@@ -3055,8 +3073,8 @@ def test_visible_privacy_install_repair_and_remove_actions_use_exact_local_bound
     from PySide6.QtCore import QObject, Signal
     from PySide6.QtWidgets import QMessageBox
 
-    from core import privacy_model, secret_store
     import ui.settings_panel.dialog as dialog_module
+    from core import privacy_model, secret_store
     from ui.settings_panel.dialog import SettingsDialog
 
     state = {"valid": False, "model_downloaded": False, "runtime_ready": False}

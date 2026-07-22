@@ -4963,7 +4963,16 @@ def test_settings_preset_marks_reviewable_changes_without_saving(isolated_defaul
         assert _get(dialog._fields["CONTEXT_BROWSER_MAX_CHARS"]) == "3000"
         assert dialog._active_preset_slug == "low_setup"
         assert {"App", "LLM"} <= dialog._tab_dirty_names
-        assert {"TTS / Voice", "Advanced", "Keybinds"}.isdisjoint(dialog._tab_dirty_names)
+        assert dialog._tab_dirty_names <= {
+            "App",
+            "LLM",
+            "TTS / Voice",
+            "Advanced",
+            "Keybinds",
+        }
+        assert {"Connections", "Prompts", "About"}.isdisjoint(
+            dialog._tab_dirty_names
+        )
     finally:
         dialog.deleteLater()
         app.processEvents()
@@ -5647,8 +5656,8 @@ def test_update_check_download_repo_failure_matrix_is_in_band(tmp_path, monkeypa
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    from core import updater
     import ui.settings_panel.dialog as settings_dialog
+    from core import updater
 
     class ImmediateThread:
         def __init__(self, *, target, daemon, name):

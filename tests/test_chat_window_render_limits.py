@@ -1272,6 +1272,7 @@ def test_chat_rewind_current_chat_requires_confirmation(monkeypatch):
 def test_chat_stale_records_and_active_stream_are_rejected_without_mutation():
     """Stale selections and mid-stream actions cannot alter conversation state."""
     from copy import deepcopy
+
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication(sys.argv)

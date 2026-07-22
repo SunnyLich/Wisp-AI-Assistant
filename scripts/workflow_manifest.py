@@ -6,7 +6,7 @@ import ast
 import json
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +52,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-@lru_cache(maxsize=None)
+@cache
 def _test_functions(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
     return {

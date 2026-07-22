@@ -6,7 +6,7 @@ import ast
 import json
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -92,7 +92,7 @@ def load_evidence_nodes(path: Path) -> dict[str, str]:
     return result
 
 
-@lru_cache(maxsize=None)
+@cache
 def _ast_tree(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
 
