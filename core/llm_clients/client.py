@@ -19,10 +19,10 @@ import sys
 import threading as _threading
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
-from urllib.parse import urlsplit as _urlsplit
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit as _urlsplit
 
 import config
 from core.llm_clients.documents import (
