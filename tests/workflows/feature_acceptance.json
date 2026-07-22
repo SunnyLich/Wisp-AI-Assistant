@@ -4660,46 +4660,103 @@
     {
       "function_id": "F265",
       "function": "Fall through to the next configured model when a route fails.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "core.llm_clients.client.stream_response -> ordered route candidates -> _stream_with_fallbacks -> provider route adapter",
+      "test_node_ids": [
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_stream_response_fails_over_skips_cooling_route_then_retries_after_expiry",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_stream_with_fallbacks_cools_down_no_content_route",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_stream_with_fallbacks_does_not_mix_after_output",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_provider_route_failure_matrix_uses_fallback_without_partial_output",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_model_route_failure_contract_is_controlled_at_shared_runtime_boundary"
+      ],
+      "success_assertions": [
+        "A failure before output and a zero-content response fall through in configured order; success returns the fallback answer, a failure after partial output never mixes providers, and an exhausted chain reports the attempted routes."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I118",
+        "I119"
+      ],
+      "audit_note": "The public streaming entry, candidate ordering, circuit breaker, and failure classification are production code; only remote provider I/O is deterministic."
     },
     {
       "function_id": "F266",
       "function": "Temporarily cool down a failing route before retrying it later.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "core.llm_clients.client.stream_response -> routing cooldown registry -> ready/cooling route ordering",
+      "test_node_ids": [
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_stream_response_fails_over_skips_cooling_route_then_retries_after_expiry",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_stream_with_fallbacks_cools_down_transient_503_and_summarizes_failures",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_stream_with_fallbacks_fails_fast_when_all_routes_are_cooling"
+      ],
+      "success_assertions": [
+        "A transient primary failure starts the cooldown, the next real stream_response turn skips that route, expiry makes it eligible again, and an all-cooling chain fails clearly without provider I/O."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I119"
+      ],
+      "audit_note": "The production clock-based cooldown registry and public query entry run unchanged; the test controls time and provider responses."
     },
     {
       "function_id": "F267",
       "function": "Adapt to provider differences such as streaming, tools, images, token parameters, and reasoning controls.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "stream_response/test_route_connection -> provider-specific OpenAI-compatible, Anthropic, ChatGPT Responses, Copilot, and Ollama request adapters",
+      "test_node_ids": [
+        "tests/test_connection_management_acceptance.py::test_every_provider_reaches_its_real_chat_route_probe",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_openai_compat_runtime_retries_non_streaming_when_stream_rejected",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_request_specific_stream_false_error_does_not_disable_route_streaming",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_openai_compat_parallel_tool_param_is_removed_without_disabling_tools",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_openai_compat_tools_unsupported_downgrades_to_frontloaded_context",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_image_route_rejection_is_cached_and_fails_before_provider_io",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_vision_route_probe_uses_test_image",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_chatgpt_runtime_retries_create_when_stream_rejected",
+        "tests/test_llm_fallbacks.py::LlmFallbackTests::test_chatgpt_route_probe_retries_without_unsupported_max_output_tokens",
+        "tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_every_chat_reasoning_effort_by_route_capability_matrix",
+        "tests/test_unsupported_params.py::test_nested_reasoning_effort_unsupported_value_drops_reasoning_object"
+      ],
+      "success_assertions": [
+        "Every selectable provider reaches its matching adapter; stream mode, parallel tools, unsupported tools, image support, output-token fields, and reasoning effort are retained, removed, retried, or downgraded according to the learned route capability without discarding a valid reply."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I120",
+        "I121"
+      ],
+      "audit_note": "Wisp request construction, capability caching, retry decisions, and adapter selection are real; SDK transports and account services are deterministic boundaries."
     },
     {
       "function_id": "F268",
       "function": "Show warnings when a chosen model/provider cannot satisfy an enabled capability.",
-      "acceptance_status": "untested",
-      "production_entry_point": "",
-      "test_node_ids": [],
-      "success_assertions": [],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Candidate generated from the trace manifest; requires a human code-path audit."
+      "acceptance_status": "real_entry_accepted",
+      "production_entry_point": "Settings loaded/edited caller capability modes -> capability warning decision functions -> real warning headers and tooltips",
+      "test_node_ids": [
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_all_off_is_silent",
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_auto_without_vision_model_warns",
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_auto_with_vision_capable_model_is_silent",
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_auto_with_text_only_vision_model_warns",
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_model_mode_anthropic_is_silent",
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_model_mode_copilot_warns_unsupported",
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_model_mode_groq_text_only_warns",
+        "tests/test_screenshot_capability.py::ScreenshotCapabilityWarnings::test_model_mode_groq_with_same_provider_vision_model_is_silent",
+        "tests/test_screenshot_capability.py::ToolCapabilityWarnings::test_tools_off_is_silent",
+        "tests/test_screenshot_capability.py::ToolCapabilityWarnings::test_tools_on_chatgpt_warns",
+        "tests/test_screenshot_capability.py::ToolCapabilityWarnings::test_tools_on_anthropic_is_silent",
+        "tests/test_screenshot_capability.py::SubscriptionAuthWarnings::test_api_key_providers_are_silent",
+        "tests/test_screenshot_capability.py::SubscriptionAuthWarnings::test_both_roles_warn_separately",
+        "tests/test_settings_dialog_controls.py::test_tool_warning_marks_associated_settings_headlines",
+        "tests/test_settings_dialog_controls.py::test_subscription_warning_marks_provider_credentials_headline",
+        "tests/test_settings_dialog_controls.py::test_warning_markers_refresh_from_loaded_settings"
+      ],
+      "success_assertions": [
+        "Off/supported capability combinations remain silent, while missing or text-only image routes, unsupported on-demand screenshots/tools, and subscription-auth routes produce the correct warnings on the affected real Settings sections."
+      ],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I121"
+      ],
+      "audit_note": "The warning matrix and real Qt Settings load/marker paths run unchanged; no modal or provider transport is substituted."
     },
     {
       "function_id": "F269",

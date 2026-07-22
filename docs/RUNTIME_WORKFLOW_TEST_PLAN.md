@@ -28,11 +28,11 @@ The workflow manifest must preserve traceability back to the earlier inventory:
 
 Current honest status:
 
-- **330 / 472** functions are accepted through a production entry point with a successful observable result.
+- **334 / 472** functions are accepted through a production entry point with a successful observable result.
 - **36 / 472** have a name-matched candidate test that still needs code-path audit.
-- **106 / 472** are untested at the real-entry acceptance level.
-- **315 / 472** have completed dependency audits.
-- **117 / 117** declared A -> B interaction matrices are accepted. These include the earlier launcher, Settings, appearance, platform, local-file, onboarding, and provider matrices, plus planned chunking, automatic elaboration, external transcript synchronization/ownership, every provider-control option, authentication, connection/model management, every supported provider route, and the Chat/Image/Memory row-operation and test relationships.
+- **102 / 472** are untested at the real-entry acceptance level.
+- **319 / 472** have completed dependency audits.
+- **121 / 121** declared A -> B interaction matrices are accepted. These include the earlier launcher, Settings, appearance, platform, local-file, onboarding, and provider matrices, plus planned chunking, automatic elaboration, external transcript synchronization/ownership, every provider-control option, authentication, connection/model management, every supported provider route, Chat/Image/Memory row operations, route failover/cooldown, provider adaptation, and capability-warning relationships.
 
 The acceptance validator refuses to infer success coverage from section similarity, failure injection, or a shared internal helper. `tests/workflows/feature_interactions.json` separately records the behaviorally distinct state combinations for features that affect other features.
 
@@ -58,6 +58,7 @@ The first foundation slice is merged into the existing workflow system:
 - Connection-management acceptance now drives the real Add connection modal for all 24 providers; crosses every provider/alias query with All, Cloud, and Local filters; verifies collapsed/expanded behavior; proves Save/Cancel and last/sibling removal keychain semantics; triggers all 21 endpoint menu actions; refreshes models for all 24 connection providers plus ChatGPT with typed and stored credentials; and sends exact manual models through local and remote Custom route probes. The audit fixed removal persistence so saving the final-row removal now clears its credential while Cancel remains non-destructive.
 - Provider-runtime acceptance now selects every one of the 25 Chat providers as the primary route and clicks the visible Test Chat model button. Forty-seven executions cover typed and stored credentials for every keyed route plus ChatGPT OAuth, Copilot, and Ollama; each must reach the correct OpenAI-compatible endpoint, Anthropic Messages request, Codex Responses request, Copilot call, or Ollama readiness/client path with the exact selected model.
 - Model-route acceptance now performs Add, remove, priority drop, per-row refresh, and route testing on Chat, Image, and Memory. Apply to all copies both ordered Chat rows into the other routes, and each route's visible Test button probes both primary and fallback with the correct image/route flags while preserving exact manual models.
+- Model-runtime acceptance now drives three consecutive public `stream_response` turns: a transient primary failure falls through, the next turn skips the cooling route, and the recovered primary is retried after expiry. Existing production-adapter matrices also prove no-content and late-stream behavior, provider-specific streaming/tool/image/token/reasoning adaptation, and the complete capability-warning decision matrix through real Settings warning headers.
 - Intent-action acceptance now opens both production pickers and executes What is this, Explain simply, How do I fix this, Fix grammar, Simplify, and Improve tone through both their assigned keys and their painted clickable rows, asserting the exact configured prompt in all twelve combinations.
 - `tests/workflows/manifest.json` contains all **472 / 472** machine-readable trace/candidate mappings, validated by `tests/test_workflow_manifest.py` against exact inventory text, all **3,296 / 3,296** failure references, and real pytest node IDs. This is not positive feature acceptance coverage.
 - `scripts/generate_workflow_manifest.py` reproducibly expands the inventory using curated test-family pools while preserving hand-verified records. It labels records as `verified`, `direct`, or broader `section` mappings so mapping completeness is not confused with direct workflow maturity.

@@ -89,6 +89,67 @@ class LlmFallbackTests(unittest.TestCase):
                 )
             )
 
+    def test_stream_response_fails_over_skips_cooling_route_then_retries_after_expiry(self):
+        """Exercise the production query entry across failure, cooldown, and recovery."""
+        class TransientProviderError(RuntimeError):
+            status_code = 503
+
+        now = [1_000.0]
+        attempts = []
+        primary_attempts = [0]
+
+        def route(provider, model, *_args, **_kwargs):
+            attempts.append((provider, model))
+            if provider == "primary":
+                primary_attempts[0] += 1
+                if primary_attempts[0] == 1:
+                    raise TransientProviderError("provider temporarily unavailable")
+                yield "primary recovered"
+                return
+            yield "fallback answer"
+
+        llm._route_cooldowns.clear()
+        self.addCleanup(llm._route_cooldowns.clear)
+        with patch("core.llm_clients.routing._time.time", side_effect=lambda: now[0]), \
+             patch.object(llm, "_stream_single_response_route", side_effect=route):
+            first = list(
+                llm.stream_response(
+                    "first turn",
+                    route_provider="primary",
+                    route_model="main",
+                    route_fallbacks="fallback:safe",
+                )
+            )
+            self.assertEqual(first, ["fallback answer"])
+            self.assertEqual(attempts, [("primary", "main"), ("fallback", "safe")])
+            self.assertTrue(llm._is_route_cooling("primary", "main"))
+
+            attempts.clear()
+            second = list(
+                llm.stream_response(
+                    "second turn",
+                    route_provider="primary",
+                    route_model="main",
+                    route_fallbacks="fallback:safe",
+                )
+            )
+            self.assertEqual(second, ["fallback answer"])
+            self.assertEqual(attempts, [("fallback", "safe")])
+
+            attempts.clear()
+            now[0] += llm._ROUTE_COOLDOWN_SECONDS + 1
+            third = list(
+                llm.stream_response(
+                    "third turn",
+                    route_provider="primary",
+                    route_model="main",
+                    route_fallbacks="fallback:safe",
+                )
+            )
+            self.assertEqual(third, ["primary recovered"])
+            self.assertEqual(attempts, [("primary", "main")])
+            self.assertFalse(llm._is_route_cooling("primary", "main"))
+
     def test_vision_route_preserves_ambient_and_memory_context(self):
         captured = {}
 
