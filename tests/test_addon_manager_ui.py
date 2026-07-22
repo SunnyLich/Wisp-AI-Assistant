@@ -237,7 +237,8 @@ def test_settings_window_widgets_save_through_manager(qapp, fake_manager):
     ]
     dialog = _dialog(fake_manager)
     try:
-        dialog._open_settings_window("demo.tools", "Demo Tools", [])
+        _button(dialog, "Settings").click()
+        qapp.processEvents()
         settings_dialog = dialog._settings_dialogs["demo.tools"]
 
         box = settings_dialog.findChildren(QCheckBox)[0]
@@ -314,7 +315,8 @@ def test_log_window_prefers_latest_manager_logs_and_reloads(qapp, fake_manager):
     fake_manager.addons = [_addon(logs="fresh line")]
     dialog = _dialog(fake_manager)
     try:
-        dialog._open_log_window("demo.tools", "Demo Tools", "stale line")
+        _button(dialog, "Logs").click()
+        qapp.processEvents()
         log_dialog = dialog._log_dialogs["demo.tools"]
         assert log_dialog.findChildren(QTextEdit)[0].toPlainText() == "fresh line"
 
@@ -327,10 +329,6 @@ def test_log_window_prefers_latest_manager_logs_and_reloads(qapp, fake_manager):
 
 
 def test_repair_environment_requires_approval(qapp, fake_manager, monkeypatch):
-    fake_manager.addons = [_addon()]
-    dialog = _dialog(fake_manager)
-    boxes = _FakeMessageBox()
-    boxes.install(monkeypatch)
     runtime = {
         "tier": "2",
         "ready": False,
@@ -338,9 +336,14 @@ def test_repair_environment_requires_approval(qapp, fake_manager, monkeypatch):
         "python_requirement": ">=3.12",
         "env_path": "C:/envs/demo",
     }
+    fake_manager.addons = [_addon(runtime=runtime)]
+    dialog = _dialog(fake_manager)
+    boxes = _FakeMessageBox()
+    boxes.install(monkeypatch)
     try:
         boxes.answer = QMessageBox.StandardButton.No
-        dialog._repair_environment("demo.tools", "Demo Tools", runtime)
+        _button(dialog, "Install env").click()
+        qapp.processEvents()
         assert fake_manager.repair_calls == []
         prompt = boxes.questions[0]
         assert "numpy" in prompt
@@ -387,7 +390,8 @@ def test_install_archive_reloads_and_shows_new_addon(qapp, fake_manager, monkeyp
         type("_Files", (), {"getOpenFileName": staticmethod(lambda *a, **k: (str(archive), "filter"))}),
     )
     try:
-        dialog._install_archive()
+        _button(dialog, "Install archive").click()
+        qapp.processEvents()
         assert installed == [(archive, False)]
         assert fake_manager.load_all_calls == 1
         assert "extra.addon" in boxes.infos[0]
@@ -488,7 +492,8 @@ def test_install_folder_flow(qapp, fake_manager, monkeypatch, tmp_path):
         type("_Files", (), {"getExistingDirectory": staticmethod(lambda *a, **k: str(folder))}),
     )
     try:
-        dialog._install_folder()
+        _button(dialog, "Install folder").click()
+        qapp.processEvents()
         assert installed == [(folder, False)]
         assert fake_manager.load_all_calls == 1
         assert "folder.addon" in boxes.infos[0]

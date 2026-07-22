@@ -244,3 +244,89 @@ def test_addons_run_action_reports_missing_action(monkeypatch):
             addon_id="loaded",
             label="Do Thing",
         )
+
+
+def test_addon_llm_call_applies_permission_cap_privacy_and_request_limits(tmp_path, monkeypatch):
+    """A permitted add-on gets one private capped model call, then hits its quota."""
+    from types import SimpleNamespace
+
+    from core import addon_store
+    from core.llm_clients import client as llm_client
+    from core import privacy_gateway
+
+    addon = SimpleNamespace(
+        id="demo-llm",
+        enabled=True,
+        manifest=SimpleNamespace(permissions={"llm": True}),
+    )
+    manager = SimpleNamespace(_find=lambda addon_id: addon if addon_id == "demo-llm" else None)
+    monkeypatch.setattr(handlers, "_loaded_addon_manager", lambda _path: manager)
+
+    quota = iter(((True, 4), (False, 0)))
+    monkeypatch.setattr(
+        addon_store,
+        "record_llm_call",
+        lambda addon_id, *, limit, window_seconds: next(quota),
+    )
+
+    class PrivacySession:
+        def restore(self, text):
+            return str(text).replace("EMAIL_1", "alice@example.test")
+
+    session = PrivacySession()
+    monkeypatch.setattr(
+        privacy_gateway,
+        "scrub_cloud_fields",
+        lambda fields, session_id: (
+            session,
+            {"addon_prompt": "Summarize EMAIL_1"},
+            {"count": 1, "ai_enabled": False, "categories": {"email": 1}},
+        ),
+    )
+    privacy_contexts = []
+    requests = []
+    monkeypatch.setattr(
+        llm_client,
+        "set_live_privacy_context",
+        lambda value, **kwargs: privacy_contexts.append((value, kwargs)),
+    )
+
+    def stream_response(prompt, **kwargs):
+        requests.append((prompt, kwargs))
+        return iter(("Reply for ", "EMAIL_1"))
+
+    monkeypatch.setattr(llm_client, "stream_response", stream_response)
+
+    result = handlers.HANDLERS["brain.addons.llm_call"](
+        addon_id="demo-llm",
+        prompt="Summarize alice@example.test",
+        max_tokens=99999,
+        temperature=0.25,
+    )
+
+    assert result["text"] == "Reply for alice@example.test"
+    assert result["remaining"] == 4
+    assert result["privacy_report"]["categories"] == {"email": 1}
+    assert requests == [(
+        "Summarize EMAIL_1",
+        {"use_tools": False, "max_tokens": 2048, "temperature": 0.25},
+    )]
+    assert privacy_contexts == [
+        (session, {"ai_enabled": False}),
+        (None, {}),
+    ]
+
+    import pytest
+
+    with pytest.raises(PermissionError, match="call cap reached"):
+        handlers.HANDLERS["brain.addons.llm_call"](
+            addon_id="demo-llm",
+            prompt="Try again",
+        )
+
+    addon.manifest.permissions["llm"] = False
+    with pytest.raises(PermissionError, match="missing llm permission"):
+        handlers.HANDLERS["brain.addons.llm_call"](
+            addon_id="demo-llm",
+            prompt="Not allowed",
+        )

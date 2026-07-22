@@ -30,7 +30,7 @@ def before_query(prompt, context):
     return prompt + "!" + str(os.getpid()), context + "|addon"
 
 def after_response(text):
-    pass
+    print("after-response:" + text, file=sys.stderr, flush=True)
 
 def on_event(event, payload):
     print("event-log:" + event, file=sys.stderr, flush=True)
@@ -125,6 +125,15 @@ def test_addon_hooks_and_tools_run_in_host_process(tmp_path, monkeypatch):
     tool_result = registry.execute("demo_tool", {})
     assert tool_result.startswith("ok:")
     assert int(tool_result.removeprefix("ok:")) != os.getpid()
+
+    manager.after_response("complete reply")
+    logs = ""
+    for _ in range(20):
+        logs = str(manager.summaries()[0].get("logs") or "")
+        if "after-response:complete reply" in logs:
+            break
+        time.sleep(0.05)
+    assert "after-response:complete reply" in logs
 
     manager.on_shutdown()
 
@@ -570,13 +579,29 @@ def test_addon_enable_and_settings_round_trip(tmp_path, monkeypatch):
     assert "hello" in settings_path.read_text(encoding="utf-8")
     assert "hello" not in store_path.read_text(encoding="utf-8")
 
+    assert manager.before_query("prompt", "context")[0].startswith("prompt!")
+    assert manager.get_tray_actions()[0]["label"] == "Act"
+    assert {item["id"] for item in manager.get_intents()} == {"static", "dynamic"}
+    assert {item["id"] for item in manager.get_hotkeys()} == {"static-hotkey", "dynamic-hotkey"}
+    assert [item["title"] for item in manager.get_notifications()] == ["Static", "Demo"]
+
     manager.set_enabled("demo", False)
     assert not manager.is_enabled("demo")
     assert "demo_tool" not in {s["name"] for s in registry.schemas()}
+    assert manager.before_query("prompt", "context") == ("prompt", "context")
+    assert manager.get_tray_actions() == []
+    assert manager.get_intents() == []
+    assert manager.get_hotkeys() == []
+    assert manager.get_notifications() == []
 
     manager.set_enabled("demo", True)
     assert manager.is_enabled("demo")
     assert "demo_tool" in {s["name"] for s in registry.schemas()}
+    assert manager.before_query("prompt", "context")[0].startswith("prompt!")
+    assert manager.get_tray_actions()[0]["label"] == "Act"
+    assert {item["id"] for item in manager.get_intents()} == {"static", "dynamic"}
+    assert {item["id"] for item in manager.get_hotkeys()} == {"static-hotkey", "dynamic-hotkey"}
+    assert [item["title"] for item in manager.get_notifications()] == ["Static", "Demo"]
     manager.on_shutdown()
 
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import textwrap
 
 import pytest
 
+from addons import mcp_bridge
 from addons.mcp_bridge import MCPStdioClient
 
 
@@ -74,3 +76,55 @@ def test_mcp_server_unavailable_and_protocol_errors_are_controlled(monkeypatch):
     monkeypatch.setattr(client, "_send", lambda _payload: None)
     with pytest.raises(RuntimeError, match="protocol method unavailable"):
         client._request("tools/list", {})
+
+
+def test_configured_mcp_server_discovers_and_executes_real_bridge_tools(tmp_path, monkeypatch):
+    """servers.json discovery exposes and executes a real child MCP server tool."""
+    servers_file = tmp_path / "servers.json"
+    example_server = mcp_bridge.ADDON_DIR / "example_server.py"
+    servers_file.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "contract",
+                        "enabled": True,
+                        "command": sys.executable,
+                        "args": [str(example_server)],
+                        "timeout": 5,
+                    },
+                    {
+                        "name": "disabled",
+                        "enabled": False,
+                        "command": sys.executable,
+                        "args": [str(example_server)],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mcp_bridge, "SERVERS_FILE", servers_file)
+    mcp_bridge.on_shutdown()
+    try:
+        tools = mcp_bridge.get_tools()
+        by_name = {tool["name"]: tool for tool in tools}
+
+        assert len(tools) == 6
+        assert set(by_name) == {
+            "mcp_contract_echo",
+            "mcp_contract_add",
+            "mcp_contract_current_time",
+            "mcp_contract_read_text_file",
+            "mcp_contract_list_directory",
+            "mcp_contract_system_info",
+        }
+        assert all(tool["description"].startswith("[MCP:contract]") for tool in tools)
+        assert by_name["mcp_contract_echo"]["executor"]({"text": "round trip"}) == "round trip"
+        assert by_name["mcp_contract_add"]["executor"]({"a": 2, "b": 3}) == "5.0"
+        assert "disabled" not in mcp_bridge._clients
+    finally:
+        mcp_bridge.on_shutdown()
+
+    assert mcp_bridge._clients == {}
+    assert mcp_bridge._tool_index == {}

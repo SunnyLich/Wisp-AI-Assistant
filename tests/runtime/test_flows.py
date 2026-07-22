@@ -6160,6 +6160,34 @@ def test_addon_and_agent_tray_events_route_through_supervisor():
     assert ui.last_call("ui.show_agent_history")["params"]["runs"][0]["title"] == "recent"
 
 
+def test_addon_startup_notifications_reach_the_native_desktop_boundary():
+    """Enabled add-on notifications are emitted through the production supervisor route."""
+    brain = FakeWorker(
+        {
+            "brain.addons.list": lambda _params: {
+                "addons": [
+                    {
+                        "id": "demo",
+                        "enabled": True,
+                        "notifications": [
+                            {"title": "Demo ready", "message": "The add-on loaded."},
+                            {"title": "", "message": "ignored without a title"},
+                        ],
+                    },
+                ]
+            }
+        }
+    )
+    flow, native, _ui, _brain, _audio = make_flow(brain=brain)
+
+    flow._show_addon_notifications()
+
+    assert [call["params"] for call in native.calls_for("native.notify")] == [
+        {"title": "Demo ready", "message": "The add-on loaded."},
+        {"title": "Wisp", "message": "ignored without a title"},
+    ]
+
+
 def test_agent_run_request_streams_through_brain_agent_run():
     def agent_stream(params: dict[str, Any], on_event) -> dict[str, Any]:
         assert params["spec"]["title"] == "demo task"

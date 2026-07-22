@@ -26,6 +26,63 @@ def _close_overlay_if_valid(overlay, app) -> None:
         app.processEvents()
 
 
+def test_addon_intent_rows_render_and_run_from_the_visible_picker(qapp, monkeypatch):
+    """A contributed prompt row is visible and emits its exact action on keypress."""
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    import config
+    import core.addon_manager as addon_manager
+    import ui.intent_overlay as intent_overlay
+
+    manager = SimpleNamespace(
+        get_intents=lambda caller_idx: [
+            {
+                "addon_id": "demo",
+                "id": "research",
+                "label": "Research with addon",
+                "hint": "Addon: demo",
+                "key": "x",
+                "prompt": "Research the current selection with the add-on.",
+                "caller": str(caller_idx),
+            }
+        ]
+    )
+    monkeypatch.setattr(addon_manager, "get_manager", lambda: manager)
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    old_rows = list(config.CALLER_ROWS)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    overlay = intent_overlay.IntentOverlay(caller_idx=0)
+    chosen = []
+    overlay.intent_chosen.connect(lambda prompt, label: chosen.append((prompt, label)))
+    try:
+        overlay.show()
+        overlay.activateWindow()
+        overlay.setFocus()
+        qapp.processEvents()
+        addon_row = next(row for row in overlay._rows if row["label"] == "Research with addon")
+        assert addon_row == {
+            "glyph": "X",
+            "label": "Research with addon",
+            "hint": "Addon: demo",
+            "prompt": "Research the current selection with the add-on.",
+            "is_custom": False,
+        }
+
+        QTest.keyClick(overlay, Qt.Key.Key_X)
+        QTest.qWait(120)
+        qapp.processEvents()
+        assert chosen == [(
+            "X",
+            "Research the current selection with the add-on.",
+        )]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
 def test_custom_prompt_wraps_and_grows_vertically(qapp, monkeypatch):
     """Long freeform prompts wrap into additional visible editor lines."""
     from PySide6.QtCore import Qt
