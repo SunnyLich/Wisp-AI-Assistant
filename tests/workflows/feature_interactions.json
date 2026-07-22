@@ -1825,6 +1825,91 @@
     {"interaction_id":"I166","source_function_ids":["F385","F386","F387","F390","F391"],"target_function_id":"F399","description":"Scope, glob policy, role, briefing mode, and parallel execution jointly constrain what concurrent agents may read and write.","source_states":["read_only_briefing","parallel_disjoint_writes","parallel_same_file_write","blocked_path"],"target_states":["real_agent_run"],"cases":[{"source_state":"read_only_briefing","target_state":"real_agent_run","expected_result":"Every briefing agent may read/message but cannot mutate."},{"source_state":"parallel_disjoint_writes","target_state":"real_agent_run","expected_result":"Two implementers can write disjoint in-scope files concurrently."},{"source_state":"parallel_same_file_write","target_state":"real_agent_run","expected_result":"Exactly one implementer receives the file lease."},{"source_state":"blocked_path","target_state":"real_agent_run","expected_result":"Blocked globs remain hidden and rejected regardless of role or parallel state."}],"test_node_ids":["tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow","tests/test_agent_runner.py::AgentRunnerTests::test_parallel_read_only_round_allows_messages_but_denies_writes","tests/test_agent_runner.py::ParallelWorkRoundTests::test_disjoint_files_are_written_in_parallel","tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent","tests/test_agent_runner.py::ScopedWorkspaceTests::test_blocked_globs_hide_and_reject_files"],"status":"accepted"},
     {"interaction_id":"I167","source_function_ids":["F400","F401"],"target_function_id":"F399","description":"The visible approval choice determines whether an ask-mode agent mutation may continue.","source_states":["approve","decline"],"target_states":["waiting_mutating_tool"],"cases":[{"source_state":"approve","target_state":"waiting_mutating_tool","expected_result":"The event releases with approved true and the real tool continues."},{"source_state":"decline","target_state":"waiting_mutating_tool","expected_result":"The event releases with approved false and the target stays unchanged."}],"test_node_ids":["tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow","runtime/brain/tests/test_handler_agent.py::test_agent_run_approval_request_can_be_approved","tests/test_agent_runner.py::AgentToolboxTests::test_approval_callback_can_decline_mutating_tools"],"status":"accepted"},
     {"interaction_id":"I168","source_function_id":"F399","target_function_ids":["F402","F403","F404","F405","F406","F407","F409","F410","F411","F412","F413","F414","F415","F416"],"description":"Running and completed task state controls live cards, cooperative controls, artifact actions, and the later history representation.","source_states":["running","permission_wait","paused","cancel_requested","completed_with_artifacts","historical"],"target_states":["visible_run_and_history_controls"],"cases":[{"source_state":"running","target_state":"visible_run_and_history_controls","expected_result":"Logs, traces, health, messages, nudge, pause, and cancel are live."},{"source_state":"permission_wait","target_state":"visible_run_and_history_controls","expected_result":"The approval panel is visible and blocks only the requested operation."},{"source_state":"paused","target_state":"visible_run_and_history_controls","expected_result":"Pause changes to Resume while the cooperative gate is set."},{"source_state":"cancel_requested","target_state":"visible_run_and_history_controls","expected_result":"Run controls disable and cancellation reaches the active run."},{"source_state":"completed_with_artifacts","target_state":"visible_run_and_history_controls","expected_result":"Final, trace, diff, folder, retry, and continue actions enable from exact artifacts."},{"source_state":"historical","target_state":"visible_run_and_history_controls","expected_result":"Refresh and selection reproduce Summary, Log, Trace, Diff, folder, retry, and continue behavior."}],"test_node_ids":["tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow","tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow","tests/runtime/test_flows.py::test_agent_history_routes_read_retry_and_continue_specs"],"status":"accepted"},
-    {"interaction_id":"I169","source_function_ids":["F382","F383"],"target_function_id":"F399","description":"Automatically copied current-application context and manually entered task context are combined before the agent run prompt is built.","source_states":["manual_only","app_only","manual_plus_app","oversized_private_app_content"],"target_states":["submitted_runner_prompt"],"cases":[{"source_state":"manual_only","target_state":"submitted_runner_prompt","expected_result":"Manual text reaches Required context unchanged."},{"source_state":"app_only","target_state":"submitted_runner_prompt","expected_result":"External app metadata/content reaches Required context."},{"source_state":"manual_plus_app","target_state":"submitted_runner_prompt","expected_result":"App context is appended without erasing manual instructions and both reach the prompt."},{"source_state":"oversized_private_app_content","target_state":"submitted_runner_prompt","expected_result":"Secrets and URLs are redacted before a marked 12,000-character bound is appended."}],"test_node_ids":["tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow","tests/test_agent_task_workflows.py::test_agent_current_app_context_uses_external_window_reader_and_budget","tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"],"status":"accepted"}
+    {"interaction_id":"I169","source_function_ids":["F382","F383"],"target_function_id":"F399","description":"Automatically copied current-application context and manually entered task context are combined before the agent run prompt is built.","source_states":["manual_only","app_only","manual_plus_app","oversized_private_app_content"],"target_states":["submitted_runner_prompt"],"cases":[{"source_state":"manual_only","target_state":"submitted_runner_prompt","expected_result":"Manual text reaches Required context unchanged."},{"source_state":"app_only","target_state":"submitted_runner_prompt","expected_result":"External app metadata/content reaches Required context."},{"source_state":"manual_plus_app","target_state":"submitted_runner_prompt","expected_result":"App context is appended without erasing manual instructions and both reach the prompt."},{"source_state":"oversized_private_app_content","target_state":"submitted_runner_prompt","expected_result":"Secrets and URLs are redacted before a marked 12,000-character bound is appended."}],"test_node_ids":["tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow","tests/test_agent_task_workflows.py::test_agent_current_app_context_uses_external_window_reader_and_budget","tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"],"status":"accepted"},
+    {
+      "interaction_id": "I170",
+      "source_function_id": "F016",
+      "target_function_ids": ["F030", "F458"],
+      "description": "Worker startup outcome determines whether shutdown rolls back a partial process set or recovery replaces a worker that dies later.",
+      "source_states": ["all_ready", "partial_start_failure", "active_worker_death", "normal_exit"],
+      "target_states": ["managed_lifecycle_outcome"],
+      "cases": [
+        {"source_state": "all_ready", "target_state": "managed_lifecycle_outcome", "expected_result": "UI, native, brain, and audio workers answer their real readiness boundary and remain isolated."},
+        {"source_state": "partial_start_failure", "target_state": "managed_lifecycle_outcome", "expected_result": "Every already-created worker is shut down for every declared startup fault class."},
+        {"source_state": "active_worker_death", "target_state": "managed_lifecycle_outcome", "expected_result": "The active request fails once and a replacement worker answers the next call."},
+        {"source_state": "normal_exit", "target_state": "managed_lifecycle_outcome", "expected_result": "All four real worker processes exit and one worker cleanup failure cannot skip later workers."}
+      ],
+      "test_node_ids": [
+        "tests/runtime/test_supervisor_ipc.py::test_wisp_supervisor_starts_real_app_worker_process_set",
+        "tests/runtime/test_supervisor_ipc.py::test_supervisor_startup_failure_matrix_cleans_every_partial_worker",
+        "tests/runtime/test_supervisor_ipc.py::test_supervisor_shutdown_continues_after_one_worker_raises",
+        "tests/runtime/test_supervisor_ipc.py::test_brain_worker_death_mid_stream_fails_request_and_recovers"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I171",
+      "source_function_id": "F031",
+      "target_function_ids": ["F040", "F049"],
+      "description": "Selection freshness and the visible Selection choice determine the context sent with a typed custom intent.",
+      "source_states": ["fresh_on", "stale_off", "stale_on", "captured_after_picker"],
+      "target_states": ["submitted_custom_query"],
+      "cases": [
+        {"source_state": "fresh_on", "target_state": "submitted_custom_query", "expected_result": "A fresh selection is offered on and reaches the model with the custom prompt."},
+        {"source_state": "stale_off", "target_state": "submitted_custom_query", "expected_result": "Untouched stale selection stays out of the submitted request."},
+        {"source_state": "stale_on", "target_state": "submitted_custom_query", "expected_result": "Explicitly enabling stale selection attaches its exact text."},
+        {"source_state": "captured_after_picker", "target_state": "submitted_custom_query", "expected_result": "The picker hides for a new OS selection, restores the draft, and submits both exact values."}
+      ],
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_caller_hotkey_captures_selected_file_before_intent_steals_focus",
+        "tests/runtime/test_flows.py::test_intent_stale_selection_stays_detached_without_toggle",
+        "tests/runtime/test_flows.py::test_intent_stale_selection_attaches_when_chip_toggled_on",
+        "tests/runtime/test_flows.py::test_intent_selection_capture_restores_picker_with_selected_text",
+        "tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I172",
+      "source_function_ids": ["F116", "F117", "F118", "F119", "F120", "F121"],
+      "target_function_ids": ["F122", "F123"],
+      "description": "Area, App, Full, and Escape paths determine whether a bounded image is attached and sent to vision.",
+      "source_states": ["area", "app", "full", "escape"],
+      "target_states": ["intent_image_outcome"],
+      "cases": [
+        {"source_state": "area", "target_state": "intent_image_outcome", "expected_result": "The normalized drag region is captured, restored on the picker, and sent as the query image."},
+        {"source_state": "app", "target_state": "intent_image_outcome", "expected_result": "The detected application bounds emit as the capture region and follow the same attachment route."},
+        {"source_state": "full", "target_state": "intent_image_outcome", "expected_result": "The virtual-desktop bounds emit as the capture region and follow the same attachment route."},
+        {"source_state": "escape", "target_state": "intent_image_outcome", "expected_result": "Cancellation emits once and neither a region nor fallback full-screen image is attached."}
+      ],
+      "test_node_ids": [
+        "tests/test_snip_overlay.py::test_drag_selection_emits_scaled_region_and_closes",
+        "tests/test_snip_overlay.py::test_toolbar_app_mode_emits_app_region_copy",
+        "tests/test_snip_overlay.py::test_toolbar_full_screen_mode_captures_virtual_desktop",
+        "tests/test_snip_overlay.py::test_show_focuses_for_capture_and_escape_still_cancels",
+        "tests/runtime/test_flows.py::test_screenshot_chip_snip_attaches_region_to_current_intent",
+        "tests/runtime/test_flows.py::test_cancelled_screenshot_chip_snip_does_not_capture_fullscreen"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I173",
+      "source_function_id": "F428",
+      "target_function_ids": ["F208", "F211", "F213", "F217", "F425"],
+      "description": "Reset confirmation and cleanup outcome determine whether saved settings, keychain secrets, and OAuth sessions are retained or cleared.",
+      "source_states": ["cancel", "confirmed", "already_missing", "cleanup_failure"],
+      "target_states": ["persisted_identity_and_settings"],
+      "cases": [
+        {"source_state": "cancel", "target_state": "persisted_identity_and_settings", "expected_result": "The settings file and credentials remain unchanged."},
+        {"source_state": "confirmed", "target_state": "persisted_identity_and_settings", "expected_result": "Settings return to defaults and API-key, ChatGPT, GitHub, and Copilot stores are cleared."},
+        {"source_state": "already_missing", "target_state": "persisted_identity_and_settings", "expected_result": "Reset is idempotent and leaves the dialog usable."},
+        {"source_state": "cleanup_failure", "target_state": "persisted_identity_and_settings", "expected_result": "The retained settings target is reported instead of presenting a false successful reset."}
+      ],
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_reset_all_action_clears_isolated_settings_credentials_and_sessions",
+        "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
+      ],
+      "status": "accepted"
+    }
   ]
 }

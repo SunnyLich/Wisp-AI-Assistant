@@ -3801,8 +3801,9 @@ def test_intent_selection_capture_restores_picker_with_selected_text():
             "native.context.await_selection": context_handler(selected="intent picked text"),
         }
     )
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("selection answer")})
     with caller_config(rows):
-        _flow, native, ui, _brain, _audio = make_flow(native=native)
+        _flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
         native.emit("native.hotkey", {"kind": "caller", "index": 0})
         ui.emit(
             "ui.intent.selection.requested",
@@ -3819,6 +3820,18 @@ def test_intent_selection_capture_restores_picker_with_selected_text():
     chips = {item["id"]: item for item in shown["context_items"]}
     assert chips["selection"]["state"] == "on"
     assert chips["selection"]["tokens"].startswith("~")
+    ui.emit(
+        "ui.intent.chosen",
+        {
+            "custom": "keep my draft",
+            "context_choices": [
+                {"id": "selection", "state": "on", "default_state": "off", "touched": True}
+            ],
+        },
+    )
+    query = brain.last_call("brain.query")["params"]
+    assert query["intent_prompt"] == "keep my draft"
+    assert query["selected"] == "intent picked text"
 
 
 def test_intent_selection_capture_ignores_lifecycle_cancel_while_hidden():

@@ -165,7 +165,8 @@
       "test_node_ids": ["tests/runtime/test_supervisor_ipc.py::test_wisp_supervisor_starts_real_app_worker_process_set"],
       "success_assertions": ["UI, native, brain, and audio workers start, answer ping, and remain isolated."],
       "audit_note": "Uses the real supervisor and four real worker subprocesses.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I170"]
     },
     {
       "function_id": "F018",
@@ -392,7 +393,8 @@
       "test_node_ids": ["tests/runtime/test_supervisor_ipc.py::test_wisp_supervisor_starts_real_app_worker_process_set"],
       "success_assertions": ["Every worker process has exited after normal app shutdown."],
       "audit_note": "Normal shutdown is real; partial-failure shutdown remains secondary resilience evidence.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I170"]
     },
     {
       "function_id": "F046",
@@ -2537,8 +2539,8 @@
       "test_node_ids": ["tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens"],
       "success_assertions": ["Changed values are serialized, the callback identifies them, and a fresh dialog reloads them."],
       "audit_note": "Uses a real Qt button and real settings serializer against isolated disk state.",
-      "dependency_status": "pending",
-      "interaction_ids": ["I001", "I003", "I011", "I013", "I014"]
+      "dependency_status": "audited",
+      "interaction_ids": ["I001", "I003", "I004", "I011", "I013", "I014"]
     },
     {
       "function_id": "F456",
@@ -2547,7 +2549,8 @@
       "test_node_ids": ["tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow", "tests/runtime/test_supervisor_ipc.py::test_worker_stderr_log_file_is_created_in_run_log_dir"],
       "success_assertions": ["Runtime and worker stderr log files are created and contain emitted diagnostic text."],
       "audit_note": "Automatic operational feature; its real entry is lifecycle/log initialization rather than a button.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I023"]
     },
     {
       "function_id": "F458",
@@ -2556,7 +2559,8 @@
       "test_node_ids": ["tests/runtime/test_supervisor_ipc.py::test_brain_worker_death_mid_stream_fails_request_and_recovers", "tests/runtime/test_flows.py::test_query_failure_reports_notice_and_returns_idle"],
       "success_assertions": ["A dead brain worker is replaced and a failed query returns the UI to idle with a recovery notice."],
       "audit_note": "Automatic runtime behavior is exercised through real worker death and production flow events.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I170"]
     },
     {
       "function_id": "F417",
@@ -2605,7 +2609,8 @@
       "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events"],
       "success_assertions": ["The exact typed prompt is emitted once through the production intent_chosen signal."],
       "audit_note": "Uses Qt keyboard events; downstream streaming is separately accepted by F049.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I171"]
     },
     {
       "function_id": "F043",
@@ -2643,7 +2648,8 @@
       "test_node_ids": ["tests/test_snip_overlay.py::test_toolbar_full_screen_mode_captures_virtual_desktop"],
       "success_assertions": ["The production overlay emits the complete virtual-desktop region and no cancellation."],
       "audit_note": "Uses a real Qt mouse event.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I172"]
     },
     {
       "function_id": "F121",
@@ -2652,7 +2658,8 @@
       "test_node_ids": ["tests/test_snip_overlay.py::test_show_focuses_for_capture_and_escape_still_cancels"],
       "success_assertions": ["The focused capture overlay emits cancellation once."],
       "audit_note": "Uses a real Qt key event after the deferred focus sequence.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I172"]
     },
     {
       "function_id": "F031",
@@ -2661,7 +2668,8 @@
       "test_node_ids": ["tests/runtime/test_flows.py::test_intent_selection_capture_restores_picker_with_selected_text"],
       "success_assertions": ["The newly selected text returns to the pending picker with an enabled token-estimated Selection chip and the draft preserved."],
       "audit_note": "The external OS selection adapter is fake; the Wisp flow and event transitions are real.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I171"]
     },
     {
       "function_id": "F058",
@@ -2670,7 +2678,8 @@
       "test_node_ids": ["tests/test_config_env.py::ConfigEnvTests::test_read_selection_aloud_hotkey_loads_from_env", "tests/runtime/test_hotkey_tap_matching.py::test_specs_from_config", "tests/runtime/test_flows.py::test_read_selection_aloud_native_hotkey_routes_to_tts"],
       "success_assertions": ["F7 is the default, the action is registered, and its native event synthesizes the selected text."],
       "audit_note": "The OS hook and audio device are external deterministic boundaries.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I054"]
     },
     {
       "function_id": "F272",
@@ -2699,7 +2708,8 @@
       "test_node_ids": ["tests/runtime/test_flows.py::test_read_selection_aloud_native_hotkey_routes_to_tts", "tests/runtime/test_flows.py::test_read_selection_aloud_speaks_selected_text_without_model"],
       "success_assertions": ["Selected text is synthesized, played, displayed as reading, and no model query occurs."],
       "audit_note": "Native selection and audio device are external deterministic boundaries.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I124", "I125", "I126", "I127", "I139"]
     },
     {
       "function_id": "F296",
@@ -2907,8 +2917,9 @@
       "production_entry_point": "Assistant-language combo -> repeated Save changes -> config.get_system_prompt",
       "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_every_assistant_language_changes_the_real_runtime_prompt"],
       "success_assertions": ["Every offered reply-language state persists and produces the exact runtime language instruction, including match-user and system-default branches."],
-      "audit_note": "The downstream provider request matrix is still pending; this accepts the real Settings-to-runtime-prompt behavior only.",
-      "dependency_status": "pending"
+      "audit_note": "Every language state reaches both the real runtime system prompt and every built-in intent across every app language.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I050"]
     },
     {
       "function_id": "F439",
@@ -2916,8 +2927,9 @@
       "production_entry_point": "Three system-prompt editors -> Save changes -> config reload -> Settings reopen",
       "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_three_conversation_system_prompts_save_reload_and_remain_independent"],
       "success_assertions": ["Distinct Wisp, ChatGPT, and Claude prompts persist, reload independently, and reach their separate runtime config values."],
-      "audit_note": "Conversation-engine routing interactions remain pending; persistence and runtime separation are accepted.",
-      "dependency_status": "pending"
+      "audit_note": "Persistence, runtime separation, and conversation-engine-specific prompt routing are accepted together.",
+      "dependency_status": "audited",
+      "interaction_ids": ["I123"]
     },
     {
       "function_id": "F419",
@@ -2936,7 +2948,7 @@
       "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_setup_check_button_runs_the_real_check_and_displays_its_report"],
       "success_assertions": ["Pass and warning check rows are rendered with their messages and recommendations while Settings remains usable."],
       "audit_note": "Host provider/microphone probes are deterministic external boundaries; the Settings action and report formatter are real.",
-      "dependency_status": "pending"
+      "dependency_status": "audited"
     },
     {
       "function_id": "F427",
@@ -2955,7 +2967,8 @@
       "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_reset_all_action_clears_isolated_settings_credentials_and_sessions"],
       "success_assertions": ["The isolated settings file disappears, runtime defaults return, both credential entries are deleted, all three OAuth sessions clear, and Settings stays usable."],
       "audit_note": "Keychain and OAuth stores are external deterministic boundaries; destructive persistence is real but isolated.",
-      "dependency_status": "pending"
+      "dependency_status": "audited",
+      "interaction_ids": ["I173"]
     },
     {
       "function_id": "F440",

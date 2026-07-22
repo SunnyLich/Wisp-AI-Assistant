@@ -269,8 +269,10 @@
       "success_assertions": [
         "UI, native, brain, and audio workers start, answer ping, and remain isolated."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I170"
+      ],
       "audit_note": "Uses the real supervisor and four real worker subprocesses."
     },
     {
@@ -494,8 +496,10 @@
       "success_assertions": [
         "Every worker process has exited after normal app shutdown."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I170"
+      ],
       "audit_note": "Normal shutdown is real; partial-failure shutdown remains secondary resilience evidence."
     },
     {
@@ -509,8 +513,10 @@
       "success_assertions": [
         "The newly selected text returns to the pending picker with an enabled token-estimated Selection chip and the draft preserved."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I171"
+      ],
       "audit_note": "The external OS selection adapter is fake; the Wisp flow and event transitions are real."
     },
     {
@@ -668,8 +674,10 @@
       "success_assertions": [
         "The exact typed prompt is emitted once through the production intent_chosen signal."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I171"
+      ],
       "audit_note": "Uses Qt keyboard events; downstream streaming is separately accepted by F049."
     },
     {
@@ -992,8 +1000,10 @@
       "success_assertions": [
         "F7 is the default, the action is registered, and its native event synthesizes the selected text."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I054"
+      ],
       "audit_note": "The OS hook and audio device are external deterministic boundaries."
     },
     {
@@ -1963,8 +1973,10 @@
       "success_assertions": [
         "The production overlay emits the complete virtual-desktop region and no cancellation."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I172"
+      ],
       "audit_note": "Uses a real Qt mouse event."
     },
     {
@@ -2050,8 +2062,10 @@
       "success_assertions": [
         "The focused capture overlay emits cancellation once."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I172"
+      ],
       "audit_note": "Uses a real Qt key event after the deferred focus sequence."
     },
     {
@@ -4863,8 +4877,14 @@
       "success_assertions": [
         "Selected text is synthesized, played, displayed as reading, and no model query occurs."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I124",
+        "I125",
+        "I126",
+        "I127",
+        "I139"
+      ],
       "audit_note": "Native selection and audio device are external deterministic boundaries."
     },
     {
@@ -7579,7 +7599,7 @@
       "success_assertions": [
         "Pass and warning check rows are rendered with their messages and recommendations while Settings remains usable."
       ],
-      "dependency_status": "pending",
+      "dependency_status": "audited",
       "interaction_ids": [],
       "audit_note": "Host provider/microphone probes are deterministic external boundaries; the Settings action and report formatter are real."
     },
@@ -7612,10 +7632,11 @@
       "success_assertions": [
         "Changed values are serialized, the callback identifies them, and a fresh dialog reloads them."
       ],
-      "dependency_status": "pending",
+      "dependency_status": "audited",
       "interaction_ids": [
         "I001",
         "I003",
+        "I004",
         "I011",
         "I013",
         "I014"
@@ -7667,8 +7688,10 @@
       "success_assertions": [
         "The isolated settings file disappears, runtime defaults return, both credential entries are deleted, all three OAuth sessions clear, and Settings stays usable."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I173"
+      ],
       "audit_note": "Keychain and OAuth stores are external deterministic boundaries; destructive persistence is real but isolated."
     },
     {
@@ -7836,9 +7859,11 @@
       "success_assertions": [
         "Every offered reply-language state persists and produces the exact runtime language instruction, including match-user and system-default branches."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "The downstream provider request matrix is still pending; this accepts the real Settings-to-runtime-prompt behavior only."
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I050"
+      ],
+      "audit_note": "Every language state reaches both the real runtime system prompt and every built-in intent across every app language."
     },
     {
       "function_id": "F439",
@@ -7851,9 +7876,11 @@
       "success_assertions": [
         "Distinct Wisp, ChatGPT, and Claude prompts persist, reload independently, and reach their separate runtime config values."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
-      "audit_note": "Conversation-engine routing interactions remain pending; persistence and runtime separation are accepted."
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I123"
+      ],
+      "audit_note": "Persistence, runtime separation, and conversation-engine-specific prompt routing are accepted together."
     },
     {
       "function_id": "F440",
@@ -8134,8 +8161,10 @@
       "success_assertions": [
         "Runtime and worker stderr log files are created and contain emitted diagnostic text."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I023"
+      ],
       "audit_note": "Automatic operational feature; its real entry is lifecycle/log initialization rather than a button."
     },
     {
@@ -8167,8 +8196,10 @@
       "success_assertions": [
         "A dead brain worker is replaced and a failed query returns the UI to idle with a recovery notice."
       ],
-      "dependency_status": "pending",
-      "interaction_ids": [],
+      "dependency_status": "audited",
+      "interaction_ids": [
+        "I170"
+      ],
       "audit_note": "Automatic runtime behavior is exercised through real worker death and production flow events."
     },
     {
