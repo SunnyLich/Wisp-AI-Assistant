@@ -9,7 +9,6 @@ name: macOS compatibility
 
 on:
   push:
-    branches: [main, Dev, profile-setup]
     paths:
       - "core/**"
       - "ui/**"
@@ -32,6 +31,7 @@ on:
       - "pytest.ini"
       - ".python-version"
       - ".github/workflows/macos.yml"
+      - ".github/workflows/isolated-tests.yml"
   pull_request:
     paths:
       - "core/**"

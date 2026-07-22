@@ -101,7 +101,7 @@ class TtsConnectionTests(unittest.TestCase):
         with patch.dict(sys.modules, {"cartesia": fake_module}):
             ok, message = tts.test_connection(
                 "cartesia",
-                cartesia_api_key="test-cartesia-key",
+                cartesia_api_key="test-cartesia-key",  # secret-scan: allow
                 cartesia_voice_id="voice-123",
             )
 
@@ -175,7 +175,7 @@ class TtsConnectionTests(unittest.TestCase):
         ), patch.multiple(
             tts.config,
             TTS_PROVIDER="elevenlabs",
-            ELEVENLABS_API_KEY="saved-eleven-key",
+            ELEVENLABS_API_KEY="saved-eleven-key",  # secret-scan: allow
             ELEVENLABS_VOICE_ID="saved-eleven-voice",
             ELEVENLABS_MODEL="saved-eleven-model",
         ):
@@ -229,14 +229,14 @@ class TtsConnectionTests(unittest.TestCase):
         with patch.dict(sys.modules, {"openai": fake_module}):
             openai_result = tts.test_connection(
                 "openai",
-                openai_api_key="test-openai-key",
+                openai_api_key="test-openai-key",  # secret-scan: allow
                 openai_model="gpt-4o-mini-tts",
                 openai_voice="nova",
             )
             compatible_result = tts.test_connection(
                 "openai_compatible",
                 custom_base_url="https://speech.example/v1",
-                custom_api_key="test-custom-key",
+                custom_api_key="test-custom-key",  # secret-scan: allow
                 custom_model="custom-tts-model",
                 custom_voice="custom-voice",
             )

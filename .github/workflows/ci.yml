@@ -3,7 +3,6 @@ name: CI
 
 on:
   push:
-    branches: [main, Dev, profile-setup]
     paths:
       - "core/**"
       - "ui/**"
@@ -22,6 +21,7 @@ on:
       - "pytest.ini"
       - ".github/workflows/build.yml"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/isolated-tests.yml"
       - ".github/workflows/macos.yml"
   pull_request:
     paths:
