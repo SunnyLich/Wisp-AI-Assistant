@@ -13,10 +13,11 @@ import sys
 import threading
 import time
 import traceback
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -103,7 +104,7 @@ class RuntimeFailureCollector:
 
         self._previous_qt_handler = qInstallMessageHandler(handler)
 
-    def install(self) -> "RuntimeFailureCollector":
+    def install(self) -> RuntimeFailureCollector:
         """Install the process-global hooks until ``uninstall`` is called."""
 
         if self._installed:
@@ -162,7 +163,7 @@ class RuntimeFailureCollector:
         lines = [f"- {failure.source}: {failure.detail}" for failure in self.failures]
         raise AssertionError("Unexpected runtime failures:\n" + "\n".join(lines))
 
-    def __enter__(self) -> "RuntimeFailureCollector":
+    def __enter__(self) -> RuntimeFailureCollector:
         return self.install()
 
     def __exit__(self, exc_type, exc_value, exc_traceback) -> bool:
@@ -267,7 +268,7 @@ class RuntimeStateInspector:
 
         self._workers.append((name, worker))
 
-    def start(self) -> "RuntimeStateInspector":
+    def start(self) -> RuntimeStateInspector:
         self._baseline_threads = set(self._threads())
         self._baseline_processes = set(self._processes())
         return self
@@ -342,7 +343,7 @@ class RuntimeStateInspector:
         if issues:
             raise AssertionError("Runtime state did not return to baseline:\n- " + "\n- ".join(issues))
 
-    def __enter__(self) -> "RuntimeStateInspector":
+    def __enter__(self) -> RuntimeStateInspector:
         return self.start()
 
     def __exit__(self, exc_type, exc_value, exc_traceback) -> bool:
@@ -398,7 +399,10 @@ class QtUserDriver:
 
         widget.setFocus()
         QTest.keyClick(widget, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
-        QTest.keyClicks(widget, value)
+        if value:
+            QTest.keyClicks(widget, value)
+        else:
+            QTest.keyClick(widget, Qt.Key.Key_Backspace)
         self.pump()
 
     def select_combo_data(self, combo: Any, value: Any) -> None:

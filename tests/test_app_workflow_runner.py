@@ -126,7 +126,8 @@ def test_workflow_runner_reports_honest_feature_acceptance_counts():
     assert counts["total"] == 472
     assert counts["accepted"] == counts["total"]
     assert counts["dependency_audited"] == counts["total"]
-    assert counts["accepted_interactions"] == 173
+    assert counts["accepted_interactions"] == 197
+    assert counts["accepted_interactions"] == counts["declared_interactions"]
     assert counts["complete"] is True
 
 

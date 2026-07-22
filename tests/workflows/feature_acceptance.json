@@ -20,7 +20,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I040"
+        "I040",
+        "I174"
       ],
       "audit_note": "The release build for Windows, Linux, and macOS now runs the same process-level smoke before packaging; the local Windows artifact was rebuilt and executed successfully."
     },
@@ -37,7 +38,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I040"
+        "I040",
+        "I043",
+        "I174"
       ],
       "audit_note": "Writable data, user state, add-ons, and the single-instance lock are isolated without replacing the production launcher or supervisor path."
     },
@@ -53,7 +56,9 @@
         "When the application lock is already held, the second supervisor exits with the duplicate-instance code before constructing or starting any worker."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I174"
+      ],
       "audit_note": "The single-instance decision and supervisor entry are production code; the pre-held OS lock result is the deterministic boundary."
     },
     {
@@ -87,7 +92,9 @@
         "A clean Settings dialog opens the real wizard through its visible button, while unsaved settings block the action; a completed wizard profile is persisted and visible after runtime reload."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I014"
+      ],
       "audit_note": "The earlier component-only audit was stale: the Settings entry button is now exercised directly."
     },
     {
@@ -120,7 +127,9 @@
         "Every interface-language option, including system default, survives Finish; every non-default choice invokes the live language preview route."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I175"
+      ],
       "audit_note": "All options exposed by LANGUAGE_OPTIONS are selected through the real combo."
     },
     {
@@ -135,7 +144,9 @@
         "System default, match-user, and every named assistant-language option persist exactly."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I175"
+      ],
       "audit_note": "All twelve values displayed by the wizard are exercised."
     },
     {
@@ -150,7 +161,9 @@
         "System, Light, and Dark each persist; Light and Dark invoke their normal live-preview path while System remains the already-selected default."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I175"
+      ],
       "audit_note": "The palette renderer is the deterministic Qt boundary; selection and persistence are production."
     },
     {
@@ -305,7 +318,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I041"
+        "I041",
+        "I191"
       ],
       "audit_note": "The complete four-state by two-auto-hide matrix is exercised on real Qt widgets."
     },
@@ -322,7 +336,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I042"
+        "I042",
+        "I184"
       ],
       "audit_note": "Synthetic Qt mouse events enter the exact installed event filter; no geometry helper is called directly."
     },
@@ -339,7 +354,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I041"
+        "I041",
+        "I184",
+        "I191"
       ],
       "audit_note": "Auto-hide and state are tested as a full 2 x 4 behavior matrix."
     },
@@ -355,7 +372,9 @@
         "Triggering the real tray QAction hides the icon, changes its label to Show icon, and restores the icon on the next trigger."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I191"
+      ],
       "audit_note": "The test triggers QAction.trigger rather than invoking the toggle slot."
     },
     {
@@ -370,7 +389,9 @@
         "The real Last chat action makes the production ChatWindow visible in a four-worker runtime."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I176"
+      ],
       "audit_note": "Runs for both external-provider modes through real IPC workers."
     },
     {
@@ -385,7 +406,9 @@
         "The Memory QAction crosses UI event IPC and the real brain memory-list call before the MemoryViewer becomes visible."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I176"
+      ],
       "audit_note": "Uses real UI and brain workers, not a signal recorder."
     },
     {
@@ -400,7 +423,9 @@
         "The Addon Manager QAction crosses UI event IPC and the real brain add-on-list call before the manager becomes visible."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I176"
+      ],
       "audit_note": "Uses real UI and brain workers, not the singleton helper alone."
     },
     {
@@ -415,7 +440,9 @@
         "The real Settings QAction crosses UI event IPC and makes the production SettingsDialog visible."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I176"
+      ],
       "audit_note": "The menu action itself is triggered inside the real UI worker."
     },
     {
@@ -447,7 +474,9 @@
         "The Runtime Status QAction crosses supervisor IPC and displays the live diagnostics window while all workers are active."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I176"
+      ],
       "audit_note": "This is the supported pure-Python UI-host path."
     },
     {
@@ -462,7 +491,9 @@
         "Triggering the real Quit QAction exits the actual UI worker, after which supervisor shutdown leaves no remaining worker."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I176"
+      ],
       "audit_note": "The test observes the process exit rather than a mocked quit callback."
     },
     {
@@ -498,7 +529,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I170"
+        "I170",
+        "I174",
+        "I176"
       ],
       "audit_note": "Normal shutdown is real; partial-failure shutdown remains secondary resilience evidence."
     },
@@ -533,7 +566,9 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I044",
-        "I045"
+        "I045",
+        "I052",
+        "I179"
       ],
       "audit_note": "Real Qt widgets and events are used."
     },
@@ -605,7 +640,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I046",
-        "I047"
+        "I047",
+        "I052"
       ],
       "audit_note": "Real Qt widgets and events are used."
     },
@@ -676,7 +712,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I171"
+        "I171",
+        "I179"
       ],
       "audit_note": "Uses Qt keyboard events; downstream streaming is separately accepted by F049."
     },
@@ -728,7 +765,9 @@
         "Escape emits cancellation exactly once."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I177"
+      ],
       "audit_note": "Uses a real Qt key event."
     },
     {
@@ -780,7 +819,11 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I048"
+        "I048",
+        "I056",
+        "I057",
+        "I179",
+        "I180"
       ],
       "audit_note": "The external editor boundary is deterministic in the end-to-end picker test; the real OS-specific native paste implementations are accepted in the companion matrix."
     },
@@ -797,7 +840,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I048"
+        "I048",
+        "I056",
+        "I179"
       ],
       "audit_note": "The same real UI/brain setup exercises both paste_back states and asserts their opposite side effects."
     },
@@ -835,7 +880,9 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I051",
-        "I052"
+        "I052",
+        "I171",
+        "I177"
       ],
       "audit_note": "The main stream path uses the production controller; a companion real-process test covers UI/brain worker correlation and isolation."
     },
@@ -909,7 +956,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I054"
+        "I054",
+        "I178"
       ],
       "audit_note": "The physical OS keystroke source is the deterministic boundary; binding construction, callback, worker event, and picker flow are real."
     },
@@ -929,7 +977,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I048",
-        "I054"
+        "I054",
+        "I178"
       ],
       "audit_note": "The physical OS keystroke and external target application are deterministic boundaries."
     },
@@ -947,7 +996,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I054"
+        "I054",
+        "I058",
+        "I178"
       ],
       "audit_note": "Physical global-key input and screen pixels are deterministic boundaries."
     },
@@ -965,7 +1016,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I054"
+        "I054",
+        "I178"
       ],
       "audit_note": "The focused external application's selection provider is the deterministic boundary."
     },
@@ -983,7 +1035,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I054"
+        "I054",
+        "I178"
       ],
       "audit_note": "No external dependency remains after the hotkey-source boundary."
     },
@@ -1002,7 +1055,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I054"
+        "I054",
+        "I178"
       ],
       "audit_note": "The OS hook and audio device are external deterministic boundaries."
     },
@@ -1023,7 +1077,9 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I054",
-        "I055"
+        "I055",
+        "I058",
+        "I178"
       ],
       "audit_note": "Keyboard, microphone, STT, and model providers are deterministic boundaries; press/release state and the complete application workflow are real."
     },
@@ -1043,7 +1099,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I054",
-        "I055"
+        "I055",
+        "I178"
       ],
       "audit_note": "The global key source, microphone, and Gemini Live transport are deterministic boundaries."
     },
@@ -1063,7 +1120,9 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I054",
-        "I055"
+        "I055",
+        "I059",
+        "I178"
       ],
       "audit_note": "Keyboard, microphone, STT, and external focused-field paste are deterministic boundaries."
     },
@@ -1079,7 +1138,9 @@
         "Typing action-description terms through Qt input shows only the matching shortcut rows and clearing the query restores all rows."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I192"
+      ],
       "audit_note": "Uses the visible real Settings widgets."
     },
     {
@@ -1098,7 +1159,10 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I054"
+        "I054",
+        "I178",
+        "I179",
+        "I192"
       ],
       "audit_note": "Uses visible Settings controls and production config/spec builders; the OS registration call is the deterministic boundary."
     },
@@ -1114,7 +1178,10 @@
         "A real click followed by Ctrl+Alt+K records exactly ctrl+alt+k and exits recording mode."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I178",
+        "I192"
+      ],
       "audit_note": "The Windows low-level capture hook is replaced by the same Qt key-event boundary used on other platforms."
     },
     {
@@ -1130,7 +1197,10 @@
         "Escape clears the assignment, while leaving the recording field cancels and restores its previous chord."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I178",
+        "I192"
+      ],
       "audit_note": "Uses the real capture widget and Qt input/focus events."
     },
     {
@@ -1145,7 +1215,10 @@
         "One Research action persists distinct ctrl+alt+r and ctrl+shift+alt+r bindings after reopen."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I178",
+        "I192"
+      ],
       "audit_note": "The earlier capture test proves chord recording; this workflow proves both fields belong to and persist for the same action."
     },
     {
@@ -1161,7 +1234,9 @@
         "A duplicate across caller primary/secondary fields blocks save with the Duplicate keys warning, then saves after resolution."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I178"
+      ],
       "audit_note": "Uses the production validator and visible Settings warning path."
     },
     {
@@ -1176,7 +1251,9 @@
         "The visible Add button creates one independent caller whose complete state persists after reopening Settings."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "Uses real Qt controls and an isolated real settings file."
     },
     {
@@ -1191,7 +1268,9 @@
         "Typing Research immediately renames the row and the same name reloads from disk."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "Uses real Qt text input."
     },
     {
@@ -1206,7 +1285,9 @@
         "Removing a temporary caller leaves the existing Research caller intact and only three callers are saved."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "Uses the visible removal button."
     },
     {
@@ -1221,7 +1302,9 @@
         "The real Customize button exposes the caller's choice, custom-prompt, context, and tool controls."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "Uses the production inline editor."
     },
     {
@@ -1236,7 +1319,9 @@
         "A newly added choice accepts all three fields and persists as the caller's action."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "Uses visible Qt controls."
     },
     {
@@ -1251,7 +1336,9 @@
         "Removing the temporary second choice preserves the edited first choice."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "Uses the actual row X control."
     },
     {
@@ -1266,7 +1353,9 @@
         "All three edited values reload exactly, including the multiline model prompt."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "Uses real Qt text entry."
     },
     {
@@ -1281,7 +1370,9 @@
         "The custom prompt action reloads with key c and label Custom research."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I179"
+      ],
       "audit_note": "The actual freeform prompt text remains supplied at invocation time by design."
     },
     {
@@ -1424,7 +1515,9 @@
         "Every queued item is removed locally and the visible panel is cleared even when its worker call fails."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I180"
+      ],
       "audit_note": "No external dependency remains."
     },
     {
@@ -1534,7 +1627,9 @@
         "Known text and screen size show estimates, deferred provider/model sources show unknown estimates, and the visible chip state remains stable after refresh."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I062"
+      ],
       "audit_note": "Tokenizer/provider availability is deterministic; estimation and rendering are real."
     },
     {
@@ -1568,7 +1663,9 @@
         "Enabling App on the picker retrieves and sends the captured active app/document even when the saved default was off."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I181"
+      ],
       "audit_note": "OS accessibility/window APIs are deterministic boundaries."
     },
     {
@@ -1584,7 +1681,9 @@
         "Supported open-document text is fetched before the query and appears in both model context and the sent-context summary."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I181"
+      ],
       "audit_note": "Editor/accessibility providers are deterministic boundaries."
     },
     {
@@ -1599,7 +1698,9 @@
         "Enabling Clipboard sends the exact hotkey-time clipboard text even when the saved default was off."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I062"
+      ],
       "audit_note": "The OS clipboard is the deterministic boundary."
     },
     {
@@ -1615,7 +1716,9 @@
         "Selection is captured before the overlay takes focus on Windows, macOS, Wayland, and X11 routes and is available to the query."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I171"
+      ],
       "audit_note": "Accessibility/selection owners are deterministic boundaries."
     },
     {
@@ -1631,7 +1734,10 @@
         "The pre-overlay browser target is retained and its current page text is fetched for the query on native Windows/Linux and macOS paths."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I163",
+        "I181"
+      ],
       "audit_note": "Browser automation/page content is deterministic."
     },
     {
@@ -1646,7 +1752,9 @@
         "A current-information query reaches the search adapter with its result limit and returns title, URL, and snippet."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I181"
+      ],
       "audit_note": "The search backend is deterministic; production tool dispatch/formatting are real."
     },
     {
@@ -1661,7 +1769,9 @@
         "An allowed URL is fetched and returned, while the same call is blocked outside Browser/Web scope."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I181"
+      ],
       "audit_note": "Network/page retrieval is deterministic."
     },
     {
@@ -1677,7 +1787,9 @@
         "Both read-only commands return successful status/diff output and contain missing Git, invalid repo, permission, timeout, and oversized-output faults."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "The Git executable is deterministic; command construction and output policy are real."
     },
     {
@@ -1693,7 +1805,9 @@
         "Valid repository metadata returns as JSON and auth/scope/not-found/network/invalid-data failures stay controlled."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "OAuth and GitHub HTTP are deterministic boundaries."
     },
     {
@@ -1709,7 +1823,9 @@
         "A positive issue number returns title/state JSON and invalid identifiers plus API failures are controlled."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "OAuth and GitHub HTTP are deterministic boundaries."
     },
     {
@@ -1726,7 +1842,9 @@
         "Relevant memory is retrieved for the actual query in both frontloaded and on-demand modes while respecting project scope."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "Uses the production memory manager behind a deterministic store boundary."
     },
     {
@@ -1741,7 +1859,9 @@
         "Immediate mode captures the screen and sends it alongside selection text in the same query."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I163"
+      ],
       "audit_note": "Screen capture is deterministic."
     },
     {
@@ -1757,7 +1877,9 @@
         "Model-decided mode grants capture_screen and supplies a native-captured image for the tool without attaching it as immediate prompt vision."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "Screen pixels and the model's decision are deterministic boundaries."
     },
     {
@@ -1773,7 +1895,9 @@
         "Document model mode does not frontload text; an allowed get_context call returns open-document content."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "Editor/path discovery is deterministic."
     },
     {
@@ -1789,7 +1913,9 @@
         "Browser model mode offers the three scoped tools and an allowed URL context request returns current page text."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "Search/browser backends are deterministic."
     },
     {
@@ -1805,7 +1931,9 @@
         "Model mode grants all Git/GitHub tools and each adapter returns a successful result."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "Git and GitHub transports are deterministic."
     },
     {
@@ -1821,7 +1949,9 @@
         "Model mode excludes frontloaded memory, grants memory_search, and an allowed tool call returns relevant facts."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "Memory storage is deterministic."
     },
     {
@@ -1837,7 +1967,9 @@
         "Every source can remain visible for estimated cost while Off prevents capture/injection/tool grants in the actual request."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I153"
+      ],
       "audit_note": "External providers are not called for disabled sources."
     },
     {
@@ -1853,7 +1985,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I063"
       ],
       "audit_note": "Uses visible Settings controls, real env persistence, config reload, and production policy."
     },
@@ -1870,7 +2003,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I063"
       ],
       "audit_note": "Uses visible Settings controls, real env persistence, config reload, and production policy."
     },
@@ -1888,7 +2022,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I063"
       ],
       "audit_note": "Uses visible Settings, real persistence/policy, and the real approval/toolbox path."
     },
@@ -1906,7 +2041,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I063"
       ],
       "audit_note": "Uses visible Settings, real persistence/policy, and real isolated filesystem operations."
     },
@@ -1959,7 +2095,9 @@
         "The browser extractor receives the browser limit, the ambient window reader receives the ambient-document limit, and the model document tool receives the tool-document limit."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I181"
+      ],
       "audit_note": "The test executes all three production dispatch paths; HTTP, accessibility, and file extraction are deterministic boundaries."
     },
     {
@@ -1992,7 +2130,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I064"
+        "I064",
+        "I172"
       ],
       "audit_note": "Uses the real Qt snip overlay."
     },
@@ -2010,7 +2149,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I064"
+        "I064",
+        "I172"
       ],
       "audit_note": "Monitor geometry is deterministic; the Qt controls are real."
     },
@@ -2028,7 +2168,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I064"
+        "I064",
+        "I172"
       ],
       "audit_note": "Window bounds are deterministic; toolbar behavior is real."
     },
@@ -2047,7 +2188,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I064"
+        "I064",
+        "I172"
       ],
       "audit_note": "Uses the real Qt overlay and toolbar."
     },
@@ -2081,7 +2223,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I065"
+        "I065",
+        "I172"
       ],
       "audit_note": "The monitor pixels are deterministic; intent/snip/native routing is production code."
     },
@@ -2101,7 +2244,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I065",
-        "I066"
+        "I066",
+        "I172"
       ],
       "audit_note": "Image bytes and provider response are deterministic boundaries."
     },
@@ -2135,7 +2279,9 @@
         "An assistant image with or without text appears as a valid bounded thumbnail in both reply bubble and chat."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I182"
+      ],
       "audit_note": "Uses real Qt image decoding/layout against an isolated PNG."
     },
     {
@@ -2150,7 +2296,9 @@
         "Every documented runtime text state becomes visible and later states correctly replace transient content."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I183"
+      ],
       "audit_note": "Uses the real Qt bubble and the public methods invoked by UI-host dispatch."
     },
     {
@@ -2168,7 +2316,10 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I067",
-        "I068"
+        "I068",
+        "I182",
+        "I183",
+        "I189"
       ],
       "audit_note": "The provider stream is deterministic; production stream routing/rendering are real."
     },
@@ -2241,7 +2392,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I067"
+        "I067",
+        "I184"
       ],
       "audit_note": "Uses real Qt mouse events plus production flow dispatch; audio output is deterministic."
     },
@@ -2293,7 +2445,9 @@
         "A completed reply click opens chat once; listening/thinking clicks do not and the click cannot trigger speed boost."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I184"
+      ],
       "audit_note": "Uses real Qt mouse clicks on the visible text and shell surfaces."
     },
     {
@@ -2308,7 +2462,9 @@
         "A pointer drag moves the bubble/icon group and is not misread as a chat-opening click."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I184"
+      ],
       "audit_note": "Uses real Qt pointer events; compositor system-move is the platform boundary."
     },
     {
@@ -2324,7 +2480,9 @@
         "Hover pauses then resumes auto-hide, while wheel/click interaction latches the current bubble open."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I184"
+      ],
       "audit_note": "Runs the real bubble interaction and hide-timer policy."
     },
     {
@@ -2340,7 +2498,9 @@
         "Wheel input moves the visible long-text window immediately without replacing the complete selectable document."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I184"
+      ],
       "audit_note": "Uses the production Qt wheel path with deterministic deltas."
     },
     {
@@ -2355,7 +2515,9 @@
         "While speech is active, snapping clears manual offset and returns the viewport to the currently highlighted line."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I184"
+      ],
       "audit_note": "Uses production scroll/highlight state and viewport application."
     },
     {
@@ -2424,7 +2586,9 @@
         "An assistant-created image is retained as an assistant turn and remains visible in both compact and full-chat surfaces without fallback text."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I182"
+      ],
       "audit_note": "Generated bytes are deterministic; production persistence and Qt rendering are real."
     },
     {
@@ -2457,7 +2621,15 @@
         "The real chat window opens, displays stored history, sends a turn, persists the answer, and continues an older conversation."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I081",
+        "I158",
+        "I176",
+        "I182",
+        "I184",
+        "I189",
+        "I194"
+      ],
       "audit_note": "Qt controls and conversation logic are real; the model stream is deterministic."
     },
     {
@@ -2491,7 +2663,9 @@
         "Shift+Enter inserts a newline without sending; Enter sends the exact multiline text once."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I193"
+      ],
       "audit_note": "Uses the focused production QTextEdit and its event filter."
     },
     {
@@ -2510,7 +2684,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I077"
+        "I077",
+        "I080",
+        "I193"
       ],
       "audit_note": "Worker/provider emissions are deterministic boundaries; runtime routing and Qt rendering are production."
     },
@@ -2527,7 +2703,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I071"
+        "I071",
+        "I074"
       ],
       "audit_note": "History selection and send are real controls."
     },
@@ -2579,7 +2756,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I072"
+        "I072",
+        "I185"
       ],
       "audit_note": "The grouping algorithm and visible labels are production."
     },
@@ -2686,7 +2864,9 @@
         "A confirmed name becomes the visible tooltip and persists; cancellation/empty/error cases do not corrupt the old title."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I185"
+      ],
       "audit_note": "Only modal responses and persistence failures are deterministic boundaries."
     },
     {
@@ -2702,7 +2882,9 @@
         "Confirmed deletion removes only the target; rejected or failed deletion preserves history."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I185"
+      ],
       "audit_note": "The button/menu/action path is real; confirmation answers and injected save failures are deterministic."
     },
     {
@@ -2718,7 +2900,10 @@
         "The real action persists first and reveals the exact conversation record."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I185",
+        "I190"
+      ],
       "audit_note": "OS file-manager launch is the captured boundary."
     },
     {
@@ -2735,7 +2920,9 @@
         "Stored ISO metadata is formatted and displayed on both conversation rows and message headers."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I185"
+      ],
       "audit_note": "Formatting and Qt label rendering are production."
     },
     {
@@ -2859,7 +3046,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I074",
-        "I075"
+        "I075",
+        "I163"
       ],
       "audit_note": "Native selection result is deterministic."
     },
@@ -2877,7 +3065,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I074"
+        "I074",
+        "I163"
       ],
       "audit_note": "Clipboard contents are an external deterministic boundary."
     },
@@ -3074,7 +3263,9 @@
         "Keyboard increase/decrease/reset and Ctrl+wheel update the live scale, and the final scale reaches the settings persistence callback."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I194"
+      ],
       "audit_note": "Uses real Qt shortcut and wheel events; settings write is captured."
     },
     {
@@ -3246,7 +3437,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I083",
-        "I086"
+        "I086",
+        "I085"
       ],
       "audit_note": "Uses deliberately colliding external session IDs to prove provider namespacing."
     },
@@ -3282,7 +3474,14 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I086"
+        "I086",
+        "I087",
+        "I088",
+        "I089",
+        "I090",
+        "I091",
+        "I092",
+        "I093"
       ],
       "audit_note": "External CLIs are deterministic; harness routing/session contracts are production."
     },
@@ -3583,7 +3782,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I094"
+        "I094",
+        "I112"
       ],
       "audit_note": "Browser opening, callback HTTP exchange, secure storage, brain stream, and UI polling are covered at their production boundaries without a live account."
     },
@@ -3621,7 +3821,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I094"
+        "I094",
+        "I173"
       ],
       "audit_note": "Uses an isolated credential store; no developer login is touched."
     },
@@ -3679,7 +3880,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I095"
+        "I095",
+        "I173"
       ],
       "audit_note": "The credential store is isolated and verified after clear."
     },
@@ -3717,7 +3919,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I097"
+        "I097",
+        "I112",
+        "I173"
       ],
       "audit_note": "The audit found and fixed previously unwired Copilot controls; the OS keychain boundary is isolated."
     },
@@ -3791,7 +3995,9 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I102",
-        "I104"
+        "I104",
+        "I111",
+        "I173"
       ],
       "audit_note": "The Settings workflow isolates the OS keychain adapter; the secret-store test runs the production serialization and keyring calls against a fake keyring backend."
     },
@@ -3921,7 +4127,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I108"
+        "I108",
+        "I113"
       ],
       "audit_note": "Real process and HTTP calls are deterministic boundaries; executable discovery, endpoint resolution, startup decisions, waiting, and LLM-client sequencing are real."
     },
@@ -4475,7 +4682,10 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I109"
+        "I109",
+        "I116",
+        "I117",
+        "I118"
       ],
       "audit_note": "The matrix changes the visible first route row and proves the chosen pair at the downstream request, not only in widget state."
     },
@@ -4492,7 +4702,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I114"
+        "I114",
+        "I118"
       ],
       "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
@@ -4512,7 +4723,8 @@
         "I110",
         "I111",
         "I112",
-        "I113"
+        "I113",
+        "I116"
       ],
       "audit_note": "Every successful status line is produced by the production async test worker after the provider adapter records a real probe request."
     },
@@ -4530,7 +4742,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I116",
-        "I117"
+        "I117",
+        "I115"
       ],
       "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
@@ -4582,7 +4795,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I116",
-        "I117"
+        "I117",
+        "I115"
       ],
       "audit_note": "Real Qt route controls, row state, background worker/result handling, ordering, and snapshots run in-process; provider transport is deterministic."
     },
@@ -4689,7 +4903,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I118",
-        "I119"
+        "I119",
+        "I120"
       ],
       "audit_note": "The public streaming entry, candidate ordering, circuit breaker, and failure classification are production code; only remote provider I/O is deterministic."
     },
@@ -4861,7 +5076,11 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I006"
+        "I006",
+        "I124",
+        "I125",
+        "I126",
+        "I139"
       ],
       "audit_note": "Provider and audio playback are deterministic external boundaries."
     },
@@ -5158,7 +5377,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I129"
+        "I129",
+        "I130"
       ],
       "audit_note": "Settings choice, platform/device resolution, fallback, and pipeline creation are real; hardware availability is deterministic."
     },
@@ -5311,7 +5531,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I007"
+        "I007",
+        "I139"
       ],
       "audit_note": "Microphone/STT/UI processes are external worker boundaries; FlowController state is real."
     },
@@ -5328,7 +5549,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I007"
+        "I007",
+        "I139"
       ],
       "audit_note": "Microphone/STT/provider are external deterministic boundaries."
     },
@@ -5663,7 +5885,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I144"
+        "I144",
+        "I176",
+        "I189"
       ],
       "audit_note": "The real offscreen Qt dialog, worker thread, signals, and JSON manager execute."
     },
@@ -5924,7 +6148,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I152"
+        "I152",
+        "I146",
+        "I147"
       ],
       "audit_note": "Privacy occurs before the provider adapter branch; query, chat, and tool-result paths are separately executed with restored user-visible output."
     },
@@ -5961,7 +6187,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I150"
+        "I150",
+        "I151"
       ],
       "audit_note": "Both immediate and reopened real Settings rows are inspected."
     },
@@ -5996,7 +6223,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "Search transport is a deterministic external boundary; schema, grant, dispatch, normalization, and result text are real."
     },
@@ -6013,7 +6241,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "The open-document enumeration and browser fetch are deterministic desktop boundaries; allow-list and dispatch are production code."
     },
@@ -6030,7 +6259,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "Network retrieval is deterministic; tool selection, scope enforcement, URL handoff, and returned content are real."
     },
@@ -6067,7 +6297,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I142",
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "Uses the same production dispatcher and isolated persistent memory store as a live brain chat."
     },
@@ -6085,7 +6316,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I141",
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "Uses the production tool dispatcher and real isolated persistent store, not a mocked success return."
     },
@@ -6102,7 +6334,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "The git executable response is deterministic; command construction, cwd validation, dispatch, and output handling are real."
     },
@@ -6119,7 +6352,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "The git executable response is deterministic; command construction, cwd validation, dispatch, and output handling are real."
     },
@@ -6136,7 +6370,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I154",
+        "I157"
       ],
       "audit_note": "Uses the production dispatcher and a real isolated filesystem."
     },
@@ -6153,7 +6389,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I154",
+        "I157"
       ],
       "audit_note": "Uses the production dispatcher and a real isolated filesystem."
     },
@@ -6170,7 +6408,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I154",
+        "I157"
       ],
       "audit_note": "Uses the production dispatcher and a real isolated filesystem."
     },
@@ -6187,7 +6427,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I154",
+        "I157"
       ],
       "audit_note": "Uses the production dispatcher and a real isolated filesystem."
     },
@@ -6204,7 +6446,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I008"
+        "I008",
+        "I154",
+        "I157"
       ],
       "audit_note": "Uses the production dispatcher and a real isolated filesystem."
     },
@@ -6221,7 +6465,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "OAuth token lookup and GitHub HTTP are deterministic external boundaries; request construction and response parsing are real."
     },
@@ -6238,7 +6483,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I153"
+        "I153",
+        "I157"
       ],
       "audit_note": "OAuth token lookup and GitHub HTTP are deterministic external boundaries; request construction and response parsing are real."
     },
@@ -6291,7 +6537,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I155"
+        "I155",
+        "I162"
       ],
       "audit_note": "Runs both server states through the production grouping parser and supervisor filter."
     },
@@ -6308,7 +6555,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I155"
+        "I155",
+        "I162"
       ],
       "audit_note": "Complete 2 x 3 compound branch matrix through the visible dialog and production runtime policy."
     },
@@ -6433,7 +6681,11 @@
         "The action opens the real manager with correct platform parenting and a repeat action reuses rather than duplicates the visible window."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I176",
+        "I186",
+        "I189"
+      ],
       "audit_note": "Real offscreen Qt dialog lifecycle is exercised on Linux and non-Linux branches."
     },
     {
@@ -6448,7 +6700,10 @@
         "The button creates the configured directory when needed and reveals that exact path."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I186",
+        "I190"
+      ],
       "audit_note": "Only Explorer/Finder/xdg-open process creation is captured; control routing and directory behavior are real."
     },
     {
@@ -6465,7 +6720,9 @@
         "A clicked archive install extracts one valid add-on, reloads the shared manager, displays the new card, and remains parseable through the brain list endpoint."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I186"
+      ],
       "audit_note": "Chooser selection is deterministic; button, archive validation/extraction, manager reload, disk tree, and rendered result are real."
     },
     {
@@ -6482,7 +6739,9 @@
         "A clicked folder install copies one valid add-on, reloads it, and exposes its live settings/actions/hotkeys through the brain manager."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I186"
+      ],
       "audit_note": "Chooser selection is deterministic; visible button, folder validation/copy, disk tree, host load, and listed behavior are real."
     },
     {
@@ -6500,7 +6759,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I159"
+        "I159",
+        "I186"
       ],
       "audit_note": "The visible checkbox, brain route, real store, host lifetime, and all contribution filters are exercised."
     },
@@ -6517,7 +6777,9 @@
         "Clicking Settings opens the named real child dialog, and reopening the already-visible window reloads rather than duplicates it."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I186"
+      ],
       "audit_note": "Qt button/window lifecycle is real; descriptor data comes through the exact manager interface."
     },
     {
@@ -6534,7 +6796,9 @@
         "Checkbox, choice, text, and number fields render their exact values; edits dispatch typed values, persist outside the central store, and alter later add-on behavior."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I186"
+      ],
       "audit_note": "Real Qt fields and real isolated settings persistence/consumption are paired; the manager boundary in the widget-type matrix is deterministic."
     },
     {
@@ -6551,7 +6815,9 @@
         "Clicking Logs displays the newest real host output, a repeat open reloads the same window, and empty output shows the explicit empty state."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I186"
+      ],
       "audit_note": "Qt log window and real child-host stderr capture are both exercised."
     },
     {
@@ -6626,7 +6892,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I159",
-        "I160"
+        "I160",
+        "I186"
       ],
       "audit_note": "Provider generation is deterministic; add-on host and query assembly are production paths."
     },
@@ -6644,7 +6911,10 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I154"
+        "I154",
+        "I159",
+        "I160",
+        "I186"
       ],
       "audit_note": "Uses real temporary add-on source, manifest, host process, worker IPC, registry execution, and supervisor query construction."
     },
@@ -6664,7 +6934,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I159",
-        "I160"
+        "I160",
+        "I186"
       ],
       "audit_note": "Production finalization and real host IPC are covered; provider text is deterministic."
     },
@@ -6684,7 +6955,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I159",
-        "I160"
+        "I160",
+        "I186"
       ],
       "audit_note": "Real host contribution is paired with real Qt picker rendering and input."
     },
@@ -6704,7 +6976,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I159",
-        "I160"
+        "I160",
+        "I186"
       ],
       "audit_note": "OS key registration is deterministic; manager, supervisor event, brain dispatch, and query continuation are real."
     },
@@ -6725,7 +6998,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I159",
-        "I160"
+        "I160",
+        "I186"
       ],
       "audit_note": "Native notification display is a deterministic OS boundary; contribution and routing are real."
     },
@@ -6745,7 +7019,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I159",
-        "I160"
+        "I160",
+        "I186"
       ],
       "audit_note": "Real host descriptors and disk persistence are paired with visible controls."
     },
@@ -6857,7 +7132,9 @@
         "The exact entered title and multi-line objective survive preview, validation, and submission."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I187"
+      ],
       "audit_note": "Real Qt editors and production validation/collection run unchanged."
     },
     {
@@ -7142,7 +7419,9 @@
         "The exact completion statement appears in the generated preview and submitted task spec."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I187"
+      ],
       "audit_note": "Real editor and collector path are exercised."
     },
     {
@@ -7158,7 +7437,9 @@
         "Preview validates and formats the current full spec, including title and completion criteria, in a read-only scrollable view."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I187"
+      ],
       "audit_note": "The workflow captures preview text at the modal presentation boundary; dialog structure is separately exercised."
     },
     {
@@ -7178,7 +7459,11 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I164",
-        "I168"
+        "I168",
+        "I166",
+        "I167",
+        "I169",
+        "I187"
       ],
       "audit_note": "Visible controls and real runner outcomes are paired."
     },
@@ -7338,7 +7623,9 @@
         "The click reveals the exact resolved scope from the running task spec."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I190"
+      ],
       "audit_note": "Only Explorer/Finder/xdg-open creation is captured."
     },
     {
@@ -7505,7 +7792,9 @@
       "interaction_ids": [
         "I002",
         "I012",
-        "I015"
+        "I015",
+        "I176",
+        "I189"
       ],
       "audit_note": "All eight current pages are selected through Qt mouse input."
     },
@@ -7555,7 +7844,9 @@
         "Two profiles persist independently and the selected profile reloads with its edited model."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I001"
+      ],
       "audit_note": "Uses visible Qt controls and a real isolated settings file."
     },
     {
@@ -7570,7 +7861,9 @@
         "The renamed profile label is visible and persisted."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I195"
+      ],
       "audit_note": "Uses the real menu action; only the modal text response is supplied by the test."
     },
     {
@@ -7585,7 +7878,9 @@
         "Deleting inactive and final profiles updates disk, active selection, and the visible profile label."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I195"
+      ],
       "audit_note": "Uses the real menu action; only the confirmation response is supplied by the test."
     },
     {
@@ -7600,7 +7895,9 @@
         "Pass and warning check rows are rendered with their messages and recommendations while Settings remains usable."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I197"
+      ],
       "audit_note": "Host provider/microphone probes are deterministic external boundaries; the Settings action and report formatter are real."
     },
     {
@@ -7639,7 +7936,9 @@
         "I004",
         "I011",
         "I013",
-        "I014"
+        "I014",
+        "I173",
+        "I195"
       ],
       "audit_note": "Uses a real Qt button and real settings serializer against isolated disk state."
     },
@@ -7708,7 +8007,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I004",
-        "I009"
+        "I009",
+        "I175"
       ],
       "audit_note": "Parameterized over every supported Theme mode."
     },
@@ -7844,7 +8144,9 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I012"
+        "I012",
+        "I049",
+        "I175"
       ],
       "audit_note": "Exercises the complete 6-language x 8-page matrix through real combo, button, and navigation events."
     },
@@ -7861,7 +8163,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I050"
+        "I050",
+        "I175"
       ],
       "audit_note": "Every language state reaches both the real runtime system prompt and every built-in intent across every app language."
     },
@@ -7894,7 +8197,9 @@
         "Success, resolver failure, and user-cancelled processes all stream a real package chunk while still running, update elapsed time, and mirror output to disk."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I196"
+      ],
       "audit_note": "The three terminal outcomes use the production child-process and Qt signal path rather than calling output handlers directly."
     },
     {
@@ -7911,7 +8216,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I016",
-        "I017"
+        "I017",
+        "I196"
       ],
       "audit_note": "The same test compares cancellation with natural success and failure terminal branches."
     },
@@ -7927,7 +8233,9 @@
         "After success, failure, and cancellation, clicking Copy log places the exact complete visible installer log on the real Qt clipboard."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I196"
+      ],
       "audit_note": "All terminal outcomes prove the control remains usable and copies retained rather than synthetic text."
     },
     {
@@ -7942,7 +8250,9 @@
         "After every terminal outcome, clicking Open log folder sends the exact retained-log directory to the operating-system URL boundary."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I190"
+      ],
       "audit_note": "Only the external desktop launch is captured; button routing, folder construction, and QUrl conversion are production code."
     },
     {
@@ -7957,7 +8267,9 @@
         "Close is disabled while each installer runs, enabled after success/failure/cancellation, and a real click hides the dialog."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I196"
+      ],
       "audit_note": "The outcome matrix proves the same invariant across every terminal branch."
     },
     {
@@ -8006,7 +8318,9 @@
         "The About page displays the installed version before any update action and keeps it visible through every check result."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I188"
+      ],
       "audit_note": "The packaged result matrix re-creates the full Settings dialog for each check state."
     },
     {
@@ -8022,7 +8336,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I018"
+        "I018",
+        "I188"
       ],
       "audit_note": "The network result is deterministic; the real Settings thread, Qt signal carrier, progress UI, and result state machine run unchanged."
     },
@@ -8040,7 +8355,8 @@
       "dependency_status": "audited",
       "interaction_ids": [
         "I018",
-        "I019"
+        "I019",
+        "I188"
       ],
       "audit_note": "Only release hosting and the detached apply helper are captured external boundaries; every visible state transition uses the production button."
     },
@@ -8111,7 +8427,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I021"
+        "I021",
+        "I190"
       ],
       "audit_note": "Only Explorer/Finder launch is captured; report identity and success routing are real."
     },
@@ -8180,7 +8497,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I023"
+        "I023",
+        "I176"
       ],
       "audit_note": "The production tray signal, supervisor handlers, runtime log, UI dispatch, and Qt window are linked in one process while only the folder launch is captured."
     },
@@ -8198,7 +8516,8 @@
       ],
       "dependency_status": "audited",
       "interaction_ids": [
-        "I170"
+        "I170",
+        "I197"
       ],
       "audit_note": "Automatic runtime behavior is exercised through real worker death and production flow events."
     },
@@ -8444,7 +8763,9 @@
         "An oversized off-screen popup is fitted within the current screen, survives replacement after destruction, contains window-manager refusal, and exposes working minimize, maximize, and close controls."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I189"
+      ],
       "audit_note": "Real Qt top-level windows are shown offscreen; native window-manager move/pinning refusal is the captured desktop boundary."
     },
     {
@@ -8464,7 +8785,9 @@
         "The actual Open-log, crash-report, task result/scope, Open add-ons, and Browse conversation actions route their exact existing targets; every file/folder x Windows/macOS/Linux case produces the correct native command."
       ],
       "dependency_status": "audited",
-      "interaction_ids": [],
+      "interaction_ids": [
+        "I190"
+      ],
       "audit_note": "Qt controls and target selection are real; process creation for Explorer, Finder, or xdg-open is captured to keep CI deterministic."
     }
   ]

@@ -129,6 +129,12 @@ def _feature_acceptance_counts(root: Path) -> dict[str, int | bool]:
     records = acceptance.get("records", [])
     accepted = sum(1 for row in records if row.get("acceptance_status") == "real_entry_accepted")
     dependency_audited = sum(1 for row in records if row.get("dependency_status") == "audited")
+    declared_interactions = len(interactions.get("interactions", []))
+    accepted_interactions = sum(
+        1
+        for row in interactions.get("interactions", [])
+        if row.get("status") == "accepted"
+    )
     return {
         "total": len(records),
         "accepted": accepted,
@@ -136,8 +142,14 @@ def _feature_acceptance_counts(root: Path) -> dict[str, int | bool]:
         "candidates": sum(1 for row in records if row.get("acceptance_status") == "candidate_needs_audit"),
         "untested": sum(1 for row in records if row.get("acceptance_status") == "untested"),
         "dependency_audited": dependency_audited,
-        "accepted_interactions": sum(1 for row in interactions.get("interactions", []) if row.get("status") == "accepted"),
-        "complete": len(records) == 472 and accepted == 472 and dependency_audited == 472,
+        "declared_interactions": declared_interactions,
+        "accepted_interactions": accepted_interactions,
+        "complete": (
+            len(records) == 472
+            and accepted == 472
+            and dependency_audited == 472
+            and accepted_interactions == declared_interactions
+        ),
     }
 
 
@@ -559,7 +571,7 @@ def _main(argv: list[str] | None = None) -> int:
             f"feature_acceptance.candidates={acceptance_counts['candidates']}",
             f"feature_acceptance.untested={acceptance_counts['untested']}",
             f"feature_acceptance.dependency_audited={acceptance_counts['dependency_audited']}/{acceptance_counts['total']}",
-            f"feature_acceptance.accepted_interactions={acceptance_counts['accepted_interactions']}",
+            f"feature_acceptance.accepted_interactions={acceptance_counts['accepted_interactions']}/{acceptance_counts['declared_interactions']}",
             f"feature_acceptance.complete={str(bool(acceptance_counts['complete'])).lower()}",
             "",
         ]

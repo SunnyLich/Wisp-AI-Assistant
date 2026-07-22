@@ -174,7 +174,8 @@ class SnipOverlay(QWidget):
     def mousePressEvent(self, event):
         """Handle mouse press event for snip overlay."""
         if event.button() == Qt.MouseButton.LeftButton:
-            mode = self._toolbar_mode_at(event.pos())
+            position = event.position().toPoint()
+            mode = self._toolbar_mode_at(position)
             if mode is not None:
                 self._mode = mode
                 self.update()
@@ -184,25 +185,28 @@ class SnipOverlay(QWidget):
                 if mode == "full":
                     QTimer.singleShot(0, self._select_fullscreen)
                 return
-            if self._toolbar_rect.contains(event.pos()):
+            if self._toolbar_rect.contains(position):
                 return
             if self._mode == "full":
                 self._select_fullscreen()
                 return
-            self._origin = event.pos()
+            self._origin = position
             self._sel_rect = QRect(self._origin, self._origin)
             self.update()
 
     def mouseMoveEvent(self, event):
         """Handle mouse move event for snip overlay."""
         if self._origin is not None:
-            self._sel_rect = QRect(self._origin, event.pos()).normalized()
+            self._sel_rect = QRect(
+                self._origin,
+                event.position().toPoint(),
+            ).normalized()
             self.update()
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release event for snip overlay."""
         if event.button() == Qt.MouseButton.LeftButton and self._origin is not None:
-            rect = QRect(self._origin, event.pos()).normalized()
+            rect = QRect(self._origin, event.position().toPoint()).normalized()
             self._sel_rect = None
             self._unhook()
             if rect.width() > 4 and rect.height() > 4:

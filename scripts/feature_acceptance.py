@@ -8,8 +8,7 @@ separate acceptance gate used for that claim.
 from __future__ import annotations
 
 import ast
-import json
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +22,11 @@ COMPONENT_ONLY = "component_only"
 CANDIDATE = "candidate_needs_audit"
 UNTESTED = "untested"
 VALID_STATUSES = {ACCEPTED, COMPONENT_ONLY, CANDIDATE, UNTESTED}
+VALID_DEPENDENCY_STATUSES = {"audited", "pending"}
+VALID_INTERACTION_STATUSES = {"accepted", "pending"}
 
 
-@lru_cache(maxsize=None)
+@cache
 def _test_functions(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
     return {
@@ -49,6 +50,19 @@ def build_acceptance_manifest(root: Path) -> dict[str, Any]:
     inventory = load_inventory(root / "docs" / "APP_FUNCTION_INVENTORY.md")
     trace = load_manifest(root / "tests" / "workflows" / "manifest.json")
     trace_by_id = {str(row["function_id"]): row for row in trace["workflows"]}
+    interactions = load_manifest(root / "tests" / "workflows" / "feature_interactions.json")
+    endpoint_interactions: dict[str, list[str]] = {}
+    for row in interactions.get("interactions", []):
+        interaction_id = str(row.get("interaction_id", ""))
+        sources = [str(value) for value in row.get("source_function_ids", [])]
+        targets = [str(value) for value in row.get("target_function_ids", [])]
+        if not sources:
+            sources = [str(row.get("source_function_id", ""))]
+        if not targets:
+            targets = [str(row.get("target_function_id", ""))]
+        for function_id in (*sources, *targets):
+            if function_id and interaction_id:
+                endpoint_interactions.setdefault(function_id, []).append(interaction_id)
     overrides_path = root / "tests" / "workflows" / "feature_acceptance_overrides.json"
     overrides = load_manifest(overrides_path)
     override_by_id = {str(row["function_id"]): row for row in overrides["overrides"]}
@@ -76,6 +90,11 @@ def build_acceptance_manifest(root: Path) -> dict[str, Any]:
             note = "Candidate generated from the trace manifest; requires a human code-path audit."
             dependency_status = "pending"
             interaction_ids = []
+        interaction_ids.extend(
+            interaction_id
+            for interaction_id in endpoint_interactions.get(item.function_id, [])
+            if interaction_id not in interaction_ids
+        )
         records.append(
             {
                 "function_id": item.function_id,
@@ -124,6 +143,11 @@ def validate_acceptance_manifest(*, root: Path, manifest_path: Path) -> dict[str
         status = str(record.get("acceptance_status", ""))
         if status not in VALID_STATUSES:
             errors.append(f"invalid acceptance status for {function_id}: {status}")
+        dependency_status = str(record.get("dependency_status", ""))
+        if dependency_status not in VALID_DEPENDENCY_STATUSES:
+            errors.append(
+                f"invalid dependency status for {function_id}: {dependency_status}"
+            )
         nodes = [str(value) for value in record.get("test_node_ids", [])]
         for node in nodes:
             if not _node_exists(root, node):
@@ -135,7 +159,14 @@ def validate_acceptance_manifest(*, root: Path, manifest_path: Path) -> dict[str
                 errors.append(f"accepted function has no production entry point: {function_id}")
             if not record.get("success_assertions"):
                 errors.append(f"accepted function has no success assertion: {function_id}")
-        for interaction_id in record.get("interaction_ids", []):
+        record_interaction_ids = [
+            str(value) for value in record.get("interaction_ids", [])
+        ]
+        if dependency_status == "audited" and not record_interaction_ids:
+            errors.append(
+                f"audited function has no interaction evidence: {function_id}"
+            )
+        for interaction_id in record_interaction_ids:
             if interaction_id not in interaction_ids:
                 errors.append(f"unknown interaction {interaction_id} on {function_id}")
 
@@ -171,20 +202,53 @@ def validate_interactions(*, root: Path, manifest_path: Path) -> dict[str, Any]:
         for row in acceptance.get("records", [])
         if row.get("acceptance_status") == ACCEPTED
     }
+    acceptance_interactions = {
+        str(row["function_id"]): {
+            str(value) for value in row.get("interaction_ids", [])
+        }
+        for row in acceptance.get("records", [])
+    }
     errors: list[str] = []
     accepted = 0
+    seen_interactions: set[str] = set()
     for row in data.get("interactions", []):
         interaction_id = str(row.get("interaction_id", ""))
+        if not interaction_id:
+            errors.append("interaction has no ID")
+        elif interaction_id in seen_interactions:
+            errors.append(f"duplicate interaction ID: {interaction_id}")
+        seen_interactions.add(interaction_id)
+        if not str(row.get("description", "")).strip():
+            errors.append(f"{interaction_id} has no description")
+        status = str(row.get("status", ""))
+        if status not in VALID_INTERACTION_STATUSES:
+            errors.append(f"{interaction_id} has invalid status: {status}")
         sources = [str(value) for value in row.get("source_function_ids", [])]
         targets = [str(value) for value in row.get("target_function_ids", [])]
         if not sources:
             sources = [str(row.get("source_function_id", ""))]
         if not targets:
             targets = [str(row.get("target_function_id", ""))]
+        if not all(sources) or not all(targets):
+            errors.append(f"{interaction_id} has an empty source or target")
         if any(value not in inventory for value in (*sources, *targets)):
             errors.append(f"{interaction_id} references an unknown function")
+        for function_id in (*sources, *targets):
+            if (
+                function_id in acceptance_interactions
+                and interaction_id not in acceptance_interactions[function_id]
+            ):
+                errors.append(
+                    f"{interaction_id} is missing from endpoint record {function_id}"
+                )
         source_states = [str(value) for value in row.get("source_states", [])]
         target_states = [str(value) for value in row.get("target_states", [])]
+        if not source_states or not target_states:
+            errors.append(f"{interaction_id} has no source or target states")
+        if len(set(source_states)) != len(source_states):
+            errors.append(f"{interaction_id} has duplicate source states")
+        if len(set(target_states)) != len(target_states):
+            errors.append(f"{interaction_id} has duplicate target states")
         expected = {(a, b) for a in source_states for b in target_states}
         actual = {
             (str(case.get("source_state")), str(case.get("target_state")))
@@ -198,7 +262,7 @@ def validate_interactions(*, root: Path, manifest_path: Path) -> dict[str, Any]:
         for node in nodes:
             if not _node_exists(root, node):
                 errors.append(f"missing interaction test node for {interaction_id}: {node}")
-        if row.get("status") == "accepted":
+        if status == "accepted":
             accepted += 1
             missing_acceptance = sorted((set(sources) | set(targets)) - accepted_functions)
             if missing_acceptance:

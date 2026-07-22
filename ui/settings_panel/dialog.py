@@ -4462,7 +4462,12 @@ class SettingsDialog(QDialog):
         token = self._tts_install_status_token
         selected_device = _get(self._fields["KOKORO_DEVICE"]).strip() or "auto"
         kokoro_voice = _get(self._fields["KOKORO_VOICE"]).strip() or "af_heart"
-        carrier = _TtsInstallStatusSignals(self)
+        # Do not parent the carrier to the dialog. The probe can legitimately
+        # outlive a window that the user closes immediately; parenting it to
+        # ``self`` destroys its C++ signal source while the worker still owns
+        # the Python wrapper, making the final emit escape the thread as
+        # ``RuntimeError: Signal source has been deleted``.
+        carrier = _TtsInstallStatusSignals()
         carrier.done.connect(self._finish_tts_optional_install_status)
         self._tts_install_status_signal_carriers.append(carrier)
 
@@ -4525,7 +4530,16 @@ class SettingsDialog(QDialog):
                 }
             except Exception as exc:  # noqa: BLE001
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-            carrier.done.emit(token, result)
+            try:
+                carrier.done.emit(token, result)
+            except RuntimeError:
+                # Qt disconnects a deleted receiver automatically. Keep the
+                # background status probe from becoming an application-level
+                # thread failure if shutdown races the final queued signal.
+                _settings_log.debug(
+                    "Discarded optional TTS status after Settings closed",
+                    exc_info=True,
+                )
 
         threading.Thread(target=_worker, daemon=True, name="settings-tts-install-status").start()
 

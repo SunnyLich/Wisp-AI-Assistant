@@ -152,7 +152,15 @@ def _unique_shortcuts(dialog) -> None:
         block["hotkey"].setText(f"ctrl+alt+{index}")
         if "hotkey_2" in block:
             block["hotkey_2"].setText(f"ctrl+win+{index}")
-    keys = ("HOTKEY_ADD_CONTEXT", "HOTKEY_CLEAR_CONTEXT", "HOTKEY_SNIP", "HOTKEY_VOICE", "HOTKEY_DICTATE")
+    keys = (
+        "HOTKEY_ADD_CONTEXT",
+        "HOTKEY_CLEAR_CONTEXT",
+        "HOTKEY_SNIP",
+        "HOTKEY_READ_SELECTION_ALOUD",
+        "HOTKEY_VOICE_LIVE",
+        "HOTKEY_VOICE",
+        "HOTKEY_DICTATE",
+    )
     for index, key in enumerate(keys, 1):
         dialog._fields[key].setText(f"ctrl+shift+alt+{index}")
         secondary = dialog._fields.get(f"{key}_2")
@@ -162,13 +170,18 @@ def _unique_shortcuts(dialog) -> None:
 
 def test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_actions(
     qapp,
-    isolated_settings,
+    live_runtime_settings,
     monkeypatch,
 ):
     """Exercise every shortcut-row control through the actual Settings widgets."""
 
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core import hotkeys as core_hotkeys
+    from runtime.workers import native_host
     from ui.settings_panel import hotkey_capture
     from ui.settings_panel.dialog import SettingsDialog
 
@@ -181,8 +194,14 @@ def test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_act
         dialog.resize(900, 760)
         dialog.show()
         driver.pump()
+        _unique_shortcuts(dialog)
 
         search = dialog._shortcut_search
+        initially_visible = {
+            entry["title"]
+            for entry in dialog._shortcut_rows
+            if not entry["widget"].isHidden()
+        }
         driver.replace_text(search, "focused field")
         visible_titles = {
             entry["title"]
@@ -198,7 +217,18 @@ def test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_act
             if not entry["widget"].isHidden()
         }
         assert visible_titles == {"Add selection as context", "Clear context"}
+
+        driver.replace_text(search, "no such shortcut exists")
+        assert not any(
+            not entry["widget"].isHidden() for entry in dialog._shortcut_rows
+        )
         driver.replace_text(search, "")
+        restored_visible = {
+            entry["title"]
+            for entry in dialog._shortcut_rows
+            if not entry["widget"].isHidden()
+        }
+        assert restored_visible == initially_visible
 
         controls = [
             (block["enabled"], block["hotkey"], block["hotkey_2"])
@@ -235,6 +265,18 @@ def test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_act
             assert enabled.isChecked()
             assert primary.isEnabled() and secondary.isEnabled()
 
+        primary = dialog._fields["HOTKEY_CLEAR_CONTEXT"]
+        driver.click(primary)
+        QTest.keyClick(
+            primary,
+            Qt.Key.Key_J,
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+        )
+        QTest.qWait(120)
+        driver.pump()
+        assert primary.text() == "ctrl+alt+j"
+        assert primary._recording is False
+
         edit = dialog._fields["HOTKEY_CLEAR_CONTEXT_2"]
         driver.click(edit)
         QTest.keyClick(
@@ -261,6 +303,36 @@ def test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_act
         driver.click(search)
         assert edit.text() == "ctrl+alt+k"
         assert edit._recording is False
+
+        save = dialog.findChild(QPushButton, "settingsApplyButton")
+        assert save is not None and save.isEnabled()
+        driver.click(save)
+        assert config.HOTKEY_CLEAR_CONTEXT == "ctrl+alt+j"
+        assert config.HOTKEY_CLEAR_CONTEXT_2 == "ctrl+alt+k"
+
+        emitted: list[tuple[str, dict[str, object]]] = []
+        native_host.set_event_sink(
+            lambda name, data, _request_id: emitted.append((name, dict(data)))
+        )
+        monkeypatch.setattr(core_hotkeys.HotkeyListener, "start", lambda _self: True)
+        monkeypatch.setattr(
+            core_hotkeys.HotkeyListener,
+            "status",
+            lambda self: {"started": True, "registered": len(self._hotkey_defs)},
+        )
+        backend = native_host._DirectHotkeys()
+        try:
+            assert backend.start()["started"] is True
+            callbacks = {combo: callback for combo, callback in backend.listener._hotkey_defs}
+            callbacks["ctrl+alt+j"]()
+            callbacks["ctrl+alt+k"]()
+            assert emitted[-2:] == [
+                ("native.hotkey", {"kind": "clear_context"}),
+                ("native.hotkey", {"kind": "clear_context"}),
+            ]
+        finally:
+            backend.stop()
+            native_host.set_event_sink(lambda _name, _data, _request_id: None)
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -269,19 +341,24 @@ def test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_act
 
 def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow(
     qapp,
-    isolated_settings,
+    live_runtime_settings,
     monkeypatch,
 ):
     """Build and persist a caller while exercising every connected editor control."""
 
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import Qt, QTimer
+    from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+
+    import config
     from runtime.supervisor.flows import FlowController
     from runtime.supervisor import tool_modes
+    from runtime.workers import hotkey_helper
+    from ui.intent_overlay import IntentOverlay
     from ui.settings_panel.dialog import SettingsDialog
     from ui.settings_panel.tool_access import ToolAccessDialog
 
-    env_path, _settings_env, _theme_calls = isolated_settings
+    env_path, _settings_env = live_runtime_settings
     driver = QtUserDriver(qapp)
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -476,6 +553,53 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
         assert "calendar_lookup" not in allowed
         assert "mcp_example_echo" in allowed
         assert "mcp_example_weather" not in allowed
+
+        # The saved caller must now be the production runtime caller, not just
+        # a row that can be reopened in Settings.
+        caller_index = len(config.CALLER_ROWS) - 1
+        runtime_caller = config.CALLER_ROWS[caller_index]
+        assert runtime_caller["label"] == "Research"
+        assert runtime_caller["hotkey"] == "ctrl+alt+r"
+        assert runtime_caller["hotkey_2"] == "ctrl+shift+alt+r"
+        specs = hotkey_helper._hotkey_specs_from_config(config)
+        assert ("ctrl+alt+r", "caller", {"index": caller_index}) in specs
+        assert ("ctrl+shift+alt+r", "caller", {"index": caller_index}) in specs
+
+        overlays = []
+        builtin = IntentOverlay(caller_idx=caller_index)
+        overlays.append(builtin)
+        builtin_chosen: list[tuple[str, str]] = []
+        builtin.intent_chosen.connect(
+            lambda key, prompt: builtin_chosen.append((key, prompt))
+        )
+        builtin.show()
+        driver.pump()
+        QTest.keyClick(builtin, Qt.Key.Key_G)
+        driver.wait(lambda: bool(builtin_chosen), "saved caller built-in action")
+        assert builtin_chosen == [("G", "Gather reliable sources for this selection.")]
+
+        custom = IntentOverlay(caller_idx=caller_index)
+        overlays.append(custom)
+        custom_chosen: list[tuple[str, str]] = []
+        custom.intent_chosen.connect(
+            lambda key, prompt: custom_chosen.append((key, prompt))
+        )
+        custom.show()
+        driver.pump()
+        QTest.keyClick(custom, Qt.Key.Key_C)
+        driver.pump()
+        assert not custom._input_line.isHidden()
+        QTest.keyClicks(custom._input_line, "Trace this runtime path")
+        QTest.keyClick(custom._input_line, Qt.Key.Key_Return)
+        driver.wait(lambda: bool(custom_chosen), "saved caller custom action")
+        assert custom_chosen == [("C", "Trace this runtime path")]
+        for overlay in overlays:
+            try:
+                overlay.close()
+                overlay.deleteLater()
+            except RuntimeError:
+                pass
+        driver.pump()
     finally:
         if reopened is not None:
             reopened.close()
@@ -1356,6 +1480,7 @@ def test_visible_test_tts_button_forwards_every_provider_configuration(
         dialog._fields["KOKORO_LANG_CODE"].setText("a")
         dialog._fields["KOKORO_SPEED"].setText("1.10")
         dialog._fields["KOKORO_SAMPLE_RATE"].setText("24000")
+        _set(dialog._fields["KOKORO_DEVICE"], "auto")
         openai_row = dialog._add_api_key_row("openai", alias="Speech")
         openai_row["key"].setText("test-openai-speech-key")
 
@@ -1385,24 +1510,31 @@ def test_visible_test_tts_button_forwards_every_provider_configuration(
                 f"{provider}/{device} TTS result",
             )
 
-        by_state = {(provider, kwargs.get("kokoro_device")): kwargs for provider, kwargs in calls}
-        assert by_state[("cartesia", "auto")]["cartesia_api_key"] == "test-cartesia-key"
-        assert by_state[("cartesia", "auto")]["cartesia_voice_id"] == "cartesia-voice"
-        assert by_state[("elevenlabs", "auto")]["elevenlabs_api_key"] == "test-elevenlabs-key"
-        assert by_state[("elevenlabs", "auto")]["elevenlabs_voice_id"] == "elevenlabs-voice"
-        assert by_state[("elevenlabs", "auto")]["elevenlabs_model"] == "elevenlabs-model"
-        assert by_state[("openai", "auto")]["openai_api_key"] == "test-openai-speech-key"
-        assert by_state[("openai", "auto")]["openai_voice"] == "nova"
-        assert by_state[("openai", "auto")]["openai_model"] == "gpt-4o-mini-tts"
-        assert by_state[("openai_compatible", "auto")]["custom_base_url"] == "https://speech.example/v1"
-        assert by_state[("openai_compatible", "auto")]["custom_voice"] == "custom-voice"
-        assert by_state[("openai_compatible", "auto")]["custom_model"] == "custom-model"
-        assert by_state[("gpt_sovits", "auto")]["gpt_sovits_ref_audio_path"] == "C:/voices/reference.wav"
-        assert by_state[("gpt_sovits", "auto")]["gpt_sovits_prompt_text"] == "reference transcript"
-        assert by_state[("gpt_sovits", "auto")]["gpt_sovits_text_lang"] == "zh"
+        by_provider = {
+            provider: kwargs for provider, kwargs in calls if provider != "kokoro"
+        }
+        assert by_provider["cartesia"]["cartesia_api_key"] == "test-cartesia-key"
+        assert by_provider["cartesia"]["cartesia_voice_id"] == "cartesia-voice"
+        assert by_provider["elevenlabs"]["elevenlabs_api_key"] == "test-elevenlabs-key"
+        assert by_provider["elevenlabs"]["elevenlabs_voice_id"] == "elevenlabs-voice"
+        assert by_provider["elevenlabs"]["elevenlabs_model"] == "elevenlabs-model"
+        assert by_provider["openai"]["openai_api_key"] == "test-openai-speech-key"
+        assert by_provider["openai"]["openai_voice"] == "nova"
+        assert by_provider["openai"]["openai_model"] == "gpt-4o-mini-tts"
+        assert by_provider["openai_compatible"]["custom_base_url"] == "https://speech.example/v1"
+        assert by_provider["openai_compatible"]["custom_voice"] == "custom-voice"
+        assert by_provider["openai_compatible"]["custom_model"] == "custom-model"
+        assert by_provider["gpt_sovits"]["gpt_sovits_ref_audio_path"] == "C:/voices/reference.wav"
+        assert by_provider["gpt_sovits"]["gpt_sovits_prompt_text"] == "reference transcript"
+        assert by_provider["gpt_sovits"]["gpt_sovits_text_lang"] == "zh"
+        kokoro_by_device = {
+            kwargs.get("kokoro_device"): kwargs
+            for provider, kwargs in calls
+            if provider == "kokoro"
+        }
         for device in ("auto", "cpu", "cuda"):
-            assert by_state[("kokoro", device)]["kokoro_voice"] == "af_heart"
-            assert by_state[("kokoro", device)]["kokoro_lang_code"] == "a"
+            assert kokoro_by_device[device]["kokoro_voice"] == "af_heart"
+            assert kokoro_by_device[device]["kokoro_lang_code"] == "a"
 
         save = dialog.findChild(QPushButton, "settingsApplyButton")
         assert save is not None and save.isEnabled()
@@ -1417,6 +1549,52 @@ def test_visible_test_tts_button_forwards_every_provider_configuration(
         dialog.close()
         dialog.deleteLater()
         driver.pump()
+
+
+def test_tts_status_worker_can_finish_after_settings_is_closed(
+    qapp,
+    isolated_settings,
+    monkeypatch,
+):
+    """Closing Settings cannot delete the signal source owned by its status worker."""
+
+    import threading
+
+    from core import optional_deps
+    from ui.settings_panel import dialog as settings_dialog
+    from ui.settings_panel.dialog import SettingsDialog
+
+    driver = QtUserDriver(qapp, timeout=3.0)
+    started = threading.Event()
+    release = threading.Event()
+    emitted = threading.Event()
+
+    def controlled_package_status(_package: str, **_kwargs):
+        started.set()
+        assert release.wait(3.0), "status worker was not released"
+        return {"valid": False}
+
+    monkeypatch.setattr(optional_deps, "optional_package_spec_status", controlled_package_status)
+    monkeypatch.setattr(optional_deps, "system_cuda_available", lambda: False)
+    monkeypatch.setattr(
+        optional_deps,
+        "kokoro_install_mode_for_device",
+        lambda _device: "cpu",
+    )
+    monkeypatch.setattr(settings_dialog, "_read_optional_install_status", lambda *_args: {})
+
+    dialog = SettingsDialog()
+    dialog._tts_install_status_checked = False
+    dialog._refresh_tts_optional_install_status()
+    assert started.wait(2.0), "optional TTS status worker did not start"
+    carrier = dialog._tts_install_status_signal_carriers[-1]
+    carrier.done.connect(lambda *_args: emitted.set())
+
+    dialog.close()
+    dialog.deleteLater()
+    driver.pump()
+    release.set()
+    driver.wait(emitted.is_set, "status result after Settings close")
 
 
 def test_visible_speech_install_and_kokoro_asset_actions_reach_runtime_boundaries(

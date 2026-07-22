@@ -3,7 +3,7 @@
 Drives ui.snip_overlay.SnipOverlay the way a user does — drag a region,
 click the capture-mode toolbar, press Escape — and asserts the emitted
 mss-style regions and cancel signals. Runs offscreen; mouse/key events are
-duck-typed fakes because the handlers only read button()/pos()/key().
+duck-typed fakes because the handlers only read button()/position()/key().
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("PySide6", reason="PySide6 not installed")
 
-from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt
 from PySide6.QtWidgets import QApplication
 
 from ui.snip_overlay import SnipOverlay
@@ -33,8 +33,8 @@ class _FakeMouse:
     def button(self):
         return self._button
 
-    def pos(self):
-        return self._pos
+    def position(self):
+        return QPointF(self._pos)
 
 
 class _FakeKey:

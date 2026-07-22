@@ -261,7 +261,7 @@
     {
       "interaction_id": "I014",
       "source_function_id": "F425",
-      "target_function_id": "F424",
+      "target_function_ids": ["F005", "F424"],
       "description": "The clean or dirty Settings state determines whether guided profile setup may open.",
       "source_states": ["clean_settings", "dirty_unsaved_settings"],
       "target_states": ["run_profile_setup"],
@@ -1073,7 +1073,7 @@
     {
       "interaction_id": "I062",
       "source_function_id": "F090",
-      "target_function_ids": ["F085", "F088"],
+      "target_function_ids": ["F085", "F088", "F089", "F093"],
       "description": "A numbered context-key toggle changes both the visible chip state and whether the source is attached at submission.",
       "source_states": ["toggle_off", "toggle_on"],
       "target_states": ["visible_preview", "submitted_context"],
@@ -1809,7 +1809,7 @@
     {"interaction_id":"I150","source_function_id":"F330","target_function_id":"F331","description":"A successful OS-keychain save changes the provider field from typed plaintext to an empty masked stored marker on this and later Settings opens.","source_states":["typed_unsaved","saved","reopened"],"target_states":["secret_field"],"cases":[{"source_state":"typed_unsaved","target_state":"secret_field","expected_result":"The Password field temporarily contains the user's typed key."},{"source_state":"saved","target_state":"secret_field","expected_result":"The key exists only at the keychain boundary and the field is cleared with a stored placeholder."},{"source_state":"reopened","target_state":"secret_field","expected_result":"The provider row is reconstructed as empty, masked, and stored without plaintext settings."}],"test_node_ids":["tests/test_feature_acceptance_workflows.py::test_provider_secret_save_is_keychain_only_and_reopens_masked"],"status":"accepted"},
     {"interaction_id":"I151","source_function_id":"F332","target_function_ids":["F330","F331"],"description":"Reset All removes both plain settings state and every supported stored credential after confirmation.","source_states":["cancelled","confirmed"],"target_states":["settings_and_credentials"],"cases":[{"source_state":"cancelled","target_state":"settings_and_credentials","expected_result":"No settings or credential deletion occurs."},{"source_state":"confirmed","target_state":"settings_and_credentials","expected_result":"The settings file disappears, defaults reload, and API/OAuth keychain cleanup runs."}],"test_node_ids":["tests/test_feature_acceptance_workflows.py::test_reset_all_action_clears_isolated_settings_credentials_and_sessions","tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"],"status":"accepted"},
     {"interaction_id":"I152","source_function_ids":["F322","F323","F324"],"target_function_id":"F329","description":"The one configured privacy policy applies before normal query/chat routing and to later tool results, independent of a cloud or local model adapter.","source_states":["normal_request","tool_result","local_or_cloud_adapter"],"target_states":["shared_privacy_session"],"cases":[{"source_state":"normal_request","target_state":"shared_privacy_session","expected_result":"Sensitive prompt/context fields use stable placeholders."},{"source_state":"tool_result","target_state":"shared_privacy_session","expected_result":"Sensitive tool output reuses the session's placeholders before the next model call."},{"source_state":"local_or_cloud_adapter","target_state":"shared_privacy_session","expected_result":"The privacy gate runs before provider selection, so local models follow the same policy."}],"test_node_ids":["tests/test_feature_acceptance_workflows.py::test_saved_privacy_modes_change_exact_model_bound_text_and_restore_the_reply","tests/test_app_user_workflows.py::test_brain_query_workflow_assembles_context_and_redacts_secrets","tests/test_privacy_gateway.py::test_cloud_bound_tool_results_use_the_same_session"],"status":"accepted"},
-    {"interaction_id":"I153","source_function_ids":["F103","F104","F105","F106","F107"],"target_function_ids":["F333","F334","F335","F336","F337","F338","F339","F340","F346","F347"],"description":"Each context Model setting grants only the matching model-callable tools and production data source.","source_states":["documents_off","documents_model","browser_off","browser_model","github_off","github_model","memory_off","memory_model","screenshot_off","screenshot_model"],"target_states":["schema_dispatch_result"],"cases":[{"source_state":"documents_off","target_state":"schema_dispatch_result","expected_result":"Document get_context is unavailable."},{"source_state":"documents_model","target_state":"schema_dispatch_result","expected_result":"get_context can return open-document content but not a browser URL."},{"source_state":"browser_off","target_state":"schema_dispatch_result","expected_result":"web_search, browser get_context, and retrieve_website are unavailable."},{"source_state":"browser_model","target_state":"schema_dispatch_result","expected_result":"All three browser tools are offered and return their matching source results."},{"source_state":"github_off","target_state":"schema_dispatch_result","expected_result":"git_status, git_diff, github_repo, and github_issue are unavailable."},{"source_state":"github_model","target_state":"schema_dispatch_result","expected_result":"All four Git/GitHub tools are granted and return adapter results."},{"source_state":"memory_off","target_state":"schema_dispatch_result","expected_result":"memory_search is unavailable and no optional retrieval runs."},{"source_state":"memory_model","target_state":"schema_dispatch_result","expected_result":"memory_search and memory_save reach the active scoped store."},{"source_state":"screenshot_off","target_state":"schema_dispatch_result","expected_result":"No screenshot tool image is captured or offered."},{"source_state":"screenshot_model","target_state":"schema_dispatch_result","expected_result":"A native pre-capture is supplied when the model requests capture_screen."}],"test_node_ids":["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_get_context_execution_respects_source_allowlist","tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_retrieve_website_is_browser_scoped","tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_search_executes_local_fallback","tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_and_github_tools_return_successful_runtime_results","tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store","tests/runtime/test_flows.py::test_model_screenshot_mode_precaptures_through_native_worker"],"status":"accepted"},
+    {"interaction_id":"I153","source_function_ids":["F103","F104","F105","F106","F107","F108"],"target_function_ids":["F098","F099","F100","F101","F333","F334","F335","F336","F337","F338","F339","F340","F346","F347"],"description":"Each context Model/Off setting grants only the matching model-callable tools and production data source.","source_states":["documents_off","documents_model","browser_off","browser_model","github_off","github_model","memory_off","memory_model","screenshot_off","screenshot_model"],"target_states":["schema_dispatch_result"],"cases":[{"source_state":"documents_off","target_state":"schema_dispatch_result","expected_result":"Document get_context is unavailable."},{"source_state":"documents_model","target_state":"schema_dispatch_result","expected_result":"get_context can return open-document content but not a browser URL."},{"source_state":"browser_off","target_state":"schema_dispatch_result","expected_result":"web_search, browser get_context, and retrieve_website are unavailable."},{"source_state":"browser_model","target_state":"schema_dispatch_result","expected_result":"All three browser tools are offered and return their matching source results."},{"source_state":"github_off","target_state":"schema_dispatch_result","expected_result":"git_status, git_diff, github_repo, and github_issue are unavailable."},{"source_state":"github_model","target_state":"schema_dispatch_result","expected_result":"All four Git/GitHub tools are granted and return adapter results."},{"source_state":"memory_off","target_state":"schema_dispatch_result","expected_result":"memory_search is unavailable and no optional retrieval runs."},{"source_state":"memory_model","target_state":"schema_dispatch_result","expected_result":"memory_search and memory_save reach the active scoped store."},{"source_state":"screenshot_off","target_state":"schema_dispatch_result","expected_result":"No screenshot tool image is captured or offered."},{"source_state":"screenshot_model","target_state":"schema_dispatch_result","expected_result":"A native pre-capture is supplied when the model requests capture_screen."}],"test_node_ids":["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_get_context_execution_respects_source_allowlist","tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_retrieve_website_is_browser_scoped","tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_web_search_executes_local_fallback","tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_git_and_github_tools_return_successful_runtime_results","tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store","tests/runtime/test_flows.py::test_model_screenshot_mode_precaptures_through_native_worker"],"status":"accepted"},
     {"interaction_id":"I154","source_function_ids":["F348","F349"],"target_function_ids":["F341","F342","F343","F344","F345","F370"],"description":"Per-shortcut Off/Auto choices independently remove or expose each local-file and installed add-on tool.","source_states":["each_local_tool_off","each_local_tool_auto","addon_off","addon_auto"],"target_states":["supervisor_allow_list"],"cases":[{"source_state":"each_local_tool_off","target_state":"supervisor_allow_list","expected_result":"Each of list_files, read_file, create_file, edit_file, and write_file can be removed without changing its siblings."},{"source_state":"each_local_tool_auto","target_state":"supervisor_allow_list","expected_result":"Each of the five local tools can be independently exposed to the model."},{"source_state":"addon_off","target_state":"supervisor_allow_list","expected_result":"The installed add-on tool is excluded."},{"source_state":"addon_auto","target_state":"supervisor_allow_list","expected_result":"The installed add-on tool is exposed and the model decides whether to call it."}],"test_node_ids":["tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow","tests/test_feature_acceptance_workflows.py::test_tool_access_dialog_addon_and_mcp_policy_matrix_reaches_supervisor"],"status":"accepted"},
     {"interaction_id":"I155","source_function_id":"F350","target_function_id":"F351","description":"MCP server state and individual tool state jointly determine bridge-tool availability.","source_states":["server_auto","server_off"],"target_states":["follow_server","off","auto"],"cases":[{"source_state":"server_auto","target_state":"follow_server","expected_result":"The tool follows the enabled server and is available."},{"source_state":"server_auto","target_state":"off","expected_result":"The individual override blocks the tool."},{"source_state":"server_auto","target_state":"auto","expected_result":"The individual override leaves the tool available."},{"source_state":"server_off","target_state":"follow_server","expected_result":"The tool follows the disabled server and is blocked."},{"source_state":"server_off","target_state":"off","expected_result":"The tool remains blocked."},{"source_state":"server_off","target_state":"auto","expected_result":"The individual override exposes this tool while its following sibling remains blocked."}],"test_node_ids":["tests/test_feature_acceptance_workflows.py::test_tool_access_dialog_addon_and_mcp_policy_matrix_reaches_supervisor"],"status":"accepted"},
     {"interaction_id":"I156","source_function_id":"F352","target_function_ids":["F353","F354","F355"],"description":"The visible approval choice determines whether a waiting live file operation mutates disk or returns alternate feedback.","source_states":["approve","alternate_with_feedback","decline"],"target_states":["waiting_real_brain_edit"],"cases":[{"source_state":"approve","target_state":"waiting_real_brain_edit","expected_result":"The proposed diff is applied exactly once."},{"source_state":"alternate_with_feedback","target_state":"waiting_real_brain_edit","expected_result":"The file stays unchanged and the exact feedback returns to the tool result."},{"source_state":"decline","target_state":"waiting_real_brain_edit","expected_result":"The file stays unchanged with an ordinary rejected decision."}],"test_node_ids":["tests/test_app_user_workflows.py::test_chat_file_approval_visible_decision_matrix","tests/runtime/test_supervisor_ipc.py::test_live_file_edit_crosses_real_brain_approval_boundary"],"status":"accepted"},
@@ -1849,7 +1849,7 @@
     },
     {
       "interaction_id": "I171",
-      "source_function_id": "F031",
+      "source_function_ids": ["F031", "F094"],
       "target_function_ids": ["F040", "F049"],
       "description": "Selection freshness and the visible Selection choice determine the context sent with a typed custom intent.",
       "source_states": ["fresh_on", "stale_off", "stale_on", "captured_after_picker"],
@@ -1908,6 +1908,478 @@
       "test_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_reset_all_action_clears_isolated_settings_credentials_and_sessions",
         "tests/test_settings_dialog_controls.py::test_reset_all_settings_failure_matrix_stays_controlled"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I174",
+      "source_function_id": "F003",
+      "target_function_ids": ["F001", "F002", "F030"],
+      "description": "The single-instance result decides whether a launch stops before workers or owns the complete startup and shutdown lifecycle.",
+      "source_states": ["lock_denied", "lock_acquired"],
+      "target_states": ["launch_lifecycle"],
+      "cases": [
+        {"source_state": "lock_denied", "target_state": "launch_lifecycle", "expected_result": "A duplicate exits with the duplicate code without creating logs or starting any worker."},
+        {"source_state": "lock_acquired", "target_state": "launch_lifecycle", "expected_result": "The owning launch starts its runtime path and always invokes supervisor shutdown after the UI exits."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_launch_duplicate_crash_log_and_worker_lifecycle_workflow"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I175",
+      "source_function_ids": ["F007", "F008", "F009"],
+      "target_function_ids": ["F429", "F437", "F438"],
+      "description": "Every onboarding display-language, reply-language, and theme choice is persisted and loaded by the same live runtime settings consumed after setup.",
+      "source_states": ["app_system", "app_en", "app_zh", "app_zh_hant", "app_es", "app_fr", "assistant_system", "assistant_match_user", "assistant_english", "assistant_chinese", "assistant_chinese_traditional", "assistant_spanish", "assistant_french", "assistant_german", "assistant_japanese", "assistant_korean", "assistant_portuguese", "assistant_hindi", "theme_system", "theme_light", "theme_dark"],
+      "target_states": ["saved_and_runtime_loaded"],
+      "cases": [
+        {"source_state": "app_system", "target_state": "saved_and_runtime_loaded", "expected_result": "System-default app language is saved and becomes the live APP_LANGUAGE value."},
+        {"source_state": "app_en", "target_state": "saved_and_runtime_loaded", "expected_result": "English is previewed, saved, and becomes the live APP_LANGUAGE value."},
+        {"source_state": "app_zh", "target_state": "saved_and_runtime_loaded", "expected_result": "Simplified Chinese is previewed, saved, and becomes the live APP_LANGUAGE value."},
+        {"source_state": "app_zh_hant", "target_state": "saved_and_runtime_loaded", "expected_result": "Traditional Chinese is previewed, saved, and becomes the live APP_LANGUAGE value."},
+        {"source_state": "app_es", "target_state": "saved_and_runtime_loaded", "expected_result": "Spanish is previewed, saved, and becomes the live APP_LANGUAGE value."},
+        {"source_state": "app_fr", "target_state": "saved_and_runtime_loaded", "expected_result": "French is previewed, saved, and becomes the live APP_LANGUAGE value."},
+        {"source_state": "assistant_system", "target_state": "saved_and_runtime_loaded", "expected_result": "System-default reply language is saved and loaded without an added language instruction."},
+        {"source_state": "assistant_match_user", "target_state": "saved_and_runtime_loaded", "expected_result": "Match-user is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_english", "target_state": "saved_and_runtime_loaded", "expected_result": "English is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_chinese", "target_state": "saved_and_runtime_loaded", "expected_result": "Chinese is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_chinese_traditional", "target_state": "saved_and_runtime_loaded", "expected_result": "Traditional Chinese is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_spanish", "target_state": "saved_and_runtime_loaded", "expected_result": "Spanish is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_french", "target_state": "saved_and_runtime_loaded", "expected_result": "French is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_german", "target_state": "saved_and_runtime_loaded", "expected_result": "German is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_japanese", "target_state": "saved_and_runtime_loaded", "expected_result": "Japanese is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_korean", "target_state": "saved_and_runtime_loaded", "expected_result": "Korean is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_portuguese", "target_state": "saved_and_runtime_loaded", "expected_result": "Portuguese is saved and its exact live prompt instruction is present."},
+        {"source_state": "assistant_hindi", "target_state": "saved_and_runtime_loaded", "expected_result": "Hindi is saved and its exact live prompt instruction is present."},
+        {"source_state": "theme_system", "target_state": "saved_and_runtime_loaded", "expected_result": "System theme is saved and becomes the live THEME_MODE value."},
+        {"source_state": "theme_light", "target_state": "saved_and_runtime_loaded", "expected_result": "Light theme is previewed, saved, and becomes the live THEME_MODE value."},
+        {"source_state": "theme_dark", "target_state": "saved_and_runtime_loaded", "expected_result": "Dark theme is previewed, saved, and becomes the live THEME_MODE value."}
+      ],
+      "test_node_ids": [
+        "tests/test_onboarding_acceptance.py::test_onboarding_language_assistant_and_theme_choice_matrix",
+        "tests/test_feature_acceptance_workflows.py::test_every_app_language_saves_and_applies_through_the_real_settings_button",
+        "tests/test_feature_acceptance_workflows.py::test_every_assistant_language_changes_the_real_runtime_prompt",
+        "tests/test_feature_acceptance_workflows.py::test_every_theme_mode_saves_applies_and_reopens"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I176",
+      "source_function_ids": ["F022", "F023", "F024", "F025", "F027", "F028"],
+      "target_function_ids": ["F144", "F315", "F358", "F417", "F457", "F030"],
+      "description": "Each real tray action reaches its own production surface, while Quit terminates the UI worker.",
+      "source_states": ["last_chat", "memory", "addon_manager", "settings", "runtime_status", "quit"],
+      "target_states": ["target_surface_or_exit"],
+      "cases": [
+        {"source_state": "last_chat", "target_state": "target_surface_or_exit", "expected_result": "The existing chat window becomes visible."},
+        {"source_state": "memory", "target_state": "target_surface_or_exit", "expected_result": "The Long-term Memory viewer becomes visible."},
+        {"source_state": "addon_manager", "target_state": "target_surface_or_exit", "expected_result": "The Addon Manager becomes visible."},
+        {"source_state": "settings", "target_state": "target_surface_or_exit", "expected_result": "Settings becomes visible and remains responsive."},
+        {"source_state": "runtime_status", "target_state": "target_surface_or_exit", "expected_result": "Runtime Status becomes visible with a supervisor snapshot."},
+        {"source_state": "quit", "target_state": "target_surface_or_exit", "expected_result": "The UI worker exits and the supervisor can finish cleanup."}
+      ],
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_real_worker_tray_and_provider_actions_open_every_target_then_quit"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I177",
+      "source_function_id": "F043",
+      "target_function_id": "F049",
+      "description": "Cancelling the intent picker before submission prevents model work and leaves the next caller usable.",
+      "source_states": ["escape", "positive_timeout", "cancel_during_prefetch"],
+      "target_states": ["no_model_request"],
+      "cases": [
+        {"source_state": "escape", "target_state": "no_model_request", "expected_result": "The visible picker emits cancellation once and closes without a query."},
+        {"source_state": "positive_timeout", "target_state": "no_model_request", "expected_result": "An abandoned picker times out without a query."},
+        {"source_state": "cancel_during_prefetch", "target_state": "no_model_request", "expected_result": "Pending context work stops before later fetch stages and no conversation is created."}
+      ],
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_submit_escape_and_timeout_modes_use_real_widget_events",
+        "tests/runtime/test_flows.py::test_intent_cancel_after_show_does_not_recapture_screenshot",
+        "tests/runtime/test_flows.py::test_intent_cancel_stops_prefetch_before_browser_fetch"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I178",
+      "source_function_ids": ["F064", "F065", "F066", "F067"],
+      "target_function_ids": ["F053", "F054", "F055", "F056", "F057", "F058", "F059", "F060", "F061", "F063"],
+      "description": "Editing, clearing, cancelling, duplicating, and saving primary/secondary chords determines the production listener registrations and emitted action.",
+      "source_states": ["saved_primary", "saved_secondary", "escape_clear", "focus_cancel", "conflict_rejected"],
+      "target_states": ["registration_outcome"],
+      "cases": [
+        {"source_state": "saved_primary", "target_state": "registration_outcome", "expected_result": "The newly recorded primary chord registers and emits the exact configured action."},
+        {"source_state": "saved_secondary", "target_state": "registration_outcome", "expected_result": "The newly recorded secondary chord registers and emits the same exact action."},
+        {"source_state": "escape_clear", "target_state": "registration_outcome", "expected_result": "Escape clears the pending assignment so an empty chord cannot register."},
+        {"source_state": "focus_cancel", "target_state": "registration_outcome", "expected_result": "Leaving capture restores the prior chord, which remains the saved registration."},
+        {"source_state": "conflict_rejected", "target_state": "registration_outcome", "expected_result": "A duplicate primary/secondary chord is rejected before runtime registration changes."}
+      ],
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_actions",
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/runtime/test_hotkey_tap_matching.py::test_specs_from_config"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I179",
+      "source_function_ids": ["F068", "F069", "F070", "F071", "F072", "F073", "F074", "F075"],
+      "target_function_ids": ["F032", "F040", "F046", "F047", "F063"],
+      "description": "A saved custom caller definition determines its registered chords, visible built-in action, custom prompt action, routing policy, and removal behavior.",
+      "source_states": ["add_and_rename", "built_in_action", "custom_action", "remove_choice", "remove_caller", "saved_policy"],
+      "target_states": ["runtime_caller_behavior"],
+      "cases": [
+        {"source_state": "add_and_rename", "target_state": "runtime_caller_behavior", "expected_result": "The saved label and both chords load into the production caller list and hotkey specs."},
+        {"source_state": "built_in_action", "target_state": "runtime_caller_behavior", "expected_result": "The saved action key emits its exact edited model prompt from the real picker."},
+        {"source_state": "custom_action", "target_state": "runtime_caller_behavior", "expected_result": "The saved custom key opens the editor and emits the exact user-typed prompt."},
+        {"source_state": "remove_choice", "target_state": "runtime_caller_behavior", "expected_result": "Only the selected temporary choice disappears; the retained action remains runnable."},
+        {"source_state": "remove_caller", "target_state": "runtime_caller_behavior", "expected_result": "Removing the temporary caller leaves no extra caller or registered chord."},
+        {"source_state": "saved_policy", "target_state": "runtime_caller_behavior", "expected_result": "The saved paste-back, context, file, add-on, and MCP choices become the supervisor policy for that caller."}
+      ],
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real_workflow",
+        "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools",
+        "tests/runtime/test_flows.py::test_caller_tool_overrides_reach_brain_query"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I180",
+      "source_function_id": "F083",
+      "target_function_id": "F046",
+      "description": "Clearing the shared context buffer changes the ambient context of the next submitted caller query.",
+      "source_states": ["populated_then_clear", "already_empty", "ui_clear_failure"],
+      "target_states": ["next_query_context"],
+      "cases": [
+        {"source_state": "populated_then_clear", "target_state": "next_query_context", "expected_result": "Previously added text is absent from the next brain.query payload."},
+        {"source_state": "already_empty", "target_state": "next_query_context", "expected_result": "Clear is idempotent and the next query remains free of buffered text."},
+        {"source_state": "ui_clear_failure", "target_state": "next_query_context", "expected_result": "Local runtime context is still cleared even if the panel-clear boundary fails."}
+      ],
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_clear_context_empties_panel_without_bubble",
+        "tests/runtime/test_flows.py::test_clear_context_failure_matrix_always_clears_local_state"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I181",
+      "source_function_id": "F115",
+      "target_function_ids": ["F091", "F092", "F095", "F096", "F097"],
+      "description": "Each saved context-size budget independently bounds the matching ambient, browser, or model-tool reader without changing the other sources.",
+      "source_states": ["ambient_small", "ambient_large", "browser_small", "browser_large", "tool_small", "tool_large"],
+      "target_states": ["bounded_context"],
+      "cases": [
+        {"source_state": "ambient_small", "target_state": "bounded_context", "expected_result": "Ambient document text is clipped at the small saved limit."},
+        {"source_state": "ambient_large", "target_state": "bounded_context", "expected_result": "Ambient document text retains content up to the larger saved limit."},
+        {"source_state": "browser_small", "target_state": "bounded_context", "expected_result": "Browser page text is clipped at the small saved limit."},
+        {"source_state": "browser_large", "target_state": "bounded_context", "expected_result": "Browser page text retains content up to the larger saved limit."},
+        {"source_state": "tool_small", "target_state": "bounded_context", "expected_result": "Model-requested document/page output is clipped at the small tool limit."},
+        {"source_state": "tool_large", "target_state": "bounded_context", "expected_result": "Model-requested document/page output retains content up to the larger tool limit."}
+      ],
+      "test_node_ids": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_context_size_limits_reach_browser_ambient_and_tool_readers"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I182",
+      "source_function_ids": ["F125", "F142"],
+      "target_function_ids": ["F127", "F144"],
+      "description": "An assistant-created image is persisted and rendered in the compact reply bubble and persistent chat, including image-only answers.",
+      "source_states": ["text_and_image", "image_only", "reopened_history"],
+      "target_states": ["rendered_image"],
+      "cases": [
+        {"source_state": "text_and_image", "target_state": "rendered_image", "expected_result": "The reply bubble scales and shows the generated image beside its answer."},
+        {"source_state": "image_only", "target_state": "rendered_image", "expected_result": "An image-only result still creates a durable assistant turn and thumbnail."},
+        {"source_state": "reopened_history", "target_state": "rendered_image", "expected_result": "The persisted assistant image renders again when chat history is rebuilt."}
+      ],
+      "test_node_ids": [
+        "tests/runtime/test_flows.py::test_query_flow_persists_image_only_assistant_result",
+        "tests/test_bubble_transcript.py::test_generated_image_is_scaled_into_the_speech_bubble",
+        "tests/test_chat_window_render_limits.py::test_assistant_image_only_bubble_renders_a_thumbnail"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I183",
+      "source_function_id": "F126",
+      "target_function_id": "F127",
+      "description": "Runtime speech state selects the exact compact bubble presentation beside the icon.",
+      "source_states": ["listening", "transcript", "progress", "answer", "warning", "error"],
+      "target_states": ["visible_bubble_state"],
+      "cases": [
+        {"source_state": "listening", "target_state": "visible_bubble_state", "expected_result": "Listening state shows its live microphone presentation."},
+        {"source_state": "transcript", "target_state": "visible_bubble_state", "expected_result": "Recognized transcript text replaces the listening presentation."},
+        {"source_state": "progress", "target_state": "visible_bubble_state", "expected_result": "Progress text remains visibly distinct from a completed answer."},
+        {"source_state": "answer", "target_state": "visible_bubble_state", "expected_result": "Completed answer text uses the answer presentation and actions."},
+        {"source_state": "warning", "target_state": "visible_bubble_state", "expected_result": "A warning is visible without being styled as a normal answer."},
+        {"source_state": "error", "target_state": "visible_bubble_state", "expected_result": "An error is visible and retains its diagnostic presentation."}
+      ],
+      "test_node_ids": ["tests/test_bubble_transcript.py::test_bubble_cycles_listening_transcript_progress_answer_warning_and_error_states"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I184",
+      "source_function_ids": ["F134", "F135", "F136", "F137", "F138"],
+      "target_function_ids": ["F019", "F020", "F131", "F144"],
+      "description": "Bubble pointer, hover, wheel, and speech-highlight states determine chat opening, group position, auto-hide, manual scrolling, and snap-back.",
+      "source_states": ["completed_click", "transient_click", "drag", "hover", "interactive_scroll", "wheel", "speech_snap"],
+      "target_states": ["bubble_interaction_outcome"],
+      "cases": [
+        {"source_state": "completed_click", "target_state": "bubble_interaction_outcome", "expected_result": "Clicking completed answer text opens persistent chat without activating speed boost."},
+        {"source_state": "transient_click", "target_state": "bubble_interaction_outcome", "expected_result": "Listening/progress notices do not open chat."},
+        {"source_state": "drag", "target_state": "bubble_interaction_outcome", "expected_result": "Dragging moves the bubble/icon group without firing the click action."},
+        {"source_state": "hover", "target_state": "bubble_interaction_outcome", "expected_result": "Hover pauses the current hide timer without permanently disabling auto-hide."},
+        {"source_state": "interactive_scroll", "target_state": "bubble_interaction_outcome", "expected_result": "Wheel interaction latches the current bubble open for reading."},
+        {"source_state": "wheel", "target_state": "bubble_interaction_outcome", "expected_result": "The document viewport moves and repaints immediately."},
+        {"source_state": "speech_snap", "target_state": "bubble_interaction_outcome", "expected_result": "After the configured delay, manual scroll returns to the spoken highlighted line."}
+      ],
+      "test_node_ids": [
+        "tests/test_bubble_transcript.py::test_bubble_text_view_click_opens_chat_without_speed_boost",
+        "tests/test_bubble_transcript.py::test_transient_bubble_clicks_do_not_open_chat",
+        "tests/test_bubble_transcript.py::test_bubble_drag_moves_group_and_does_not_open_chat",
+        "tests/test_bubble_transcript.py::test_wheel_interaction_disables_auto_hide_but_hover_does_not",
+        "tests/test_bubble_transcript.py::test_document_view_wheel_moves_bubble_viewport",
+        "tests/test_bubble_transcript.py::test_manual_scroll_snaps_back_to_highlight_while_speaking"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I185",
+      "source_function_ids": ["F157", "F158", "F159", "F160"],
+      "target_function_id": "F151",
+      "description": "Conversation rename, delete, file browsing, and timestamp metadata change the persisted history row and its available actions.",
+      "source_states": ["rename", "delete_confirm", "delete_cancel", "browse", "conversation_timestamp", "message_timestamp"],
+      "target_states": ["history_result"],
+      "cases": [
+        {"source_state": "rename", "target_state": "history_result", "expected_result": "The new title persists and appears in the rebuilt sidebar."},
+        {"source_state": "delete_confirm", "target_state": "history_result", "expected_result": "The confirmed conversation is removed from durable history."},
+        {"source_state": "delete_cancel", "target_state": "history_result", "expected_result": "Cancellation preserves the exact conversation and messages."},
+        {"source_state": "browse", "target_state": "history_result", "expected_result": "The conversation record is persisted before its associated path is revealed."},
+        {"source_state": "conversation_timestamp", "target_state": "history_result", "expected_result": "Conversation metadata formats into the sidebar timestamp."},
+        {"source_state": "message_timestamp", "target_state": "history_result", "expected_result": "Message metadata formats into the bubble header timestamp."}
+      ],
+      "test_node_ids": [
+        "tests/test_app_user_workflows.py::test_chat_real_project_and_conversation_options_workflow",
+        "tests/test_chat_window_render_limits.py::test_conversation_rename_failure_matrix_rejects_or_rolls_back",
+        "tests/test_chat_window_render_limits.py::test_conversation_delete_failure_matrix_preserves_history",
+        "tests/test_chat_window_render_limits.py::test_chat_browse_conversation_files_persists_then_reveals_record",
+        "tests/test_chat_window_render_limits.py::test_chat_sidebar_shows_conversation_timestamp",
+        "tests/test_chat_window_render_limits.py::test_chat_bubble_header_shows_message_timestamp"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I186",
+      "source_function_ids": ["F359", "F360", "F361", "F363", "F364", "F365"],
+      "target_function_ids": ["F358", "F362", "F369", "F370", "F371", "F372", "F373", "F374", "F375"],
+      "description": "Addon Manager folder, install, settings, and log actions determine the installed cards and the enabled add-on's runtime contributions.",
+      "source_states": ["open_folder", "install_archive", "install_folder", "open_settings", "save_each_setting_type", "open_logs"],
+      "target_states": ["manager_and_runtime_result"],
+      "cases": [
+        {"source_state": "open_folder", "target_state": "manager_and_runtime_result", "expected_result": "The exact add-ons root is created and sent to the shared reveal boundary."},
+        {"source_state": "install_archive", "target_state": "manager_and_runtime_result", "expected_result": "A safe archive installs one add-on and refreshes its visible card."},
+        {"source_state": "install_folder", "target_state": "manager_and_runtime_result", "expected_result": "A selected folder copies one add-on and refreshes its visible card."},
+        {"source_state": "open_settings", "target_state": "manager_and_runtime_result", "expected_result": "The visible Settings action opens or reuses the add-on-owned editor."},
+        {"source_state": "save_each_setting_type", "target_state": "manager_and_runtime_result", "expected_result": "Boolean, choice, text, and numeric values persist and reach the manager descriptors used by the host."},
+        {"source_state": "open_logs", "target_state": "manager_and_runtime_result", "expected_result": "The visible Logs action shows the latest host stderr and can reload it."}
+      ],
+      "test_node_ids": [
+        "tests/test_addon_manager_ui.py::test_open_addons_folder_uses_shared_reveal_boundary",
+        "tests/test_addon_manager_ui.py::test_install_archive_reloads_and_shows_new_addon",
+        "tests/test_addon_manager_ui.py::test_install_folder_flow",
+        "tests/test_addon_manager_ui.py::test_settings_window_widgets_save_through_manager",
+        "tests/test_addon_manager_ui.py::test_log_window_prefers_latest_manager_logs_and_reloads",
+        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I187",
+      "source_function_ids": ["F381", "F397", "F398"],
+      "target_function_id": "F399",
+      "description": "Task identity and completion criteria gate preview and submission of the exact AgentTaskSpec used by the runner.",
+      "source_states": ["missing_title", "missing_objective", "missing_completion", "valid_preview", "valid_submit"],
+      "target_states": ["spec_validation_result"],
+      "cases": [
+        {"source_state": "missing_title", "target_state": "spec_validation_result", "expected_result": "Preview/submission remains blocked until a title is entered."},
+        {"source_state": "missing_objective", "target_state": "spec_validation_result", "expected_result": "Preview/submission remains blocked until an objective is entered."},
+        {"source_state": "missing_completion", "target_state": "spec_validation_result", "expected_result": "Preview/submission remains blocked until explicit completion criteria are entered."},
+        {"source_state": "valid_preview", "target_state": "spec_validation_result", "expected_result": "The scrollable preview contains the exact validated title, objective, and completion criteria."},
+        {"source_state": "valid_submit", "target_state": "spec_validation_result", "expected_result": "The same validated values reach the submitted AgentTaskSpec and runner prompt."}
+      ],
+      "test_node_ids": [
+        "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
+        "tests/test_agent_task_window_layout.py::test_agent_task_preview_dialog_uses_scrollable_text_view"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I188",
+      "source_function_id": "F447",
+      "target_function_ids": ["F448", "F449"],
+      "description": "The installed version and update-check result jointly decide whether the packaged update action is unavailable, current, or downloadable.",
+      "source_states": ["current_no_update", "current_new_release", "check_failure"],
+      "target_states": ["update_action_state"],
+      "cases": [
+        {"source_state": "current_no_update", "target_state": "update_action_state", "expected_result": "The exact installed version is shown and no download/apply action is offered."},
+        {"source_state": "current_new_release", "target_state": "update_action_state", "expected_result": "The installed version remains visible while the newer packaged release enables download/apply."},
+        {"source_state": "check_failure", "target_state": "update_action_state", "expected_result": "The installed version remains visible and the failed check cannot expose a false update action."}
+      ],
+      "test_node_ids": ["tests/test_diagnostics_acceptance.py::test_packaged_update_check_real_button_result_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I189",
+      "source_function_id": "F471",
+      "target_function_ids": ["F127", "F144", "F315", "F358", "F417"],
+      "description": "Shared top-level window geometry and chrome keep every major UI surface reachable across oversize, off-screen, replacement, and native-window-manager outcomes.",
+      "source_states": ["oversized", "offscreen", "replacement_after_destroy", "wm_refusal", "minimize", "maximize", "close"],
+      "target_states": ["usable_surface"],
+      "cases": [
+        {"source_state": "oversized", "target_state": "usable_surface", "expected_result": "The surface is resized to fit the available screen."},
+        {"source_state": "offscreen", "target_state": "usable_surface", "expected_result": "The surface is moved back inside the current screen."},
+        {"source_state": "replacement_after_destroy", "target_state": "usable_surface", "expected_result": "A destroyed singleton can be replaced and shown normally."},
+        {"source_state": "wm_refusal", "target_state": "usable_surface", "expected_result": "Native move/pin refusal is contained without losing the Qt surface."},
+        {"source_state": "minimize", "target_state": "usable_surface", "expected_result": "The standard minimize control changes window state."},
+        {"source_state": "maximize", "target_state": "usable_surface", "expected_result": "The standard maximize/restore control changes window state."},
+        {"source_state": "close", "target_state": "usable_surface", "expected_result": "The standard close control closes the intended surface."}
+      ],
+      "test_node_ids": [
+        "tests/test_window_chrome.py::test_text_popup_uses_standard_window_controls",
+        "tests/test_window_chrome.py::test_shared_qt_surface_geometry_destruction_and_wm_rejection_contract"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I190",
+      "source_function_id": "F472",
+      "target_function_ids": ["F159", "F359", "F408", "F443", "F453"],
+      "description": "Every visible reveal action selects an existing file/folder target and the shared boundary emits the correct Windows, macOS, or Linux command.",
+      "source_states": ["windows_file", "windows_folder", "macos_file", "macos_folder", "linux_file", "linux_folder"],
+      "target_states": ["native_reveal_command"],
+      "cases": [
+        {"source_state": "windows_file", "target_state": "native_reveal_command", "expected_result": "Explorer receives /select with the exact file."},
+        {"source_state": "windows_folder", "target_state": "native_reveal_command", "expected_result": "Explorer opens the exact folder."},
+        {"source_state": "macos_file", "target_state": "native_reveal_command", "expected_result": "Finder receives reveal for the exact file."},
+        {"source_state": "macos_folder", "target_state": "native_reveal_command", "expected_result": "Finder opens the exact folder."},
+        {"source_state": "linux_file", "target_state": "native_reveal_command", "expected_result": "xdg-open receives the file's containing folder."},
+        {"source_state": "linux_folder", "target_state": "native_reveal_command", "expected_result": "xdg-open receives the exact folder."}
+      ],
+      "test_node_ids": [
+        "tests/test_file_browser.py::test_reveal_path_file_folder_platform_matrix",
+        "tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix",
+        "tests/test_diagnostics_acceptance.py::test_crash_report_real_settings_button_creates_reveals_and_reviews_safe_zip",
+        "tests/test_agent_task_window_layout.py::test_agent_run_folder_actions_use_controlled_reveal_helper",
+        "tests/test_addon_manager_ui.py::test_open_addons_folder_uses_shared_reveal_boundary",
+        "tests/test_chat_window_render_limits.py::test_chat_browse_conversation_files_persists_then_reveals_record"
+      ],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I191",
+      "source_function_id": "F021",
+      "target_function_ids": ["F018", "F020"],
+      "description": "The tray visibility action overrides the current icon presentation until the user restores it.",
+      "source_states": ["hide", "show"],
+      "target_states": ["visible_icon_result"],
+      "cases": [
+        {"source_state": "hide", "target_state": "visible_icon_result", "expected_result": "The floating icon hides and the tray action changes to Show icon."},
+        {"source_state": "show", "target_state": "visible_icon_result", "expected_result": "The floating icon becomes visible and the tray action changes to Hide icon."}
+      ],
+      "test_node_ids": ["tests/test_overlay_shell_acceptance.py::test_icon_states_drag_autohide_and_real_tray_visibility_toggle"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I192",
+      "source_function_id": "F062",
+      "target_function_ids": ["F063", "F064", "F065", "F066"],
+      "description": "Shortcut search decides which complete shortcut editor rows remain available for mutation.",
+      "source_states": ["action_name", "description", "no_match", "cleared"],
+      "target_states": ["visible_editor_rows"],
+      "cases": [
+        {"source_state": "action_name", "target_state": "visible_editor_rows", "expected_result": "An action-name query leaves only the matching shortcut row visible."},
+        {"source_state": "description", "target_state": "visible_editor_rows", "expected_result": "A description query leaves every matching shortcut row visible."},
+        {"source_state": "no_match", "target_state": "visible_editor_rows", "expected_result": "An unmatched query hides every shortcut row without mutating assignments."},
+        {"source_state": "cleared", "target_state": "visible_editor_rows", "expected_result": "Clearing search restores every shortcut row and both assignment fields."}
+      ],
+      "test_node_ids": ["tests/test_feature_acceptance_workflows.py::test_shortcut_settings_search_toggle_record_clear_and_cancel_are_real_ui_actions"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I193",
+      "source_function_id": "F146",
+      "target_function_id": "F147",
+      "description": "The composer key chord determines whether text is edited locally or becomes a streamed chat turn.",
+      "source_states": ["shift_enter", "enter"],
+      "target_states": ["composer_and_stream_result"],
+      "cases": [
+        {"source_state": "shift_enter", "target_state": "composer_and_stream_result", "expected_result": "A newline is inserted and no model request or assistant stream starts."},
+        {"source_state": "enter", "target_state": "composer_and_stream_result", "expected_result": "The exact multiline composer text is submitted once and its response is rendered."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_new_send_newline_continue_and_history_controls"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I194",
+      "source_function_id": "F179",
+      "target_function_id": "F144",
+      "description": "Chat zoom controls change the active persistent chat rendering and its saved scale.",
+      "source_states": ["keyboard_increase", "keyboard_decrease", "wheel_increase", "reset"],
+      "target_states": ["live_and_persisted_scale"],
+      "cases": [
+        {"source_state": "keyboard_increase", "target_state": "live_and_persisted_scale", "expected_result": "Ctrl+= increases the active chat scale by one step."},
+        {"source_state": "keyboard_decrease", "target_state": "live_and_persisted_scale", "expected_result": "Ctrl+- decreases the active chat scale by one step."},
+        {"source_state": "wheel_increase", "target_state": "live_and_persisted_scale", "expected_result": "Ctrl+wheel is accepted and increases the active chat scale."},
+        {"source_state": "reset", "target_state": "live_and_persisted_scale", "expected_result": "Ctrl+0 restores 100 percent and the persistence callback receives that value."}
+      ],
+      "test_node_ids": ["tests/test_app_user_workflows.py::test_chat_real_message_actions_and_zoom_shortcuts"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I195",
+      "source_function_ids": ["F421", "F422"],
+      "target_function_id": "F425",
+      "description": "Renaming or deleting a custom profile changes the truthful active selector and the profile that later receives Settings saves.",
+      "source_states": ["rename_active", "delete_inactive", "delete_active", "delete_final"],
+      "target_states": ["profile_selector_and_save_target"],
+      "cases": [
+        {"source_state": "rename_active", "target_state": "profile_selector_and_save_target", "expected_result": "The renamed active profile remains selected and is the later save target."},
+        {"source_state": "delete_inactive", "target_state": "profile_selector_and_save_target", "expected_result": "The active profile and its save target remain unchanged."},
+        {"source_state": "delete_active", "target_state": "profile_selector_and_save_target", "expected_result": "A remaining profile becomes the truthful active save target."},
+        {"source_state": "delete_final", "target_state": "profile_selector_and_save_target", "expected_result": "The selector falls back to the built-in/default profile without retaining a deleted target."}
+      ],
+      "test_node_ids": ["tests/test_profile_user_workflows.py::test_rename_and_delete_profiles_leave_a_truthful_selector"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I196",
+      "source_function_id": "F441",
+      "target_function_ids": ["F440", "F442", "F444"],
+      "description": "Every installer terminal outcome determines the retained live output, copyable log, and availability of Close.",
+      "source_states": ["success", "failure", "cancelled"],
+      "target_states": ["terminal_controls_and_artifacts"],
+      "cases": [
+        {"source_state": "success", "target_state": "terminal_controls_and_artifacts", "expected_result": "Live output is retained, its exact log can be copied, and Close becomes enabled."},
+        {"source_state": "failure", "target_state": "terminal_controls_and_artifacts", "expected_result": "Resolver failure output is retained and copyable before Close dismisses the dialog."},
+        {"source_state": "cancelled", "target_state": "terminal_controls_and_artifacts", "expected_result": "Pre-cancel output plus the cancellation marker remain copyable and Close becomes enabled."}
+      ],
+      "test_node_ids": ["tests/test_optional_install_acceptance.py::test_optional_installer_real_ui_terminal_outcome_matrix"],
+      "status": "accepted"
+    },
+    {
+      "interaction_id": "I197",
+      "source_function_id": "F423",
+      "target_function_id": "F458",
+      "description": "Setup-check probe results determine the recovery status and recommendation shown to the user.",
+      "source_states": ["pass", "warning", "dependency_failure"],
+      "target_states": ["visible_recovery_report"],
+      "cases": [
+        {"source_state": "pass", "target_state": "visible_recovery_report", "expected_result": "A passing provider row is shown as ready without a false recovery action."},
+        {"source_state": "warning", "target_state": "visible_recovery_report", "expected_result": "The warning message and its exact recommendation are both visible."},
+        {"source_state": "dependency_failure", "target_state": "visible_recovery_report", "expected_result": "A missing or failed audio dependency produces a controlled warning and recovery recommendation."}
+      ],
+      "test_node_ids": [
+        "tests/test_feature_acceptance_workflows.py::test_setup_check_button_runs_the_real_check_and_displays_its_report",
+        "tests/test_setup_check.py::test_setup_check_warns_when_stt_import_fails"
       ],
       "status": "accepted"
     }

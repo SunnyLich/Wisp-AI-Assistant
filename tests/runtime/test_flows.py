@@ -1899,14 +1899,26 @@ def test_read_selection_aloud_native_hotkey_routes_to_tts(monkeypatch):
 
 
 def test_clear_context_empties_panel_without_bubble():
-    native = FakeWorker({"native.context.snapshot": context_handler(selected="some text")})
+    snapshots = iter(
+        (
+            context_handler(selected="some text")({}),
+            context_handler(selected="")({}),
+        )
+    )
+    native = FakeWorker({"native.context.snapshot": lambda _params: next(snapshots)})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("after clear")})
     with caller_config([{}]):
-        flow, native, ui, brain, _audio = make_flow(native=native)
+        flow, native, ui, brain, _audio = make_flow(native=native, brain=brain)
         flow.add_context()
         flow.clear_context()
+        flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "verify clear"})
     assert ui.calls_for("ui.context.clear"), "clear should empty the panel"
     assert not ui.calls_for("ui.reply.notice"), "clear must not go to the bubble"
     assert flow._drop_context_items == []
+    query = brain.last_call("brain.query")["params"]
+    assert query["selected"] == ""
+    assert "some text" not in query["ambient_text"]
 
 
 def test_clear_context_failure_matrix_always_clears_local_state():

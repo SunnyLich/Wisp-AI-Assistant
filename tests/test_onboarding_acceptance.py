@@ -64,8 +64,13 @@ def onboarding_harness(tmp_path, monkeypatch):
         "THEME_MODE": getattr(config, "THEME_MODE", "system"),
         "DARK_MODE": getattr(config, "DARK_MODE", False),
     }
+    original_env_file = config._ENV_FILE
+    original_loaded_keys = set(config._LOADED_DOTENV_KEYS)
+    original_process_env = dict(os.environ)
 
     monkeypatch.setattr(settings_env, "ENV_PATH", env_path)
+    config._ENV_FILE = env_path
+    config._LOADED_DOTENV_KEYS = set(original_loaded_keys)
     monkeypatch.setattr(
         secret_store,
         "set_secret",
@@ -100,6 +105,11 @@ def onboarding_harness(tmp_path, monkeypatch):
     try:
         yield harness
     finally:
+        os.environ.clear()
+        os.environ.update(original_process_env)
+        config._ENV_FILE = original_env_file
+        config._LOADED_DOTENV_KEYS = original_loaded_keys
+        config._load_config()
         for key, value in original.items():
             setattr(config, key, value)
 
@@ -260,6 +270,8 @@ def test_first_overlay_launch_runs_real_wizard_applies_profile_and_opens_chat(
 
 def test_onboarding_language_assistant_and_theme_choice_matrix(onboarding_harness):
     """Every offered language and theme value survives the real Finish action."""
+    from core.prompt_i18n import assistant_language_instruction
+
     harness = onboarding_harness
     app_languages = [value for _label, value in harness.onboarding.LANGUAGE_OPTIONS]
     assistant_languages = [
@@ -285,7 +297,16 @@ def test_onboarding_language_assistant_and_theme_choice_matrix(onboarding_harnes
     for dimension, values in dimensions:
         for index, value in enumerate(values):
             harness.reset_saved_state()
-            wizard = harness.new_wizard()
+            applied: list[bool] = []
+
+            def apply_to_runtime(
+                open_chat: bool,
+                applied_results: list[bool] = applied,
+            ) -> None:
+                harness.config.reload()
+                applied_results.append(bool(open_chat))
+
+            wizard = harness.new_wizard(on_complete=apply_to_runtime)
             try:
                 if dimension == "app_language":
                     _select(wizard._app_language, value, harness.driver)
@@ -311,6 +332,12 @@ def test_onboarding_language_assistant_and_theme_choice_matrix(onboarding_harnes
                     "theme": "THEME_MODE",
                 }[dimension]
                 assert saved[key] == value
+                assert applied == [False]
+                assert getattr(harness.config, key) == value
+                if dimension == "assistant_language":
+                    instruction = assistant_language_instruction(value)
+                    if instruction:
+                        assert instruction in harness.config.get_system_prompt()
                 assert guidance.strip()
             finally:
                 _dispose_wizard(wizard, harness.driver)
