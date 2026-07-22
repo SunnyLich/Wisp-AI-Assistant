@@ -1817,6 +1817,66 @@ def test_chat_file_approval_panel_resolves_from_real_button_click(qapp):
         qapp.processEvents()
 
 
+@pytest.mark.parametrize(
+    ("action", "feedback", "expected"),
+    [
+        ("Approve", "", {"approved": True, "feedback": "", "shown": True}),
+        ("Alternate option", "Keep the heading and only replace the body.", {
+            "approved": False,
+            "feedback": "Keep the heading and only replace the body.",
+            "shown": True,
+        }),
+        ("Decline", "", {"approved": False, "feedback": "", "shown": True}),
+    ],
+    ids=["approve", "alternate", "decline"],
+)
+def test_chat_file_approval_visible_decision_matrix(qapp, action, feedback, expected):
+    """Every visible approval choice returns its production decision payload."""
+    from PySide6.QtWidgets import QFrame, QPushButton, QTextEdit
+
+    from ui.chat_window import ChatWindow
+
+    decisions = []
+    window = ChatWindow(
+        [{"id": f"approval-{action}", "messages": [], "context_policy": {}}],
+        lambda _messages, **_kwargs: iter(()),
+    )
+    try:
+        window.show()
+        qapp.processEvents()
+        shown = window.request_live_file_approval(
+            {
+                "approval_id": f"approval-{action}",
+                "action": "write_file",
+                "path": "notes/important.txt",
+                "diff": "--- a/notes/important.txt\n+++ b/notes/important.txt\n-old\n+new\n",
+                "_on_decision": decisions.append,
+            }
+        )
+        assert shown == {"approved": False, "feedback": "", "shown": True}
+        panel = window.findChild(QFrame, "liveFileApprovalPanel")
+        assert panel is not None
+        button = next(
+            item for item in panel.findChildren(QPushButton) if item.text() == action
+        )
+        button.click()
+        qapp.processEvents()
+        if action == "Alternate option":
+            box = panel.findChild(QTextEdit)
+            assert box is not None and box.isVisible()
+            box.setPlainText(feedback)
+            assert button.text() == "Send alternate option"
+            button.click()
+            qapp.processEvents()
+
+        assert decisions == [expected]
+        assert not panel.isVisible()
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
 def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, monkeypatch):
     """Editing and clicking Apply writes a real env file that a fresh dialog reloads."""
     from PySide6.QtWidgets import QPushButton

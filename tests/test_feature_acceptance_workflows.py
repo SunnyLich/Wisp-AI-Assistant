@@ -276,6 +276,8 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
 
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+    from runtime.supervisor.flows import FlowController
+    from runtime.supervisor import tool_modes
     from ui.settings_panel.dialog import SettingsDialog
     from ui.settings_panel.tool_access import ToolAccessDialog
 
@@ -323,7 +325,21 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
         assert modal_checks == [True]
         assert block["tool_overrides"][tool] == mode
 
-    dialog = SettingsDialog()
+    extra_tools = [
+        {
+            "name": "calendar_lookup",
+            "description": "Look up a calendar entry from an installed add-on.",
+        },
+        {
+            "name": "mcp_example_echo",
+            "description": "[MCP:example] Echo text through the example server.",
+        },
+        {
+            "name": "mcp_example_weather",
+            "description": "[MCP:example] Read weather through the example server.",
+        },
+    ]
+    dialog = SettingsDialog(extra_tools=extra_tools)
     reopened = None
     try:
         dialog._tabs.setCurrentIndex(dialog._tab_base_names.index("Keybinds"))
@@ -378,6 +394,9 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
         driver.select_combo_data(block["context_screenshot"], "auto")
         driver.select_combo_data(block["file_access"], "read")
         choose_tool(block, "read_file", "off")
+        choose_tool(block, "calendar_lookup", "off")
+        choose_tool(block, "mcp_server.example", "off")
+        choose_tool(block, "mcp_example_echo", "on")
         choose_tool(dialog._voice_block, "edit_file", "on")
         choose_tool(dialog._snip_block, "list_files", "on")
 
@@ -408,7 +427,7 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
         dialog.deleteLater()
         driver.pump()
         dialog = None
-        reopened = SettingsDialog()
+        reopened = SettingsDialog(extra_tools=extra_tools)
         saved = reopened._caller_blocks[-1]
         assert saved["label"].text() == "Research"
         assert saved["hotkey"].text() == "ctrl+alt+r"
@@ -423,9 +442,40 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
         assert saved["context_documents_mode"].currentData() == "auto"
         assert saved["context_browser_mode"].currentData() == "model"
         assert saved["tool_overrides"]["read_file"] == "off"
+        assert saved["tool_overrides"]["calendar_lookup"] == "off"
+        assert saved["tool_overrides"]["mcp_server.example"] == "off"
+        assert saved["tool_overrides"]["mcp_example_echo"] == "on"
+        assert "mcp_example_weather" not in saved["tool_overrides"]
         assert reopened._voice_block["tool_overrides"]["edit_file"] == "on"
         assert reopened._snip_block["tool_overrides"]["list_files"] == "on"
         assert reopened._fields["DICTATE_MODE"].currentData() == "llm"
+
+        # Reconstruct the exact caller policy handed to the supervisor. The
+        # local read override removes read_file while preserving list_files;
+        # the installed add-on stays off; and the one MCP tool explicitly set
+        # to Auto overrides its disabled server while its sibling follows the
+        # server and remains unavailable.
+        caller = {
+            "file_access": saved["file_access"].currentData(),
+            "context_documents_mode": saved["context_documents_mode"].currentData(),
+            "context_browser_mode": saved["context_browser_mode"].currentData(),
+            "context_github_mode": saved["context_github_mode"].currentData(),
+            "context_memory_mode": saved["context_memory_mode"].currentData(),
+            "context_screenshot": saved["context_screenshot"].currentData(),
+            "tools": dict(saved["tool_overrides"]),
+        }
+        base_allowed = set(tool_modes.allowed_model_tools(caller))
+        assert "list_files" in base_allowed
+        assert "read_file" not in base_allowed
+        flow_stub = type(
+            "FlowStub",
+            (),
+            {"_addon_model_tool_payloads": lambda _self: list(extra_tools)},
+        )()
+        allowed = set(FlowController._allowed_model_tools(flow_stub, caller))
+        assert "calendar_lookup" not in allowed
+        assert "mcp_example_echo" in allowed
+        assert "mcp_example_weather" not in allowed
     finally:
         if reopened is not None:
             reopened.close()
@@ -434,6 +484,86 @@ def test_intent_shortcut_editor_mutations_policies_tools_and_reopen_are_one_real
             dialog.close()
             dialog.deleteLater()
         driver.pump()
+
+
+def test_tool_access_dialog_addon_and_mcp_policy_matrix_reaches_supervisor(qapp):
+    """Every add-on and MCP selector state changes the runtime allow-list."""
+    from PySide6.QtWidgets import QPushButton
+
+    from runtime.supervisor.flows import FlowController
+    from ui.settings_panel.tool_access import ToolAccessDialog
+
+    driver = QtUserDriver(qapp)
+    extra_tools = [
+        {"name": "calendar_lookup", "description": "Installed calendar add-on tool."},
+        {"name": "mcp_example_echo", "description": "[MCP:example] Echo text."},
+        {"name": "mcp_example_weather", "description": "[MCP:example] Read weather."},
+    ]
+    flow_stub = type(
+        "FlowStub",
+        (),
+        {"_addon_model_tool_payloads": lambda _self: list(extra_tools)},
+    )()
+
+    def select_and_resolve(selections: dict[str, str]) -> tuple[dict[str, str], set[str]]:
+        dialog = ToolAccessDialog(
+            method_label="Research",
+            governed_modes={"Files": "off"},
+            extra_tools=extra_tools,
+        )
+        try:
+            dialog.show()
+            driver.pump()
+            for name, mode in selections.items():
+                driver.select_combo_data(dialog._combos[name], mode)
+            ok = next(button for button in dialog.findChildren(QPushButton) if button.text() == "OK")
+            driver.click(ok)
+            assert dialog.result() == dialog.DialogCode.Accepted
+            overrides = dialog.selected_overrides()
+            caller = {
+                "file_access": "off",
+                "context_documents_mode": "off",
+                "context_browser_mode": "off",
+                "context_github_mode": "off",
+                "context_memory_mode": "off",
+                "context_screenshot": "off",
+                "tools": overrides,
+            }
+            allowed = set(FlowController._allowed_model_tools(flow_stub, caller))
+            return overrides, allowed
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+            driver.pump()
+
+    for addon_mode, expected in (("off", False), ("on", True)):
+        overrides, allowed = select_and_resolve({"calendar_lookup": addon_mode})
+        assert ("calendar_lookup" in allowed) is expected
+        assert overrides.get("calendar_lookup", "on") == addon_mode
+
+    for local_name in ("list_files", "read_file", "create_file", "edit_file", "write_file"):
+        for local_mode, expected in (("off", False), ("on", True)):
+            overrides, allowed = select_and_resolve({local_name: local_mode})
+            assert (local_name in allowed) is expected
+            assert overrides.get(local_name, "off") == local_mode
+
+    expected_mcp = {
+        ("on", ""): True,
+        ("on", "off"): False,
+        ("on", "on"): True,
+        ("off", ""): False,
+        ("off", "off"): False,
+        ("off", "on"): True,
+    }
+    for (server_mode, tool_mode), expected in expected_mcp.items():
+        _overrides, allowed = select_and_resolve(
+            {
+                "mcp_server.example": server_mode,
+                "mcp_example_echo": tool_mode,
+            }
+        )
+        assert ("mcp_example_echo" in allowed) is expected
+        assert ("mcp_example_weather" in allowed) is (server_mode == "on")
 
 
 def test_settings_navigation_search_and_cancel_are_real_user_workflows(qapp, isolated_settings):
