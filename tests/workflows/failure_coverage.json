@@ -1175,7 +1175,7 @@
       "evidence_ids": [],
       "evidence_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open",
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
@@ -1191,7 +1191,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
@@ -1207,7 +1207,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
@@ -1223,7 +1223,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
@@ -1239,7 +1239,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
@@ -1255,7 +1255,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_onboarding_acceptance.py::test_onboarding_provider_vs_chatgpt_signin_precedence_matrix"
@@ -3434,7 +3434,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"
@@ -3450,7 +3450,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"
@@ -3466,7 +3466,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"
@@ -3482,7 +3482,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"
@@ -3498,7 +3498,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"
@@ -3514,7 +3514,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_intent_overlay.py::test_intent_picker_timeout_failure_matrix_is_controlled"
@@ -9291,7 +9291,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_document_context_contract.py::test_text_and_csv_document_readers"
@@ -9307,7 +9307,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_document_context_contract.py::test_text_and_csv_document_readers"
@@ -9323,7 +9323,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_document_context_contract.py::test_text_and_csv_document_readers"
@@ -9339,7 +9339,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_document_context_contract.py::test_text_and_csv_document_readers"
@@ -9355,7 +9355,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_document_context_contract.py::test_text_and_csv_document_readers"
@@ -9371,7 +9371,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_document_context_contract.py::test_text_and_csv_document_readers"
@@ -10158,10 +10158,10 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10177,7 +10177,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10193,7 +10193,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10209,7 +10209,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10225,7 +10225,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10241,7 +10241,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10259,7 +10259,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10275,7 +10275,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ]
     },
     {
@@ -10489,7 +10489,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_chat_request_forwards_image_only_result_to_chat_window"
@@ -10505,7 +10505,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_chat_request_forwards_image_only_result_to_chat_window"
@@ -10521,7 +10521,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_chat_request_forwards_image_only_result_to_chat_window"
@@ -10537,7 +10537,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_chat_request_forwards_image_only_result_to_chat_window"
@@ -10553,7 +10553,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_chat_request_forwards_image_only_result_to_chat_window"
@@ -10569,7 +10569,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_chat_request_forwards_image_only_result_to_chat_window"
@@ -10793,7 +10793,7 @@
       "shared_boundary": "on_demand_memory_search_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_caller_memory_modes_map_to_injected_or_model_decided_access"
@@ -14428,7 +14428,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ]
     },
     {
@@ -14447,7 +14447,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ]
     },
     {
@@ -14463,7 +14463,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ]
     },
     {
@@ -14479,7 +14479,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ]
     },
     {
@@ -14495,7 +14495,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ]
     },
     {
@@ -14511,7 +14511,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ]
     },
     {
@@ -14527,7 +14527,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ]
     },
     {
@@ -18412,7 +18412,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ]
     },
     {
@@ -18428,7 +18428,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ]
     },
     {
@@ -18444,7 +18444,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ]
     },
     {
@@ -18460,7 +18460,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ]
     },
     {
@@ -18476,7 +18476,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ]
     },
     {
@@ -18492,7 +18492,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ]
     },
     {
@@ -18508,7 +18508,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ]
     },
     {
@@ -18524,7 +18524,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ]
     },
     {
@@ -18540,7 +18540,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ]
     },
     {
@@ -18556,7 +18556,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ]
     },
     {
@@ -18572,7 +18572,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ]
     },
     {
@@ -18588,7 +18588,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ]
     },
     {
@@ -18604,7 +18604,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ]
     },
     {
@@ -18620,7 +18620,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ]
     },
     {
@@ -18636,7 +18636,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ]
     },
     {
@@ -18652,7 +18652,7 @@
         "tests/test_conversation_store.py::test_locked_and_corrupt_conversation_store_fails_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ]
     },
     {
@@ -18668,7 +18668,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ]
     },
     {
@@ -18684,7 +18684,7 @@
         "tests/test_chat_window_render_limits.py::test_chat_stale_records_and_active_stream_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ]
     },
     {
@@ -18700,7 +18700,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ]
     },
     {
@@ -18716,7 +18716,7 @@
         "tests/runtime/test_flows.py::test_chat_runtime_model_and_tool_failures_end_as_controlled_errors"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ]
     },
     {
@@ -18732,7 +18732,7 @@
         "tests/test_conversation_store.py::test_interrupted_conversation_write_preserves_store_and_removes_temp"
       ],
       "function_workflow_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ]
     },
     {
@@ -19692,7 +19692,7 @@
         "tests/test_harness_clients.py::test_codex_client_unavailable_is_reported_before_process_start"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19708,7 +19708,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19724,7 +19724,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19740,7 +19740,7 @@
         "tests/test_external_conversation_sync.py::test_push_rejects_source_outside_provider_root"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19756,7 +19756,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19772,7 +19772,7 @@
         "tests/test_external_conversation_sync.py::test_external_path_and_format_changes_are_rejected_without_mutation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19788,7 +19788,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19804,7 +19804,7 @@
         "tests/test_external_conversation_sync.py::test_external_locked_file_and_backup_failures_preserve_source"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -19820,7 +19820,7 @@
         "tests/test_harness_clients.py::test_codex_session_auth_and_provider_rejections_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ]
     },
     {
@@ -21855,7 +21855,7 @@
       "evidence_ids": [],
       "evidence_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open",
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open"
@@ -21871,7 +21871,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open"
@@ -21887,7 +21887,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open"
@@ -21903,7 +21903,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open"
@@ -21919,7 +21919,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open"
@@ -21935,7 +21935,7 @@
       "shared_boundary": "chatgpt_browser_auth_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"
       ],
       "function_workflow_node_ids": [
         "tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open"
@@ -21969,7 +21969,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -21985,7 +21985,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22001,7 +22001,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22017,7 +22017,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22033,7 +22033,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22049,7 +22049,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_low_setup_preset_uses_chatgpt_oauth_routes"
@@ -22065,7 +22065,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_low_setup_preset_uses_chatgpt_oauth_routes"
@@ -22081,7 +22081,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_low_setup_preset_uses_chatgpt_oauth_routes"
@@ -22097,7 +22097,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_low_setup_preset_uses_chatgpt_oauth_routes"
@@ -22227,7 +22227,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22243,7 +22243,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22259,7 +22259,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22275,7 +22275,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22291,7 +22291,7 @@
       "shared_boundary": "oauth_signin_status_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_fast_status_defers_gpu_availability_check"
@@ -22307,7 +22307,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
@@ -22323,7 +22323,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
@@ -22339,7 +22339,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
@@ -22355,7 +22355,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_github_auth.py::test_github_device_flow_failure_matrix_is_in_band"
@@ -22483,7 +22483,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
@@ -22499,7 +22499,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
@@ -22515,7 +22515,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
@@ -22531,7 +22531,7 @@
       "shared_boundary": "auth_credential_clear_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "function_workflow_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow"
@@ -26892,7 +26892,7 @@
         "T006"
       ],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_llm_test_requires_provider_and_model",
+        "tests/integration/brain/test_handler_config.py::test_llm_test_requires_provider_and_model",
         "tests/test_llm_fallbacks.py::LlmFallbackTests::test_openrouter_route_test_reports_missing_explicit_key_before_probe"
       ],
       "function_workflow_node_ids": [
@@ -27234,7 +27234,7 @@
         "T006"
       ],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_llm_test_requires_provider_and_model"
+        "tests/integration/brain/test_handler_config.py::test_llm_test_requires_provider_and_model"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_settings_open_requests_are_coalesced"
@@ -27572,7 +27572,7 @@
         "T006"
       ],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_config.py::test_llm_test_requires_provider_and_model"
+        "tests/integration/brain/test_handler_config.py::test_llm_test_requires_provider_and_model"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
@@ -29860,7 +29860,7 @@
         "tests/test_tts_connection.py::TtsConnectionTests::test_cartesia_connection_requires_voice_id"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29876,7 +29876,7 @@
         "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29892,7 +29892,7 @@
         "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29908,7 +29908,7 @@
         "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29924,7 +29924,7 @@
         "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29940,7 +29940,7 @@
         "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29956,7 +29956,7 @@
         "tests/test_tts_connection.py::TtsConnectionTests::test_tts_connection_failure_matrix_returns_controlled_diagnostic"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29972,7 +29972,7 @@
         "tests/test_optional_deps.py::test_require_optional_package_runtime_rejects_invalid_managed_install"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -29988,7 +29988,7 @@
         "tests/test_speech_failure_matrix.py::test_missing_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30004,7 +30004,7 @@
         "tests/test_speech_failure_matrix.py::test_damaged_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30020,7 +30020,7 @@
         "tests/test_speech_failure_matrix.py::test_microphone_permission_failure_resets_recording_state"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30036,7 +30036,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30052,7 +30052,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30068,7 +30068,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30085,7 +30085,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_tts_producer_failure_does_not_escape_thread_or_claim_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30101,7 +30101,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30117,7 +30117,7 @@
         "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30133,7 +30133,7 @@
         "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30149,7 +30149,7 @@
         "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30165,7 +30165,7 @@
         "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30181,7 +30181,7 @@
         "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30197,7 +30197,7 @@
         "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30213,7 +30213,7 @@
         "tests/test_optional_deps.py::test_shared_speech_optional_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30229,7 +30229,7 @@
         "tests/test_settings_dialog_controls.py::test_shared_speech_optional_install_cancellation_starts_no_installer"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30245,7 +30245,7 @@
         "tests/test_optional_deps.py::test_require_optional_package_runtime_rejects_invalid_managed_install"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30261,7 +30261,7 @@
         "tests/test_speech_failure_matrix.py::test_missing_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30277,7 +30277,7 @@
         "tests/test_speech_failure_matrix.py::test_damaged_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30293,7 +30293,7 @@
         "tests/test_speech_failure_matrix.py::test_microphone_permission_failure_resets_recording_state"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30309,7 +30309,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30325,7 +30325,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30341,7 +30341,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30358,7 +30358,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_tts_producer_failure_does_not_escape_thread_or_claim_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30374,7 +30374,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30390,7 +30390,7 @@
         "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ]
     },
     {
@@ -30843,7 +30843,7 @@
         "tests/test_optional_deps.py::test_require_optional_package_runtime_rejects_invalid_managed_install"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30862,7 +30862,7 @@
         "tests/test_speech_failure_matrix.py::test_missing_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30881,7 +30881,7 @@
         "tests/test_speech_failure_matrix.py::test_damaged_speech_model_assets_are_classified_without_network"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30897,7 +30897,7 @@
         "tests/test_speech_failure_matrix.py::test_microphone_permission_failure_resets_recording_state"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30913,7 +30913,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30929,7 +30929,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_output_device_and_permission_failures_cleanup_without_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30945,7 +30945,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30962,7 +30962,7 @@
         "tests/test_audio_stream.py::AudioStreamTests::test_tts_producer_failure_does_not_escape_thread_or_claim_completion"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30978,7 +30978,7 @@
         "tests/test_speech_failure_matrix.py::test_tts_provider_auth_network_and_model_failures_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -30994,7 +30994,7 @@
         "tests/test_optional_deps.py::test_stt_model_probe_rejects_cpu_fallback_for_explicit_cuda"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ]
     },
     {
@@ -33863,7 +33863,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
@@ -33993,7 +33993,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_memory_quality.py::test_memory_block_does_not_fallback_to_unmatched_facts"
@@ -34121,7 +34121,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_chat_memory_phrases_model_tools_scope_search_and_delete_use_real_store"
@@ -34251,7 +34251,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_memory_quality.py::test_memory_save_tool_executor"
@@ -34381,7 +34381,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
@@ -34511,10 +34511,10 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34530,7 +34530,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34546,7 +34546,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34562,7 +34562,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34578,7 +34578,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34594,7 +34594,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34610,7 +34610,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34626,7 +34626,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ]
     },
     {
@@ -34639,10 +34639,10 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34658,7 +34658,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34674,7 +34674,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34690,7 +34690,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34706,7 +34706,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34722,7 +34722,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34738,7 +34738,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34754,7 +34754,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ]
     },
     {
@@ -34767,7 +34767,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_saved_memory_limits_drive_scheduler_extraction_retrieval_and_compression"
@@ -34895,7 +34895,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
@@ -35023,7 +35023,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_long_term_memory_viewer_add_edit_move_delete_refresh_and_grouping"
@@ -35151,10 +35151,10 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35170,7 +35170,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35186,7 +35186,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35202,7 +35202,7 @@
         "tests/test_memory_quality.py::test_rejects_secrets"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35218,7 +35218,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35234,7 +35234,7 @@
         "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35250,7 +35250,7 @@
         "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35266,7 +35266,7 @@
         "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ]
     },
     {
@@ -35281,7 +35281,7 @@
         "T047"
       ],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_memory.py::test_add_requires_text",
+        "tests/integration/brain/test_handler_memory.py::test_add_requires_text",
         "tests/test_settings_dialog_controls.py::test_memory_fact_add_failure_matrix_keeps_input_retryable"
       ],
       "function_workflow_node_ids": [
@@ -35396,7 +35396,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_reinstall_click_passes_reinstall"
@@ -35448,7 +35448,7 @@
       ],
       "evidence_node_ids": [
         "tests/test_memory_quality.py::test_rejects_secrets",
-        "runtime/brain/tests/test_handler_memory.py::test_update_requires_id_and_text"
+        "tests/integration/brain/test_handler_memory.py::test_update_requires_id_and_text"
       ],
       "function_workflow_node_ids": [
         "tests/test_settings_dialog_controls.py::test_kokoro_reinstall_click_passes_reinstall"
@@ -35642,10 +35642,10 @@
         "T049"
       ],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_memory.py::test_delete_requires_id"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ]
     },
     {
@@ -35661,7 +35661,7 @@
         "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ]
     },
     {
@@ -35677,7 +35677,7 @@
         "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ]
     },
     {
@@ -35693,7 +35693,7 @@
         "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ]
     },
     {
@@ -35709,7 +35709,7 @@
         "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ]
     },
     {
@@ -35725,7 +35725,7 @@
         "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ]
     },
     {
@@ -35741,7 +35741,7 @@
         "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ]
     },
     {
@@ -35754,7 +35754,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/test_memory_quality.py::test_lightweight_fact_list_does_not_initialize_memory_manager"
@@ -36112,7 +36112,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36128,7 +36128,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36144,7 +36144,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36160,7 +36160,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36176,7 +36176,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36192,7 +36192,7 @@
         "tests/test_privacy_model.py::test_privacy_installer_failure_matrix_is_persisted"
       ],
       "function_workflow_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36208,7 +36208,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_install_requires_explicit_confirmation"
       ],
       "function_workflow_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36224,7 +36224,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36240,7 +36240,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36256,7 +36256,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36272,7 +36272,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36288,7 +36288,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36304,7 +36304,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36320,7 +36320,7 @@
         "tests/test_settings_dialog_controls.py::test_privacy_model_removal_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ]
     },
     {
@@ -36336,7 +36336,7 @@
         "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ]
     },
     {
@@ -36352,7 +36352,7 @@
         "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ]
     },
     {
@@ -36368,7 +36368,7 @@
         "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ]
     },
     {
@@ -36384,7 +36384,7 @@
         "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ]
     },
     {
@@ -36400,7 +36400,7 @@
         "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ]
     },
     {
@@ -36416,7 +36416,7 @@
         "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ]
     },
     {
@@ -36432,7 +36432,7 @@
         "tests/test_privacy_gateway.py::test_privacy_failure_matrix_is_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ]
     },
     {
@@ -37193,7 +37193,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
@@ -37209,7 +37209,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
@@ -37225,7 +37225,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
@@ -37241,7 +37241,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
@@ -37257,7 +37257,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
@@ -37273,7 +37273,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_context_modes_map_to_auto_documents_and_allowed_tools"
@@ -37483,7 +37483,7 @@
       "shared_boundary": "memory_store_scope_and_model_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_memory_events_route_to_brain_and_seed_ui_viewer"
@@ -41280,7 +41280,7 @@
         "tests/test_addon_manager.py::test_addon_enable_and_settings_round_trip"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -41296,7 +41296,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -41312,7 +41312,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -41328,7 +41328,7 @@
         "tests/test_addon_manager.py::test_missing_permissions_deny_surfaces"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -41344,7 +41344,7 @@
         "tests/test_addon_manager.py::test_addon_with_dependencies_waits_for_environment"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -41360,7 +41360,7 @@
         "tests/test_addon_manager.py::test_invalid_incompatible_and_crashed_addons_fail_closed"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -41376,7 +41376,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -41392,7 +41392,7 @@
         "tests/test_mcp_bridge.py::test_mcp_server_unavailable_and_protocol_errors_are_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ]
     },
     {
@@ -42246,7 +42246,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_preview_localizes_nested_agent_spec"
@@ -42392,10 +42392,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42411,7 +42411,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42427,7 +42427,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42443,7 +42443,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42459,7 +42459,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42475,7 +42475,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42491,7 +42491,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42507,7 +42507,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42523,7 +42523,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ]
     },
     {
@@ -42536,7 +42536,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_title_field_uses_extra_window_width"
@@ -42680,7 +42680,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
@@ -42696,7 +42696,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
@@ -42712,7 +42712,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
@@ -42728,7 +42728,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
@@ -42744,7 +42744,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
@@ -42760,7 +42760,7 @@
       "shared_boundary": "active_document_extraction_boundary",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
@@ -42776,7 +42776,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
@@ -42920,10 +42920,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -42939,7 +42939,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -42955,7 +42955,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -42971,7 +42971,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -42987,7 +42987,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43003,7 +43003,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43019,7 +43019,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43035,7 +43035,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43051,7 +43051,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43064,7 +43064,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
@@ -43211,7 +43211,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_tool_file_permission_and_approval_workflow"
@@ -43355,7 +43355,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
@@ -43499,7 +43499,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_addon_update_remove_bad_archive_and_credentials_reset_workflow"
@@ -43643,10 +43643,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43662,7 +43662,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43678,7 +43678,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43694,7 +43694,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43710,7 +43710,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43726,7 +43726,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43742,7 +43742,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43758,7 +43758,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43774,7 +43774,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ]
     },
     {
@@ -43787,10 +43787,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43806,7 +43806,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43822,7 +43822,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43838,7 +43838,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43854,7 +43854,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43870,7 +43870,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43886,7 +43886,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43902,7 +43902,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43918,7 +43918,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ]
     },
     {
@@ -43931,7 +43931,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_tool_file_permission_and_approval_workflow"
@@ -44077,10 +44077,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44096,7 +44096,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44112,7 +44112,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44128,7 +44128,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44144,7 +44144,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44160,7 +44160,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44176,7 +44176,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44192,7 +44192,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44208,7 +44208,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -44221,7 +44221,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_chat_message_position_action_matrix"
@@ -44365,7 +44365,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_auto_agent_run_streams_logs_and_persists_artifacts_workflow"
@@ -44509,7 +44509,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
@@ -44653,7 +44653,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_communication_map_visible_editing_workflow"
@@ -44797,7 +44797,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_auto_agent_run_streams_logs_and_persists_artifacts_workflow"
@@ -44941,7 +44941,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_preview_localizes_nested_agent_spec"
@@ -45085,7 +45085,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
@@ -45229,10 +45229,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45248,7 +45248,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45264,7 +45264,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45280,7 +45280,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45296,7 +45296,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45312,7 +45312,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45328,7 +45328,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45344,7 +45344,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45360,7 +45360,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45373,10 +45373,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45392,7 +45392,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45408,7 +45408,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45424,7 +45424,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45440,7 +45440,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45456,7 +45456,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45472,7 +45472,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45488,7 +45488,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45504,7 +45504,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ]
     },
     {
@@ -45517,7 +45517,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_ui_host_agent_meeting.py::test_mac_ui_agent_meeting_view_wheel_zoom_survives_redraw"
@@ -45661,7 +45661,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_app_user_workflows.py::test_auto_agent_run_streams_logs_and_persists_artifacts_workflow"
@@ -45805,7 +45805,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_run_folder_actions_use_controlled_reveal_helper"
@@ -45949,7 +45949,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_activity_i18n.py::test_agent_status_and_health_translate_dynamic_values"
@@ -46093,7 +46093,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_preview_dialog_uses_scrollable_text_view"
@@ -46373,7 +46373,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
@@ -46517,7 +46517,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
@@ -46661,7 +46661,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_harness_clients.py::test_codex_uses_completed_agent_message_when_no_delta_arrived"
@@ -46805,7 +46805,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/runtime/test_flows.py::test_agent_pause_nudge_and_permissions_route_to_active_brain_run"
@@ -46949,7 +46949,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
@@ -47093,10 +47093,10 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47112,7 +47112,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47128,7 +47128,7 @@
         "tests/test_agent_runner.py::ScopedWorkspaceTests::test_invalid_scope_folder_is_recorded_as_a_controlled_run_failure"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47144,7 +47144,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_llm_auth_failure_stops_instead_of_retrying"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47160,7 +47160,7 @@
         "tests/test_agent_runner.py::AgentToolboxTests::test_toolbox_rejects_edit_without_permission"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47176,7 +47176,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_unexpected_agent_runtime_exit_writes_failure_artifacts"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47192,7 +47192,7 @@
         "tests/test_agent_runner.py::AgentRunnerTests::test_mutating_tools_run_under_write_lock"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47208,7 +47208,7 @@
         "tests/test_agent_runner.py::ParallelWorkRoundTests::test_same_file_write_is_leased_to_exactly_one_agent"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47224,7 +47224,7 @@
         "tests/test_agent_task_retry.py::AgentTaskRetryTests::test_retry_spec_rejects_unavailable_task_artifact"
       ],
       "function_workflow_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ]
     },
     {
@@ -47237,7 +47237,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_window_layout.py::test_agent_task_preview_localizes_nested_agent_spec"
@@ -47381,7 +47381,7 @@
       "shared_boundary": "agent_task_runtime",
       "evidence_ids": [],
       "evidence_node_ids": [
-        "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+        "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
       ],
       "function_workflow_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow"
@@ -50445,7 +50445,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50461,7 +50461,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50477,7 +50477,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50493,7 +50493,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50509,7 +50509,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50525,7 +50525,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50541,7 +50541,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50557,7 +50557,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {
@@ -50573,7 +50573,7 @@
         "tests/test_crash_report.py::test_metadata_diagnostic_surfaces_failure_matrix_is_controlled"
       ],
       "function_workflow_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ]
     },
     {

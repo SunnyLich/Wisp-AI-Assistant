@@ -43,7 +43,7 @@
       ],
       "evidence_by_cause": {
         "The task specification is invalid.": [
-          "runtime/brain/tests/test_handler_agent.py::test_agent_requires_spec_dict"
+          "tests/integration/brain/test_handler_agent.py::test_agent_requires_spec_dict"
         ],
         "The selected agent model is invalid.": [
           "tests/test_agent_runner.py::AgentRunnerTests::test_invalid_selected_model_stops_as_a_controlled_failure"
@@ -432,7 +432,7 @@
       ],
       "evidence_by_cause": {
         "Memory is disabled.": [
-          "runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
+          "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
         ],
         "The relevant data store is locked.": [
           "tests/test_memory_quality.py::test_memory_store_lock_corruption_duplicates_and_model_failure_fail_closed"
@@ -694,22 +694,22 @@
       "function_ids": ["F032", "F092", "F104", "F334", "F382"],
       "evidence_by_cause": {
         "The source application is unsupported.": [
-          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
         ],
         "The source application is closed.": [
-          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
         ],
         "Accessibility permission is missing.": [
-          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
         ],
         "Automation permission is missing.": [
-          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
         ],
         "Extraction returns no text.": [
-          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
         ],
         "Content is truncated by its budget.": [
-          "runtime/brain/tests/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_context.py::test_active_document_failure_matrix_is_controlled"
         ]
       }
     },
@@ -790,12 +790,12 @@
       "rationale": "Setup and Settings ChatGPT sign-in invoke the same browser PKCE module and streaming brain handler; browser launch failure, expiry, cancellation, provider/network errors, and rejected scopes all finish through an in-band auth result.",
       "function_ids": ["F011", "F206"],
       "evidence_by_cause": {
-        "The browser cannot open.": ["tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open", "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
-        "The authentication flow expires.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
-        "The authentication flow is cancelled.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
-        "The provider service is unavailable.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
-        "Network access is unavailable.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
-        "Requested scopes are rejected.": ["runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"]
+        "The browser cannot open.": ["tests/test_chatgpt_auth.py::test_browser_oauth_reports_when_system_browser_cannot_open", "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "The authentication flow expires.": ["tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "The authentication flow is cancelled.": ["tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "The provider service is unavailable.": ["tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "Network access is unavailable.": ["tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"],
+        "Requested scopes are rejected.": ["tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_failure_matrix_is_in_band"]
       }
     },
     {
@@ -894,16 +894,16 @@
       "function_ids": ["F208", "F211", "F213"],
       "evidence_by_cause": {
         "The local credential store is locked.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+          "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
         ],
         "The local credential store is unavailable.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+          "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
         ],
         "The local token cannot be removed.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+          "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
         ],
         "Local and provider session state diverge.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+          "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
         ]
       }
     },
@@ -1007,19 +1007,19 @@
       "function_ids": ["F207", "F210"],
       "evidence_by_cause": {
         "The stored token is expired.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
         ],
         "The stored token is corrupt.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
         ],
         "The credential store cannot be read.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
         ],
         "The provider status endpoint is offline.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
         ],
         "The provider status request is rate-limited.": [
-          "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+          "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
         ]
       }
     },
@@ -1625,7 +1625,7 @@
       "rationale": "On-demand memory search is gated by the memory setting, caller allowlist, provider tool capability, completion gate, guarded memory-store adapter, and shared request budgets. The matrix executes each gate and the unified harness proves a model that skips the required search is nudged into issuing it.",
       "function_ids": ["F107"],
       "evidence_by_cause": {
-        "Memory is disabled.": ["runtime/brain/tests/test_handler_query.py::test_query_memory_disabled_skips_retrieval"],
+        "Memory is disabled.": ["tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"],
         "The memory-search tool is disabled.": ["tests/test_builtin_model_tools.py::BuiltinModelToolsTests::test_memory_search_on_demand_failure_matrix_is_controlled"],
         "The model does not support tool calling.": ["tests/test_llm_fallbacks.py::LlmFallbackTests::test_openai_compat_tools_unsupported_downgrades_to_frontloaded_context"],
         "The model does not issue the required tool call.": ["tests/test_unified_chat_harness.py::ChatFlowHarnessTests::test_loop_backed_runner_requires_memory_tool_for_memory_request"],

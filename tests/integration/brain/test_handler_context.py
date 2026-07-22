@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from wisp_brain import handlers
+
 from core import context_fetcher
 from core.llm_clients import client as llm
-from wisp_brain import handlers
 
 
 def test_active_document_failure_matrix_is_controlled(tmp_path, monkeypatch):
@@ -29,8 +30,8 @@ def test_active_document_failure_matrix_is_controlled(tmp_path, monkeypatch):
         RuntimeError("automation permission missing"),
     ):
         with monkeypatch.context() as scoped:
-            def denied(**_kwargs):
-                raise failure
+            def denied(_failure=failure, **_kwargs):
+                raise _failure
 
             scoped.setattr(context_fetcher, "get_all_open_document_paths", denied)
             result = handlers.brain_context_active_document(

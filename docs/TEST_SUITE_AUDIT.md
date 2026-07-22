@@ -1,5 +1,14 @@
 # Test Suite Organization Audit
 
+> **Status update (2026-07-22):** This document is the pre-reorganization
+> baseline. The active source of truth is now
+> [`tests/TEST_MAP.md`](../tests/TEST_MAP.md). All 167 pytest files / 2,608 tests
+> are under the single `tests/` root; the former brain suite is now
+> `tests/integration/brain`, infrastructure tests are in `tests/support`, and
+> catalogue validators are in `tests/catalog`. Every test is classified as
+> internal/user-path and GitHub-safe/isolated-host. The historical findings
+> below are retained to explain why those changes were made.
+
 **Repository:** Wisp (`Python-AI-assistant-overlay`)
 **Audit date:** 2026-07-20
 **Scope:** Test layout, discovery, configuration, runners, CI selection, release checks, and generated test artifacts
@@ -7,12 +16,12 @@
 
 ## Executive summary
 
-The test code is not literally scattered without structure: most pytest tests live under `tests/`, the headless brain has a colocated suite under `runtime/brain/tests/`, and real-system release checks intentionally live under `testlab/`. The larger problem is that the repository does not have one authoritative definition of "the full suite."
+The test code is not literally scattered without structure: most pytest tests live under `tests/`, the headless brain has a colocated suite under `tests/integration/brain/`, and real-system release checks intentionally live under `testlab/`. The larger problem is that the repository does not have one authoritative definition of "the full suite."
 
 The current working tree has four distinct testing systems:
 
 1. The default pytest suite under `tests/`.
-2. A separate headless-brain pytest suite under `runtime/brain/tests/`.
+2. A separate headless-brain pytest suite under `tests/integration/brain/`.
 3. A bespoke real-system release gate under `testlab/`.
 4. Manual diagnostic programs and orchestration scripts under `tools/` and `scripts/`.
 
@@ -35,7 +44,7 @@ The recommended strategy is incremental: first establish a single suite contract
 
 This audit describes the **current filesystem and working tree**, not only the last committed revision. At audit time:
 
-- 139 pytest-shaped or `test_*` Python files were tracked across `tests/`, `runtime/brain/tests/`, and `tools/`.
+- 139 pytest-shaped or `test_*` Python files were tracked across `tests/`, `tests/integration/brain/`, and `tools/`.
 - 10 additional test files under `tests/` were present but untracked.
 - Many existing source and test files were modified.
 
@@ -49,7 +58,7 @@ Consequently, collection totals and line counts below describe the code that a d
 |---|---:|---:|---|---|
 | `tests/*.py` | 117 | 40,543 | Core, UI, workflows, platform, tooling, and integrations | Yes |
 | `tests/runtime/*.py` | 17 | 11,843 | Supervisor, worker hosts, IPC, runtime flows | Yes |
-| `runtime/brain/tests/*.py` | 12 | 3,567 | Brain host and request-handler behavior | No |
+| `tests/integration/brain/*.py` | 12 | 3,567 | Brain host and request-handler behavior | No |
 | `tools/test_*.py` | 3 | 400 | Manual diagnostics or packaged-app probes | No |
 
 The two `tests/` rows form the current default collection boundary: 134 files and 52,386 physical lines.
@@ -62,7 +71,7 @@ Collection was measured with the repository virtual environment and cache writin
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest --collect-only -q -p no:cacheprovider
-.\.venv\Scripts\python.exe -m pytest runtime/brain/tests --collect-only -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest tests/integration/brain --collect-only -q -p no:cacheprovider
 ```
 
 Results:
@@ -98,7 +107,7 @@ These counts should not be added together because a test may participate in more
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Because both active pytest configurations specify `testpaths = tests`, this command excludes `runtime/brain/tests/`. The documentation is therefore internally reasonable for the configured default, but "full suite" does not mean all repository pytest tests.
+Because both active pytest configurations specify `testpaths = tests`, this command excludes `tests/integration/brain/`. The documentation is therefore internally reasonable for the configured default, but "full suite" does not mean all repository pytest tests.
 
 ### 2. Primary CI
 
@@ -108,7 +117,7 @@ Because both active pytest configurations specify `testpaths = tests`, this comm
 python scripts/run_ci_pytest_chunk.py --chunk-index N --chunk-total 4
 ```
 
-The runner recursively enumerates only `tests/test_*.py` and `tests/**/test_*.py`. It does not enumerate `runtime/brain/tests/`.
+The runner recursively enumerates only `tests/test_*.py` and `tests/**/test_*.py`. It does not enumerate `tests/integration/brain/`.
 
 It also applies this keyword expression:
 
@@ -123,14 +132,14 @@ In the current working tree, this selects 1,900 of 1,919 default-suite tests and
 `scripts/run_macos_tests.command` explicitly runs:
 
 ```text
-pytest tests runtime/brain/tests -q
+pytest tests tests/integration/brain -q
 ```
 
 This runner has a broader pytest scope than the documented default and primary CI. The brain suite can therefore fail in the macOS gate after primary Windows/Linux CI has reported success.
 
 ### 4. Personal OS runner
 
-`scripts/run_personal_os_tests.py` also includes `runtime/brain/tests` in its pytest invocation and can add real-GUI or deeper macOS-native phases. It represents another broader definition of suite completeness.
+`scripts/run_personal_os_tests.py` also includes `tests/integration/brain` in its pytest invocation and can add real-GUI or deeper macOS-native phases. It represents another broader definition of suite completeness.
 
 ### 5. App workflow runner
 
@@ -204,7 +213,7 @@ There are three conftest files:
 |---|---:|---:|---:|
 | `tests/conftest.py` | 144 | 2 | 1 |
 | `tests/runtime/conftest.py` | 57 | 1 | 1 |
-| `runtime/brain/tests/conftest.py` | 67 | 2 | 1 |
+| `tests/integration/brain/conftest.py` | 67 | 2 | 1 |
 
 This is a reasonable use of directory-scoped fixtures. If the brain tests move under `tests/`, their conftest should move with them so their setup boundary remains explicit.
 
@@ -309,11 +318,11 @@ Any cleanup implementation must use narrowly scoped, explicit directories and sh
 
 ### High priority: no authoritative full-suite contract
 
-**Evidence:** Default pytest and primary CI use `tests/`; macOS and personal OS runners add `runtime/brain/tests/`.
+**Evidence:** Default pytest and primary CI use `tests/`; macOS and personal OS runners add `tests/integration/brain/`.
 
 **Impact:** A change can pass the documented local command and primary CI without the brain handler suite being collected. Different platforms make different claims when they say tests passed.
 
-**Recommendation:** Make all ordinary pytest tests discoverable through one canonical root. The cleanest end state is to move `runtime/brain/tests/` under a suitable `tests/` subtree. A lower-change interim step is `testpaths = tests runtime/brain/tests`, coupled with CI enumeration of both roots.
+**Recommendation:** Make all ordinary pytest tests discoverable through one canonical root. The cleanest end state is to move `tests/integration/brain/` under a suitable `tests/` subtree. A lower-change interim step is `testpaths = tests tests/integration/brain`, coupled with CI enumeration of both roots.
 
 ### High priority: CI chunks are materially imbalanced
 

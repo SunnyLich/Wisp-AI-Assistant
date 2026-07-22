@@ -7,8 +7,8 @@ keys -- exactly the off-Mac handshake the rewrite plan calls for. This proves th
 foundation (framing, request/response correlation, id-tagged streaming events,
 concurrency, cancel, error propagation) before the full app is launched.
 
-Run directly:   python runtime/brain/tests/test_brain_host.py
-Run via pytest: pytest runtime/brain/tests/test_brain_host.py
+Run directly:   python tests/integration/brain/test_brain_host.py
+Run via pytest: pytest tests/integration/brain/test_brain_host.py
 """
 from __future__ import annotations
 
@@ -20,7 +20,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
-_BRAIN_DIR = Path(__file__).resolve().parents[1]   # runtime/brain
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_BRAIN_DIR = _REPO_ROOT / "runtime" / "brain"
 sys.path.insert(0, str(_BRAIN_DIR))
 
 from wisp_brain import protocol  # noqa: E402
@@ -254,4 +255,3 @@ def _run_directly() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_run_directly())
-

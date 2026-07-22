@@ -12,9 +12,7 @@ _PYTEST_NO_TESTS_COLLECTED = 5
 
 def _test_files(root: Path) -> list[Path]:
     return sorted(
-        path
-        for path in (root / "tests").rglob("test_*.py")
-        if path.is_file()
+        path for path in (root / "tests").rglob("test_*.py") if path.is_file()
     )
 
 
@@ -35,8 +33,8 @@ def _pytest_command(root: Path, files: list[Path], basetemp: Path) -> list[str]:
         "pytest",
         "-ra",
         "--tb=short",
-        "-k",
-        "not platform_macos",
+        "-m",
+        "github_safe",
         "--basetemp",
         str(basetemp),
         *(str(path.relative_to(root)) for path in files),

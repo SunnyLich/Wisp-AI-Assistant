@@ -173,5 +173,8 @@ jobs:
       - name: Scan tracked files for committed secrets
         run: python scripts/scan_secrets.py
 
+      - name: Verify test catalogue and schedules
+        run: python scripts/test_map.py --check
+
       - name: Run test suite
         run: python scripts/run_ci_pytest_chunk.py --chunk-index ${{ matrix.chunk }} --chunk-total 4

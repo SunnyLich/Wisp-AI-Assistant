@@ -7,7 +7,7 @@ from pathlib import Path
 from scripts.failure_coverage import validate_failure_manifest
 from scripts.generate_failure_coverage import build_failure_manifest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "tests" / "workflows" / "failure_coverage.json"
 
 

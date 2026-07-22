@@ -6,7 +6,7 @@ from unittest import mock
 
 from scripts import check_dev_environment
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def shell_imports(script_name: str) -> tuple[str, ...]:

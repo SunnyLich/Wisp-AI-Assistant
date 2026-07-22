@@ -3673,9 +3673,9 @@
         634
       ],
       "test_node_ids": [
-        "tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow"
+        "tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_app_user_workflows.py::test_prompt_tools_and_memory_scheduler_settings_workflow",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_chat.py::test_chat_normalizes_messages_and_forwards_memory_context",
       "scenarios": [
         "normal",
         "repeat",
@@ -3695,7 +3695,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.23,
+      "mapping_score": 0.248,
       "source_section": "context_capture"
     },
     {
@@ -5243,9 +5243,9 @@
         895
       ],
       "test_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context"
+        "tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_chat_window_render_limits.py::test_chat_window_persists_returned_tool_context",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_chat.py::test_chat_requires_a_user_turn",
       "scenarios": [
         "normal",
         "repeat",
@@ -5256,16 +5256,14 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [],
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.357,
+      "mapping_status": "direct",
+      "mapping_score": 0.581,
       "source_section": "chat_projects"
     },
     {
@@ -6657,9 +6655,9 @@
         1142
       ],
       "test_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_planned_chunking.py::test_planned_chunking_falls_back_when_planner_is_invalid",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible",
       "scenarios": [
         "normal",
         "repeat",
@@ -6677,7 +6675,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.346,
+      "mapping_score": 0.449,
       "source_section": "chat_projects"
     },
     {
@@ -6693,9 +6691,9 @@
         1149
       ],
       "test_node_ids": [
-        "tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens"
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_planned_chunking.py::test_planned_chunking_streams_visible_part_tokens",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix",
       "scenarios": [
         "normal",
         "repeat",
@@ -6713,7 +6711,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.328,
+      "mapping_score": 0.445,
       "source_section": "chat_projects"
     },
     {
@@ -6729,9 +6727,9 @@
         1156
       ],
       "test_node_ids": [
-        "tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation"
+        "tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_chat_window_render_limits.py::test_chat_rewind_current_chat_requires_confirmation",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_chat.py::test_chat_is_registered_as_streaming",
       "scenarios": [
         "normal",
         "repeat",
@@ -6742,16 +6740,14 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [],
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.421,
+      "mapping_score": 0.465,
       "source_section": "chat_projects"
     },
     {
@@ -7037,9 +7033,9 @@
         1224
       ],
       "test_node_ids": [
-        "tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only"
+        "tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_external_conversation_sync.py::test_parse_codex_uses_user_and_final_messages_only",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_config.py::test_harness_prewarm_skips_when_codex_is_not_selected",
       "scenarios": [
         "normal",
         "repeat",
@@ -7057,7 +7053,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.226,
+      "mapping_score": 0.239,
       "source_section": "external_conversations"
     },
     {
@@ -10384,9 +10380,9 @@
         1854
       ],
       "test_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ],
-      "production_entry_point": "Production entry point exercised by tests/runtime/test_audio_host_tts.py::test_tts_synthesize_provider_none_skips_tts_stream",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice",
       "scenarios": [
         "normal",
         "repeat",
@@ -10404,7 +10400,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.821,
+      "mapping_score": 0.939,
       "source_section": "speech_voice"
     },
     {
@@ -10423,9 +10419,9 @@
         1864
       ],
       "test_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ],
-      "production_entry_point": "Production entry point exercised by tests/runtime/test_audio_host_tts.py::test_audio_prewarm_warms_cartesia_tts",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice",
       "scenarios": [
         "normal",
         "repeat",
@@ -10445,7 +10441,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.554,
+      "mapping_score": 0.633,
       "source_section": "speech_voice"
     },
     {
@@ -10461,9 +10457,9 @@
         1871
       ],
       "test_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate",
       "scenarios": [
         "normal",
         "repeat",
@@ -10482,8 +10478,8 @@
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.465,
+      "mapping_status": "direct",
+      "mapping_score": 0.503,
       "source_section": "speech_voice"
     },
     {
@@ -10502,9 +10498,9 @@
         1881
       ],
       "test_node_ids": [
-        "tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming"
+        "tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice"
       ],
-      "production_entry_point": "Production entry point exercised by tests/runtime/test_audio_host_tts.py::test_tts_synthesize_raises_while_local_voice_is_warming",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_tts.py::test_tts_test_forwards_provider_and_voice",
       "scenarios": [
         "normal",
         "repeat",
@@ -10522,7 +10518,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.516,
+      "mapping_score": 0.599,
       "source_section": "speech_voice"
     },
     {
@@ -10657,9 +10653,9 @@
         1918
       ],
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status"
+        "tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_settings_dialog_controls.py::test_kokoro_device_change_to_cuda_rechecks_fast_status",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_tts.py::test_tts_elevenlabs_uses_el_sample_rate",
       "scenarios": [
         "normal",
         "repeat",
@@ -10670,16 +10666,14 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [],
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.317,
+      "mapping_score": 0.362,
       "source_section": "speech_voice"
     },
     {
@@ -11648,9 +11642,9 @@
         2142
       ],
       "test_node_ids": [
-        "tests/test_memory_quality.py::test_memory_save_tool_executor"
+        "tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_memory_quality.py::test_memory_save_tool_executor",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_memory.py::test_memory_handlers_registered",
       "scenarios": [
         "normal",
         "repeat",
@@ -11670,7 +11664,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.358,
+      "mapping_score": 0.389,
       "source_section": "memory"
     },
     {
@@ -11687,9 +11681,9 @@
         2150
       ],
       "test_node_ids": [
-        "tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query"
+        "tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_memory_quality.py::test_retrieve_relevant_returns_empty_for_unmatched_query",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_query.py::test_query_memory_disabled_skips_retrieval",
       "scenarios": [
         "normal",
         "repeat",
@@ -11707,7 +11701,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.267,
+      "mapping_score": 0.353,
       "source_section": "memory"
     },
     {
@@ -11843,9 +11837,9 @@
         2182
       ],
       "test_node_ids": [
-        "tests/test_memory_quality.py::test_save_memory_scopes_general_and_project"
+        "tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_memory_quality.py::test_save_memory_scopes_general_and_project",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_memory.py::test_update_with_project_forwards_scope",
       "scenarios": [
         "normal",
         "repeat",
@@ -11867,7 +11861,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.302,
+      "mapping_score": 0.311,
       "source_section": "memory"
     },
     {
@@ -12004,9 +11998,9 @@
         2211
       ],
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row"
+        "tests/integration/brain/test_handler_memory.py::test_delete_requires_id"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_settings_dialog_controls.py::test_memory_fact_delete_failure_matrix_keeps_retryable_row",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_memory.py::test_delete_requires_id",
       "scenarios": [
         "normal",
         "repeat",
@@ -12018,16 +12012,14 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [],
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.425,
+      "mapping_status": "direct",
+      "mapping_score": 0.495,
       "source_section": "memory"
     },
     {
@@ -12156,9 +12148,9 @@
         2240
       ],
       "test_node_ids": [
-        "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ],
-      "production_entry_point": "Production entry point exercised by tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model",
       "scenarios": [
         "normal",
         "repeat",
@@ -12178,7 +12170,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.554,
+      "mapping_score": 0.558,
       "source_section": "privacy_secrets"
     },
     {
@@ -12194,9 +12186,9 @@
         2247
       ],
       "test_node_ids": [
-        "tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ],
-      "production_entry_point": "Production entry point exercised by tests/test_settings_dialog_controls.py::test_advanced_privacy_warmup_tooltip_is_translated",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model",
       "scenarios": [
         "normal",
         "repeat",
@@ -12210,16 +12202,14 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [],
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.52,
+      "mapping_score": 0.649,
       "source_section": "privacy_secrets"
     },
     {
@@ -12235,9 +12225,9 @@
         2254
       ],
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/runtime/test_flows.py::test_settings_reload_prewarms_new_advanced_privacy_mode",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_config.py::test_privacy_prewarm_skips_non_advanced_mode",
       "scenarios": [
         "normal",
         "repeat",
@@ -12255,7 +12245,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.362,
+      "mapping_score": 0.387,
       "source_section": "privacy_secrets"
     },
     {
@@ -13904,9 +13894,9 @@
         2560
       ],
       "test_node_ids": [
-        "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process"
+        "tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_chat.py::test_chat_uses_addon_modified_final_response",
       "scenarios": [
         "normal",
         "repeat",
@@ -13924,7 +13914,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.233,
+      "mapping_score": 0.248,
       "source_section": "addons_mcp"
     },
     {
@@ -14245,9 +14235,9 @@
         2630
       ],
       "test_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task"
       ],
-      "production_entry_point": "Production entry point exercised by tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_agent.py::test_agent_last_spec_read_falls_back_to_newest_run_task",
       "scenarios": [
         "normal",
         "repeat",
@@ -14260,9 +14250,7 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [
         "function-specific app state"
@@ -14271,7 +14259,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.564,
+      "mapping_score": 0.575,
       "source_section": "agent_tasks"
     },
     {
@@ -14402,9 +14390,9 @@
         2663
       ],
       "test_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model",
       "scenarios": [
         "normal",
         "repeat",
@@ -14423,8 +14411,8 @@
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.468,
+      "mapping_status": "direct",
+      "mapping_score": 0.575,
       "source_section": "agent_tasks"
     },
     {
@@ -14599,9 +14587,9 @@
         2708
       ],
       "test_node_ids": [
-        "tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines"
+        "tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_agent_activity_i18n.py::test_agent_activity_translates_handoff_tool_and_model_lines",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_agent.py::test_agent_runs_a_scripted_model",
       "scenarios": [
         "normal",
         "repeat",
@@ -14618,8 +14606,8 @@
       "cleanup": [
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
-      "mapping_status": "section",
-      "mapping_score": 0.455,
+      "mapping_status": "direct",
+      "mapping_score": 0.531,
       "source_section": "agent_tasks"
     },
     {
@@ -14637,9 +14625,9 @@
         2717
       ],
       "test_node_ids": [
-        "tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_autostart.py::test_macos_start_on_login_writes_launch_agent",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips",
       "scenarios": [
         "normal",
         "repeat",
@@ -14657,7 +14645,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.253,
+      "mapping_score": 0.254,
       "source_section": "agent_tasks"
     },
     {
@@ -14713,9 +14701,9 @@
         2735
       ],
       "test_node_ids": [
-        "tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_agent_task_workflows.py::test_agent_manual_by_current_app_context_prompt_matrix",
+      "production_entry_point": "Section-level production surface represented by tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts",
       "scenarios": [
         "normal",
         "repeat",
@@ -14734,7 +14722,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.365,
+      "mapping_score": 0.393,
       "source_section": "agent_tasks"
     },
     {
@@ -14924,7 +14912,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "section",
-      "mapping_score": 0.1,
+      "mapping_score": 0.107,
       "source_section": "agent_tasks"
     },
     {
@@ -15023,49 +15011,9 @@
         2807
       ],
       "test_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run",
-      "scenarios": [
-        "normal",
-        "repeat",
-        "cleanup",
-        "dependency failure",
-        "recovery"
-      ],
-      "platforms": [
-        "windows",
-        "macos",
-        "linux"
-      ],
-      "optional_components": [],
-      "timeout_seconds": 30,
-      "persistent_state": [],
-      "cleanup": [
-        "workflow-owned processes, threads, timers, and temporary paths"
-      ],
-      "mapping_status": "section",
-      "mapping_score": 0.478,
-      "source_section": "agent_tasks"
-    },
-    {
-      "function_id": "F401",
-      "function": "Decline an agent permission request.",
-      "failure_refs": [
-        2808,
-        2809,
-        2810,
-        2811,
-        2812,
-        2813,
-        2814,
-        2815,
-        2816
-      ],
-      "test_node_ids": [
-        "tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run"
-      ],
-      "production_entry_point": "Production entry point exercised by tests/runtime/test_flows.py::test_agent_run_request_streams_through_brain_agent_run",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved",
       "scenarios": [
         "normal",
         "repeat",
@@ -15085,7 +15033,47 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.532,
+      "mapping_score": 0.509,
+      "source_section": "agent_tasks"
+    },
+    {
+      "function_id": "F401",
+      "function": "Decline an agent permission request.",
+      "failure_refs": [
+        2808,
+        2809,
+        2810,
+        2811,
+        2812,
+        2813,
+        2814,
+        2815,
+        2816
+      ],
+      "test_node_ids": [
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved"
+      ],
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved",
+      "scenarios": [
+        "normal",
+        "repeat",
+        "cleanup",
+        "dependency failure",
+        "recovery"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "optional_components": [],
+      "timeout_seconds": 30,
+      "persistent_state": [],
+      "cleanup": [
+        "workflow-owned processes, threads, timers, and temporary paths"
+      ],
+      "mapping_status": "direct",
+      "mapping_score": 0.581,
       "source_section": "agent_tasks"
     },
     {
@@ -15568,9 +15556,9 @@
         2923
       ],
       "test_node_ids": [
-        "tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ],
-      "production_entry_point": "Production entry point exercised by tests/test_agent_task_window_layout.py::test_agent_task_defaults_follow_assistant_language",
+      "production_entry_point": "Production entry point exercised by tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts",
       "scenarios": [
         "normal",
         "repeat",
@@ -15583,9 +15571,7 @@
         "macos",
         "linux"
       ],
-      "optional_components": [
-        "PySide6"
-      ],
+      "optional_components": [],
       "timeout_seconds": 30,
       "persistent_state": [
         "function-specific app state"
@@ -15594,7 +15580,7 @@
         "workflow-owned processes, threads, timers, and temporary paths"
       ],
       "mapping_status": "direct",
-      "mapping_score": 0.655,
+      "mapping_score": 0.686,
       "source_section": "agent_tasks"
     },
     {
@@ -16820,9 +16806,9 @@
         3130
       ],
       "test_node_ids": [
-        "tests/test_version_metadata.py::test_runtime_version_matches_project_metadata"
+        "tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata"
       ],
-      "production_entry_point": "Section-level production surface represented by tests/test_version_metadata.py::test_runtime_version_matches_project_metadata",
+      "production_entry_point": "Section-level production surface represented by tests/support/test_version_metadata.py::test_runtime_version_matches_project_metadata",
       "scenarios": [
         "normal",
         "repeat",

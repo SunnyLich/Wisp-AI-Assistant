@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_LOCKS = (
     "requirements/requirements-windows.lock",
     "requirements/requirements-linux.lock",

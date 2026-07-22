@@ -250,7 +250,6 @@ def _main(argv: list[str]) -> int:
         "-m",
         "pytest",
         "tests",
-        "runtime/brain/tests",
         "-q",
     ]
     if args.pytest_args:

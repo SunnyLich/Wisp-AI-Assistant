@@ -1,0 +1,2560 @@
+{
+  "schema_version": 1,
+  "required_axes": {
+    "behaviour": [
+      "internal",
+      "user_path"
+    ],
+    "execution": [
+      "github_safe",
+      "isolated_host"
+    ]
+  },
+  "scopes": [
+    "unit",
+    "component",
+    "integration",
+    "ui",
+    "e2e",
+    "native",
+    "support",
+    "catalog"
+  ],
+  "entries": [
+    {
+      "path": "tests/catalog/test_failure_coverage_manifest.py",
+      "kind": "pytest",
+      "scope": "catalog",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/catalog/test_feature_acceptance_manifest.py",
+      "kind": "pytest",
+      "scope": "catalog",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/catalog/test_test_map.py",
+      "kind": "pytest",
+      "scope": "catalog",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/catalog/test_workflow_manifest.py",
+      "kind": "pytest",
+      "scope": "catalog",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/integration/brain/test_brain_host.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 7
+    },
+    {
+      "path": "tests/integration/brain/test_handler_addons.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 10
+    },
+    {
+      "path": "tests/integration/brain/test_handler_agent.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 15
+    },
+    {
+      "path": "tests/integration/brain/test_handler_chat.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 21
+    },
+    {
+      "path": "tests/integration/brain/test_handler_config.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 33
+    },
+    {
+      "path": "tests/integration/brain/test_handler_context.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/integration/brain/test_handler_echo.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/integration/brain/test_handler_memory.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 13
+    },
+    {
+      "path": "tests/integration/brain/test_handler_ping.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/integration/brain/test_handler_query.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 37
+    },
+    {
+      "path": "tests/integration/brain/test_handler_transcribe.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/integration/brain/test_handler_tts.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 9
+    },
+    {
+      "path": "tests/integration/brain/test_integration_realuse.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/runtime/test_app_logging.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 17
+    },
+    {
+      "path": "tests/runtime/test_architecture_boundaries.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/runtime/test_audio_host_live.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 12
+    },
+    {
+      "path": "tests/runtime/test_audio_host_tts.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 19
+    },
+    {
+      "path": "tests/runtime/test_bootstrap.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/runtime/test_flows.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 176
+    },
+    {
+      "path": "tests/runtime/test_flows_live_voice.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 20
+    },
+    {
+      "path": "tests/runtime/test_flows_runtime_log.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/runtime/test_hotkey_helper_lifecycle.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/runtime/test_hotkey_tap_matching.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/runtime/test_hotkey_tap_swallow.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 7
+    },
+    {
+      "path": "tests/runtime/test_native_context.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 27
+    },
+    {
+      "path": "tests/runtime/test_runtime_log.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 13
+    },
+    {
+      "path": "tests/runtime/test_supervisor_ipc.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 38
+    },
+    {
+      "path": "tests/runtime/test_ui_host_agent_meeting.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/runtime/test_ui_host_reply.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 47
+    },
+    {
+      "path": "tests/runtime/test_ui_host_runtime_status.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/support/test_app_workflow_runner.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 18
+    },
+    {
+      "path": "tests/support/test_build_scripts.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 25
+    },
+    {
+      "path": "tests/support/test_ci_pytest_chunk.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/support/test_dependency_locks.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/support/test_docs_setup_guidance.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 7
+    },
+    {
+      "path": "tests/support/test_gitattributes.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/support/test_pip_recover_install.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/support/test_pytest_temp_cleanup.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 13
+    },
+    {
+      "path": "tests/support/test_python_version_check.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/support/test_runtime_test_harness.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/support/test_safe.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 11
+    },
+    {
+      "path": "tests/support/test_secret_scanner.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/support/test_setup_scripts.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 18
+    },
+    {
+      "path": "tests/support/test_testlab_install_plans.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/support/test_version_metadata.py",
+      "kind": "pytest",
+      "scope": "support",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_addon_manager.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 21
+    },
+    {
+      "path": "tests/test_addon_manager_ui.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 22
+    },
+    {
+      "path": "tests/test_addon_runtime.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_agent_activity_i18n.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_agent_run_log_parser.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_agent_runner.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 97
+    },
+    {
+      "path": "tests/test_agent_task_retry.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/test_agent_task_window_layout.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 16
+    },
+    {
+      "path": "tests/test_agent_task_workflows.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/test_app_icon.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/test_app_user_workflows.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 94
+    },
+    {
+      "path": "tests/test_assistant_text.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_audio_stream.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/test_autostart.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_bubble_transcript.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 46
+    },
+    {
+      "path": "tests/test_builtin_model_tools.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 36
+    },
+    {
+      "path": "tests/test_capture.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 19
+    },
+    {
+      "path": "tests/test_chat_rendering.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 12
+    },
+    {
+      "path": "tests/test_chat_window_render_limits.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 42
+    },
+    {
+      "path": "tests/test_chatgpt_auth.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 11
+    },
+    {
+      "path": "tests/test_config_env.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 47
+    },
+    {
+      "path": "tests/test_connection_management_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 7
+    },
+    {
+      "path": "tests/test_context_fetcher_linux.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "linux"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_context_fetcher_macos.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/test_context_fetcher_snapshot.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 26
+    },
+    {
+      "path": "tests/test_context_fetcher_windows.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows"
+      ],
+      "schedule": "github-actions",
+      "node_count": 26
+    },
+    {
+      "path": "tests/test_context_hotkey_snapshot.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/test_context_input_safety.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 9
+    },
+    {
+      "path": "tests/test_conversation_store.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 18
+    },
+    {
+      "path": "tests/test_copilot_client.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_core_paths_env.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_crash_report.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_dev_environment_check.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 50
+    },
+    {
+      "path": "tests/test_diagnostics_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 11
+    },
+    {
+      "path": "tests/test_document_context_contract.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 16
+    },
+    {
+      "path": "tests/test_drop_zone_scaling.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_env_utils.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/test_error_recommendations.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_external_conversation_sync.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 13
+    },
+    {
+      "path": "tests/test_feature_acceptance_workflows.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 45
+    },
+    {
+      "path": "tests/test_file_browser.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 7
+    },
+    {
+      "path": "tests/test_github_auth.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 9
+    },
+    {
+      "path": "tests/test_harness_auth.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/test_harness_clients.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 25
+    },
+    {
+      "path": "tests/test_harness_controls.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 15
+    },
+    {
+      "path": "tests/test_hotkey_capture.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/test_hotkeys_linux.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "linux"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_hotkeys_win32.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows"
+      ],
+      "schedule": "github-actions",
+      "node_count": 5
+    },
+    {
+      "path": "tests/test_i18n_catalog_sources.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/test_intent_actions_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_intent_context_preview_text.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_intent_overlay.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 48
+    },
+    {
+      "path": "tests/test_intent_overlay_keyboard_hook.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_launcher_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_linux_atspi.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "linux"
+      ],
+      "schedule": "github-actions",
+      "node_count": 19
+    },
+    {
+      "path": "tests/test_live_voice.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 13
+    },
+    {
+      "path": "tests/test_llm_fallbacks.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 50
+    },
+    {
+      "path": "tests/test_llm_history.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 7
+    },
+    {
+      "path": "tests/test_local_file_security.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 11
+    },
+    {
+      "path": "tests/test_macos_helper_ipc.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_macos_native.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/test_macos_safety.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_macos_ui_i18n.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_mcp_bridge.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_mcp_context_server.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 24
+    },
+    {
+      "path": "tests/test_memory_commands.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_memory_quality.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 24
+    },
+    {
+      "path": "tests/test_native_platform_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 15
+    },
+    {
+      "path": "tests/test_ollama_manager.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 10
+    },
+    {
+      "path": "tests/test_onboarding.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 19
+    },
+    {
+      "path": "tests/test_onboarding_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 21
+    },
+    {
+      "path": "tests/test_optional_deps.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 86
+    },
+    {
+      "path": "tests/test_optional_install_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_optional_install_dialog.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 23
+    },
+    {
+      "path": "tests/test_overlay_bubble_visibility.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 11
+    },
+    {
+      "path": "tests/test_overlay_shell_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_page_context_extraction.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/test_planned_chunking.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_platform_macos.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 19
+    },
+    {
+      "path": "tests/test_privacy_gateway.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 12
+    },
+    {
+      "path": "tests/test_privacy_model.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/test_privacy_review_ui.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_profile_user_workflows.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 9
+    },
+    {
+      "path": "tests/test_provider_auth_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_provider_controls_acceptance.py",
+      "kind": "pytest",
+      "scope": "e2e",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 138
+    },
+    {
+      "path": "tests/test_query_pipeline.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 28
+    },
+    {
+      "path": "tests/test_real_gpt55_integration.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "isolated_host",
+      "category": "II",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "isolated-host",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_real_harness_integration.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "isolated_host",
+      "category": "II",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "isolated-host",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_real_host_native_smoke.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "user_path",
+      "execution": "isolated_host",
+      "category": "IU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "isolated-host",
+      "node_count": 9
+    },
+    {
+      "path": "tests/test_release_manifest.py",
+      "kind": "pytest",
+      "scope": "catalog",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_released_speech_tester.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/test_rewrite_tool_call.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_screenshot_capability.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 18
+    },
+    {
+      "path": "tests/test_sdk_clients.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_secret_store.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 9
+    },
+    {
+      "path": "tests/test_settings_dialog_controls.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 163
+    },
+    {
+      "path": "tests/test_settings_env.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_settings_failure_matrix.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 13
+    },
+    {
+      "path": "tests/test_settings_fallback_rows.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_settings_model.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/test_setup_check.py",
+      "kind": "pytest",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 9
+    },
+    {
+      "path": "tests/test_shutdown_lifecycle.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_snip_overlay.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 17
+    },
+    {
+      "path": "tests/test_speech_failure_matrix.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_ssl_init_concurrency.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 17
+    },
+    {
+      "path": "tests/test_stt_macos_safety.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 11
+    },
+    {
+      "path": "tests/test_text_annotations.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_theme.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 1
+    },
+    {
+      "path": "tests/test_tool_modes.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tests/test_tool_registry.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 4
+    },
+    {
+      "path": "tests/test_tts_assets.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 8
+    },
+    {
+      "path": "tests/test_tts_connection.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 22
+    },
+    {
+      "path": "tests/test_tts_macos_safety.py",
+      "kind": "pytest",
+      "scope": "native",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 2
+    },
+    {
+      "path": "tests/test_unified_chat_harness.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 18
+    },
+    {
+      "path": "tests/test_uninstaller.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 13
+    },
+    {
+      "path": "tests/test_unsupported_params.py",
+      "kind": "pytest",
+      "scope": "unit",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 16
+    },
+    {
+      "path": "tests/test_updater.py",
+      "kind": "pytest",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "github_safe",
+      "category": "GI",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 17
+    },
+    {
+      "path": "tests/test_visual_regression.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 6
+    },
+    {
+      "path": "tests/test_window_chrome.py",
+      "kind": "pytest",
+      "scope": "ui",
+      "behaviour": "user_path",
+      "execution": "github_safe",
+      "category": "GU",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "github-actions",
+      "node_count": 3
+    },
+    {
+      "path": "tools/test_mic.py",
+      "kind": "manual",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "isolated_host",
+      "category": "II",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "schedule": "isolated-host-manual",
+      "node_count": 0
+    },
+    {
+      "path": "tools/test_packaged_windows_update.py",
+      "kind": "manual",
+      "scope": "component",
+      "behaviour": "internal",
+      "execution": "isolated_host",
+      "category": "II",
+      "platforms": [
+        "windows"
+      ],
+      "schedule": "isolated-host-manual",
+      "node_count": 0
+    },
+    {
+      "path": "tools/test_windows_updater_apply.py",
+      "kind": "manual",
+      "scope": "integration",
+      "behaviour": "internal",
+      "execution": "isolated_host",
+      "category": "II",
+      "platforms": [
+        "windows"
+      ],
+      "schedule": "isolated-host-manual",
+      "node_count": 0
+    }
+  ]
+}

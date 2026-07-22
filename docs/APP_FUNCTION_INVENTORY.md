@@ -5277,7 +5277,7 @@ Directly covered failure causes: **132 / 3,296**. The remaining **3,164** causes
 - [T003] [tests/test_setup_check.py](../tests/test_setup_check.py)::`test_setup_check_warns_when_stt_import_fails`
 - [T004] [tests/runtime/test_supervisor_ipc.py](../tests/runtime/test_supervisor_ipc.py)::`test_supervisor_shutdown_continues_after_one_worker_raises`
 - [T005] [tests/runtime/test_app_logging.py](../tests/runtime/test_app_logging.py)::`test_main_shuts_down_after_nonzero_ui_exit`
-- [T006] [runtime/brain/tests/test_handler_config.py](../runtime/brain/tests/test_handler_config.py)::`test_llm_test_requires_provider_and_model`
+- [T006] [tests/integration/brain/test_handler_config.py](../tests/integration/brain/test_handler_config.py)::`test_llm_test_requires_provider_and_model`
 - [T007] [tests/test_llm_fallbacks.py](../tests/test_llm_fallbacks.py)::`LlmFallbackTests::test_stream_with_fallbacks_cools_down_transient_503_and_summarizes_failures`
 - [T008] [tests/test_app_user_workflows.py](../tests/test_app_user_workflows.py)::`test_provider_fallback_cooldown_capability_and_auth_redaction_workflow`
 - [T009] [tests/test_llm_fallbacks.py](../tests/test_llm_fallbacks.py)::`LlmFallbackTests::test_openai_compat_tools_unsupported_downgrades_to_frontloaded_context`
@@ -5318,9 +5318,9 @@ Directly covered failure causes: **132 / 3,296**. The remaining **3,164** causes
 - [T044] [tests/test_live_voice.py](../tests/test_live_voice.py)::`test_connector_failure_emits_error_then_ended`
 - [T045] [tests/test_memory_quality.py](../tests/test_memory_quality.py)::`test_rejects_secrets`
 - [T046] [tests/test_memory_quality.py](../tests/test_memory_quality.py)::`test_retrieve_relevant_returns_empty_for_unmatched_query`
-- [T047] [runtime/brain/tests/test_handler_memory.py](../runtime/brain/tests/test_handler_memory.py)::`test_add_requires_text`
-- [T048] [runtime/brain/tests/test_handler_memory.py](../runtime/brain/tests/test_handler_memory.py)::`test_update_requires_id_and_text`
-- [T049] [runtime/brain/tests/test_handler_memory.py](../runtime/brain/tests/test_handler_memory.py)::`test_delete_requires_id`
+- [T047] [tests/integration/brain/test_handler_memory.py](../tests/integration/brain/test_handler_memory.py)::`test_add_requires_text`
+- [T048] [tests/integration/brain/test_handler_memory.py](../tests/integration/brain/test_handler_memory.py)::`test_update_requires_id_and_text`
+- [T049] [tests/integration/brain/test_handler_memory.py](../tests/integration/brain/test_handler_memory.py)::`test_delete_requires_id`
 - [T050] [tests/test_privacy_gateway.py](../tests/test_privacy_gateway.py)::`test_review_receives_only_scrubbed_request_and_can_cancel`
 - [T051] [tests/test_privacy_gateway.py](../tests/test_privacy_gateway.py)::`test_ai_detector_failure_is_fail_closed`
 - [T052] [tests/test_privacy_gateway.py](../tests/test_privacy_gateway.py)::`test_builtin_detector_rejects_invalid_card_and_iban_candidates`

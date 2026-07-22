@@ -1,8 +1,8 @@
 name: macOS compatibility
 
-# Verifies the app stays importable and the pyobjc-backed platform helpers run
-# on real macOS, without needing a Mac locally. GUI behaviour, global hotkeys and
-# the Accessibility/Screen-Recording permission flow still require manual testing.
+# Verifies the GitHub-safe suite and pyobjc-backed platform helpers on macOS.
+# Qt widget workflows run offscreen. Global hotkeys and privacy-permission flows
+# remain in the isolated-host workflow because hosted runners cannot grant them.
 #
 # Note: macOS runner minutes bill at 10x on private repos. Triggers are scoped to
 # relevant paths + manual dispatch to keep cost down.
@@ -15,6 +15,7 @@ on:
       - "ui/**"
       - "runtime/**"
       - "packaging/**"
+      - "tests/**"
       - "config.py"
       - "requirements/*.txt"
       - "requirements/*.lock"
@@ -26,6 +27,9 @@ on:
       - "scripts/compile_macos_lock.sh"
       - "scripts/macos_testbot.py"
       - "scripts/macos_smoke.py"
+      - "scripts/test_map.py"
+      - "scripts/run_ci_pytest_chunk.py"
+      - "pytest.ini"
       - ".python-version"
       - ".github/workflows/macos.yml"
   pull_request:
@@ -34,6 +38,7 @@ on:
       - "ui/**"
       - "runtime/**"
       - "packaging/**"
+      - "tests/**"
       - "config.py"
       - "requirements/*.txt"
       - "requirements/*.lock"
@@ -45,6 +50,9 @@ on:
       - "scripts/compile_macos_lock.sh"
       - "scripts/macos_testbot.py"
       - "scripts/macos_smoke.py"
+      - "scripts/test_map.py"
+      - "scripts/run_ci_pytest_chunk.py"
+      - "pytest.ini"
       - ".python-version"
       - ".github/workflows/macos.yml"
   workflow_dispatch:
@@ -52,6 +60,10 @@ on:
 jobs:
   smoke:
     runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      PYTHONFAULTHANDLER: "1"
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v7
 
@@ -108,6 +120,7 @@ jobs:
       - name: Install locked dependencies
         run: |
           uv pip sync requirements/requirements-macos.lock --python "$(command -v python)" --strict
+          uv pip install --python "$(command -v python)" -r requirements/requirements-dev.lock
 
       - name: Byte-compile all sources
         run: python -m compileall -q core ui runtime config.py
@@ -120,5 +133,10 @@ jobs:
       - name: Native SSL init stress test
         run: python scripts/macos_testbot.py ssl-race --iterations 20
 
-      - name: Platform unit tests
-        run: python -m unittest tests.test_platform_macos -v
+      - name: Verify test catalogue and schedules
+        run: python scripts/test_map.py --check
+
+      # One test file per process keeps a native Qt crash from destroying the
+      # rest of the run. The single macOS job also keeps execution serial.
+      - name: Run GitHub-safe test suite serially
+        run: python scripts/run_ci_pytest_chunk.py --chunk-index 1 --chunk-total 1 --per-file

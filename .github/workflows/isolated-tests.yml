@@ -1,0 +1,102 @@
+name: Isolated native and credentialed tests
+
+# This workflow is intentionally manual and targets only dedicated runners.
+# The `isolated-tests` environment must be protected and contain test-only
+# credentials. Never place personal desktop credentials in this environment.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Dedicated host operating system
+        required: true
+        type: choice
+        options:
+          - windows
+          - linux
+          - macos
+
+concurrency:
+  group: isolated-tests-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    if: inputs.target == 'windows'
+    runs-on: [self-hosted, wisp-isolated, windows]
+    environment: isolated-tests
+    timeout-minutes: 120
+    env:
+      WISP_ISOLATED_TEST_HOST: "1"
+      WISP_RUN_REAL_HOST_TESTS: "1"
+      WISP_RUN_REAL_GPT55_TESTS: "1"
+      WISP_RUN_REAL_HARNESS_TESTS: "1"
+      PYTHONFAULTHANDLER: "1"
+      OPENAI_API_KEY: ${{ secrets.WISP_CI_OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.WISP_CI_ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/requirements-windows.lock -r requirements/requirements-dev.lock
+      - name: Verify catalogue
+        run: python scripts/test_map.py --check
+      - name: Run isolated tests
+        run: python -m pytest -m isolated_host -ra --tb=short --basetemp .pytest-tmp-isolated-windows
+
+  linux:
+    if: inputs.target == 'linux'
+    runs-on: [self-hosted, wisp-isolated, linux]
+    environment: isolated-tests
+    timeout-minutes: 120
+    env:
+      WISP_ISOLATED_TEST_HOST: "1"
+      WISP_RUN_REAL_HOST_TESTS: "1"
+      WISP_RUN_REAL_GPT55_TESTS: "1"
+      WISP_RUN_REAL_HARNESS_TESTS: "1"
+      PYTHONFAULTHANDLER: "1"
+      OPENAI_API_KEY: ${{ secrets.WISP_CI_OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.WISP_CI_ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/requirements-linux.lock -r requirements/requirements-dev.lock
+      - name: Verify catalogue
+        run: python scripts/test_map.py --check
+      - name: Run isolated tests in Xvfb
+        run: xvfb-run -a python -m pytest -m isolated_host -ra --tb=short --basetemp .pytest-tmp-isolated-linux
+
+  macos:
+    if: inputs.target == 'macos'
+    runs-on: [self-hosted, wisp-isolated, macos]
+    environment: isolated-tests
+    timeout-minutes: 120
+    env:
+      WISP_ISOLATED_TEST_HOST: "1"
+      WISP_RUN_REAL_HOST_TESTS: "1"
+      WISP_RUN_REAL_GPT55_TESTS: "1"
+      WISP_RUN_REAL_HARNESS_TESTS: "1"
+      PYTHONFAULTHANDLER: "1"
+      OPENAI_API_KEY: ${{ secrets.WISP_CI_OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.WISP_CI_ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/requirements-macos.lock -r requirements/requirements-dev.lock
+      - name: Verify catalogue
+        run: python scripts/test_map.py --check
+      - name: Run isolated tests serially
+        run: python -m pytest -m isolated_host -ra --tb=short --basetemp .pytest-tmp-isolated-macos

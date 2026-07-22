@@ -237,7 +237,7 @@ if ! "$VPY" -c "import pytest" >/dev/null 2>&1; then
   run_logged "python-pytest-install" "$VPY" -m pip install pytest
 fi
 
-run_logged "python-tests" "$VPY" -m pytest tests runtime/brain/tests -q
+run_logged "python-tests" "$VPY" -m pytest tests -q
 
 echo
 echo "Pure-Python macOS verification passed."

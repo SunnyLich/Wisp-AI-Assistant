@@ -11,7 +11,7 @@ from scripts.workflow_manifest import load_inventory, load_manifest, validate_ma
 
 pytestmark = pytest.mark.workflow
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 INVENTORY = ROOT / "docs" / "APP_FUNCTION_INVENTORY.md"
 MANIFEST = ROOT / "tests" / "workflows" / "manifest.json"
 

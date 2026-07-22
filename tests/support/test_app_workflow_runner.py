@@ -73,7 +73,7 @@ def test_workflow_runner_covers_core_user_workflows():
     expected = {
         "tests/test_app_user_workflows.py",
         "tests/test_profile_user_workflows.py",
-        "tests/test_workflow_manifest.py",
+        "tests/catalog/test_workflow_manifest.py",
         "tests/runtime/test_flows.py",
         "tests/test_error_recommendations.py",
         "tests/test_i18n_catalog_sources.py",
@@ -116,7 +116,7 @@ def test_workflow_runner_executes_every_direct_failure_evidence_node():
 
     assert set(nodes) == expected
     assert len(nodes) >= 82
-    assert any(node.startswith("runtime/brain/tests/") for node in nodes)
+    assert any(node.startswith("tests/integration/brain/") for node in nodes)
 
 
 def test_workflow_runner_reports_honest_feature_acceptance_counts():

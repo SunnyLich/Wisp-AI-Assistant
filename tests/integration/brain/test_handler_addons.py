@@ -250,9 +250,8 @@ def test_addon_llm_call_applies_permission_cap_privacy_and_request_limits(tmp_pa
     """A permitted add-on gets one private capped model call, then hits its quota."""
     from types import SimpleNamespace
 
-    from core import addon_store
+    from core import addon_store, privacy_gateway
     from core.llm_clients import client as llm_client
-    from core import privacy_gateway
 
     addon = SimpleNamespace(
         id="demo-llm",

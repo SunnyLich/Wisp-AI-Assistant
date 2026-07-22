@@ -3293,8 +3293,8 @@
       "production_entry_point": "LLM Advanced planned-chunking checkbox -> persisted config -> brain.query eligibility gate -> hidden plan/visible chunk stream",
       "test_node_ids": [
         "tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens",
-        "runtime/brain/tests/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible",
-        "runtime/brain/tests/test_handler_query.py::test_query_uses_normal_stream_when_planned_chunking_is_disabled",
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible",
+        "tests/integration/brain/test_handler_query.py::test_query_uses_normal_stream_when_planned_chunking_is_disabled",
         "tests/test_planned_chunking.py::test_planned_chunking_emits_visible_parts_from_hidden_plan"
       ],
       "success_assertions": [
@@ -3314,8 +3314,8 @@
       "production_entry_point": "planned chunk-count/minimum fields -> settings persistence/config clamp -> brain.query planned selection",
       "test_node_ids": [
         "tests/test_app_user_workflows.py::test_settings_real_apply_click_persists_and_reopens",
-        "runtime/brain/tests/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible",
-        "runtime/brain/tests/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix",
+        "tests/integration/brain/test_handler_query.py::test_query_uses_planned_chunking_when_enabled_and_eligible",
+        "tests/integration/brain/test_handler_query.py::test_planned_chunking_enable_by_prompt_threshold_matrix",
         "tests/test_config_env.py::ConfigEnvTests::test_reload_parses_planned_chunking_flags"
       ],
       "success_assertions": [
@@ -3448,7 +3448,7 @@
       "acceptance_status": "real_entry_accepted",
       "production_entry_point": "Wisp execution selection -> brain.chat -> Wisp model stream with full local conversation",
       "test_node_ids": [
-        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
+        "tests/integration/brain/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
         "tests/test_settings_dialog_controls.py::test_app_settings_starts_with_conversation_harness_selector"
       ],
       "success_assertions": [
@@ -3466,8 +3466,8 @@
       "acceptance_status": "real_entry_accepted",
       "production_entry_point": "ChatGPT/Claude execution selection -> brain.chat -> selected harness start/resume",
       "test_node_ids": [
-        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
-        "runtime/brain/tests/test_handler_chat.py::test_chat_harness_streams_thought_and_reply_and_returns_session"
+        "tests/integration/brain/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
+        "tests/integration/brain/test_handler_chat.py::test_chat_harness_streams_thought_and_reply_and_returns_session"
       ],
       "success_assertions": [
         "Both ChatGPT and Claude invoke only their selected harness, stream the answer, and resume or clear session metadata according to ownership."
@@ -3492,8 +3492,8 @@
       "production_entry_point": "App conversation-owner combo -> brain.chat conversation_owner -> history transfer/resume metadata",
       "test_node_ids": [
         "tests/test_settings_dialog_controls.py::test_app_settings_starts_with_conversation_harness_selector",
-        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
-        "runtime/brain/tests/test_handler_chat.py::test_wisp_owned_harness_turn_sends_full_history_without_resuming"
+        "tests/integration/brain/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
+        "tests/integration/brain/test_handler_chat.py::test_wisp_owned_harness_turn_sends_full_history_without_resuming"
       ],
       "success_assertions": [
         "For both agents, Wisp ownership sends full history and clears provider linkage; agent ownership resumes the provider session and avoids replaying prior turns."
@@ -3775,7 +3775,7 @@
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_chatgpt_settings_login_status_and_logout_real_button_workflow",
         "tests/test_chatgpt_auth.py::test_browser_oauth_valid_callback_uses_pkce_and_persists_tokens",
-        "runtime/brain/tests/test_handler_config.py::test_auth_chatgpt_browser_login_streams_started_and_success"
+        "tests/integration/brain/test_handler_config.py::test_auth_chatgpt_browser_login_streams_started_and_success"
       ],
       "success_assertions": [
         "The visible Sign in button starts browser OAuth, a valid state/PKCE callback stores tokens, and the real poll changes Settings to the logged-in account."
@@ -3794,8 +3794,8 @@
       "production_entry_point": "Settings ChatGPT status refresh/poll -> shared OAuth credential reader -> visible status label",
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_chatgpt_settings_login_status_and_logout_real_button_workflow",
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_does_not_expose_tokens",
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_does_not_expose_tokens",
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "success_assertions": [
         "Signed out, signed in with truncated account identity, and credential-read error each render the correct non-secret visible state."
@@ -3814,7 +3814,7 @@
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_chatgpt_settings_login_status_and_logout_real_button_workflow",
         "tests/test_chatgpt_auth.py::test_chunked_token_roundtrip_rewrite_and_clear",
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_handlers_call_shared_modules"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_handlers_call_shared_modules"
       ],
       "success_assertions": [
         "The visible button removes all secure token chunks, refreshes dependent model choices, and returns the label to Not logged in."
@@ -3834,7 +3834,7 @@
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow",
         "tests/test_github_auth.py::test_github_device_flow_pending_then_persists_validated_user",
-        "runtime/brain/tests/test_handler_config.py::test_auth_github_device_login_streams_code_and_success"
+        "tests/integration/brain/test_handler_config.py::test_auth_github_device_login_streams_code_and_success"
       ],
       "success_assertions": [
         "The visible button starts device auth, displays the copyable code, opens its verification URL, stores the validated GitHub user, and shows the login/scopes."
@@ -3853,8 +3853,8 @@
       "production_entry_point": "Settings GitHub status refresh/poll -> shared OAuth credential reader -> visible login/scopes label",
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow",
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_does_not_expose_tokens",
-        "runtime/brain/tests/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
+        "tests/integration/brain/test_handler_config.py::test_auth_status_does_not_expose_tokens",
+        "tests/integration/brain/test_handler_config.py::test_auth_status_failure_matrix_is_controlled"
       ],
       "success_assertions": [
         "Signed out, signed in with username/scopes, and credential-read error each render correctly without exposing access tokens."
@@ -3872,8 +3872,8 @@
       "production_entry_point": "Connections > GitHub Sign out button -> clear secure token -> GitHub/Copilot/model-route refresh",
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_github_settings_device_status_logout_and_override_real_button_workflow",
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_handlers_call_shared_modules",
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_handlers_call_shared_modules",
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "success_assertions": [
         "The visible button clears the GitHub credential, refreshes dependent Copilot/model state, and returns to Not logged in; failed removal is not reported as success."
@@ -3911,8 +3911,8 @@
       "production_entry_point": "Connections > Copilot row token -> visible Connect token/Clear token buttons -> OS credential module",
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow",
-        "runtime/brain/tests/test_handler_config.py::test_auth_copilot_set_and_test_call_shared_modules",
-        "runtime/brain/tests/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
+        "tests/integration/brain/test_handler_config.py::test_auth_copilot_set_and_test_call_shared_modules",
+        "tests/integration/brain/test_handler_config.py::test_auth_clear_failure_matrix_is_controlled_and_verified"
       ],
       "success_assertions": [
         "Connect stores and clears the typed token field with a secure-store status; Clear removes and verifies it, leaving the visible no-token state."
@@ -3932,7 +3932,7 @@
       "production_entry_point": "Connections > visible Copilot Test connection button -> production Copilot client probe -> status label",
       "test_node_ids": [
         "tests/test_provider_auth_acceptance.py::test_copilot_settings_connect_test_and_clear_real_button_workflow",
-        "runtime/brain/tests/test_handler_config.py::test_auth_copilot_set_and_test_call_shared_modules"
+        "tests/integration/brain/test_handler_config.py::test_auth_copilot_set_and_test_call_shared_modules"
       ],
       "success_assertions": [
         "A valid token shows success; provider rejection and cleared/no credential show failure through the same visible test button."
@@ -4994,7 +4994,7 @@
       "production_entry_point": "Settings Run conversations with selector -> Save/config reload -> brain.chat -> Wisp stream or selected local agent adapter",
       "test_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_conversation_engine_and_owner_settings_drive_runtime_dispatch_matrix",
-        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix"
+        "tests/integration/brain/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix"
       ],
       "success_assertions": [
         "Wisp, ChatGPT, and Claude Agent selections persist through real Settings Save and the next production brain turn returns the selected engine's complete answer."
@@ -5013,8 +5013,8 @@
       "production_entry_point": "Settings conversation owner selector -> Save/config reload -> brain.chat history handoff or provider session resume",
       "test_node_ids": [
         "tests/test_feature_acceptance_workflows.py::test_conversation_engine_and_owner_settings_drive_runtime_dispatch_matrix",
-        "runtime/brain/tests/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
-        "runtime/brain/tests/test_handler_chat.py::test_wisp_owned_harness_turn_sends_full_history_without_resuming"
+        "tests/integration/brain/test_handler_chat.py::test_chat_execution_provider_by_conversation_owner_matrix",
+        "tests/integration/brain/test_handler_chat.py::test_wisp_owned_harness_turn_sends_full_history_without_resuming"
       ],
       "success_assertions": [
         "Wisp ownership sends full Wisp history and clears provider continuation; agent ownership sends only the new turn and resumes its session; the unavailable Wisp-engine/agent-owner pairing is disabled and persists Wisp ownership."
@@ -6045,7 +6045,7 @@
         "tests/test_feature_acceptance_workflows.py::test_visible_privacy_install_repair_and_remove_actions_use_exact_local_boundaries",
         "tests/test_feature_acceptance_workflows.py::test_saved_privacy_modes_change_exact_model_bound_text_and_restore_the_reply",
         "tests/test_privacy_model.py::test_installer_uses_official_weights_and_verified_pinned_runtime",
-        "runtime/brain/tests/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
+        "tests/integration/brain/test_handler_config.py::test_privacy_prewarm_loads_installed_advanced_model"
       ],
       "success_assertions": [
         "Install and repair launch the official isolated installer command/status/environment; a verified Advanced selection persists and adds its local person detection to the model-bound request."
@@ -6866,7 +6866,7 @@
       "test_node_ids": [
         "tests/test_addon_manager.py::test_missing_permissions_deny_surfaces",
         "tests/test_addon_manager.py::test_response_transform_hook_requires_modify_permission_and_chains",
-        "runtime/brain/tests/test_handler_addons.py::test_addon_llm_call_applies_permission_cap_privacy_and_request_limits"
+        "tests/integration/brain/test_handler_addons.py::test_addon_llm_call_applies_permission_cap_privacy_and_request_limits"
       ],
       "success_assertions": [
         "Missing permissions suppress query modification, tray/settings/tools and deny LLM calls; read versus modify response permissions produce their exact allowed behavior."
@@ -6884,7 +6884,7 @@
       "production_entry_point": "brain query -> enabled query-permission add-on before_query host hook -> final provider prompt/context",
       "test_node_ids": [
         "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process",
-        "runtime/brain/tests/test_handler_query.py::test_query_runs_shared_addon_before_and_after_hooks"
+        "tests/integration/brain/test_handler_query.py::test_query_runs_shared_addon_before_and_after_hooks"
       ],
       "success_assertions": [
         "The real host modifies prompt/context before the model and the complete brain query observes both additions."
@@ -6926,7 +6926,7 @@
       "test_node_ids": [
         "tests/test_addon_manager.py::test_addon_hooks_and_tools_run_in_host_process",
         "tests/test_addon_manager.py::test_response_transform_hook_requires_modify_permission_and_chains",
-        "runtime/brain/tests/test_handler_query.py::test_query_uses_addon_modified_final_response"
+        "tests/integration/brain/test_handler_query.py::test_query_uses_addon_modified_final_response"
       ],
       "success_assertions": [
         "A modify-permitted chain changes the committed reply in order, the completed text reaches after_response, and the real host records the exact final response."
@@ -7030,7 +7030,7 @@
       "acceptance_status": "real_entry_accepted",
       "production_entry_point": "brain.addons.llm_call -> enabled/permission/hourly cap -> shared privacy gateway -> no-tools provider request -> restored result",
       "test_node_ids": [
-        "runtime/brain/tests/test_handler_addons.py::test_addon_llm_call_applies_permission_cap_privacy_and_request_limits"
+        "tests/integration/brain/test_handler_addons.py::test_addon_llm_call_applies_permission_cap_privacy_and_request_limits"
       ],
       "success_assertions": [
         "A permitted call redacts provider text, disables tools, clamps max tokens to 2048, preserves temperature, restores the reply, reports remaining quota, then rejects over-cap and unpermitted calls."
@@ -7090,7 +7090,7 @@
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
         "tests/runtime/test_flows.py::test_addon_and_agent_tray_events_route_through_supervisor",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_fake_llm_completes_in_one_turn"
+        "tests/integration/brain/test_handler_agent.py::test_agent_fake_llm_completes_in_one_turn"
       ],
       "success_assertions": [
         "The actual tray action opens the task window, visible Start Task emits the complete resolved spec, and that spec shape completes a real deterministic agent run."
@@ -7109,7 +7109,7 @@
       "production_entry_point": "Visible Copy from Last Task button -> persisted/class last AgentTaskSpec -> every task field",
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
+        "tests/integration/brain/test_handler_agent.py::test_agent_last_spec_write_and_read_round_trips"
       ],
       "success_assertions": [
         "A submitted task is persisted, copied into a fresh visible dialog, and restores objective, context, scope, fallbacks, agents, and parallel settings."
@@ -7450,7 +7450,7 @@
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_tray_setup_copy_preview_and_submit_real_workflow",
         "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_fake_llm_completes_in_one_turn",
+        "tests/integration/brain/test_handler_agent.py::test_agent_fake_llm_completes_in_one_turn",
         "tests/test_agent_runner.py::AgentRunnerTests::test_runner_can_be_cancelled_before_first_turn"
       ],
       "success_assertions": [
@@ -7474,7 +7474,7 @@
       "production_entry_point": "Live permission panel Approve button -> approval state/event -> waiting AgentToolbox operation",
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_run_approval_request_can_be_approved",
+        "tests/integration/brain/test_handler_agent.py::test_agent_run_approval_request_can_be_approved",
         "tests/test_agent_runner.py::AgentRunnerTests::test_ask_permission_mode_invokes_approval_callback_without_ask_tool"
       ],
       "success_assertions": [
@@ -7636,7 +7636,7 @@
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
         "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_history_retry_and_continue_specs"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_retry_and_continue_specs"
       ],
       "success_assertions": [
         "Both live-run and history Retry reopen a usable spec with the original title/objective/scope."
@@ -7655,7 +7655,7 @@
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
         "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_history_retry_and_continue_specs"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_retry_and_continue_specs"
       ],
       "success_assertions": [
         "Both Continue actions prefix the title and add the previous final plus useful run events to required context."
@@ -7692,7 +7692,7 @@
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_run_visible_tabs_approval_controls_and_artifacts_workflow",
         "tests/test_agent_runner.py::AgentRunnerTests::test_control_pause_and_resume",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_control_routes_to_registered_run_control"
+        "tests/integration/brain/test_handler_agent.py::test_agent_control_routes_to_registered_run_control"
       ],
       "success_assertions": [
         "First click requests a cooperative pause and changes to Resume; second clears the gate, and registered brain control routes do the same."
@@ -7748,7 +7748,7 @@
       "production_entry_point": "Selected AgentRunHistoryWindow item -> Summary/Run Log/Model Trace/Diff artifact tabs",
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_history_reads_run_artifacts"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_reads_run_artifacts"
       ],
       "success_assertions": [
         "One saved run loads its title/spec/final into Summary and exact run log, verbose trace, and patch into the other three tabs."
@@ -7766,7 +7766,7 @@
       "production_entry_point": "Visible history Refresh/Open Memory Folder buttons -> rescan runs root and QDesktopServices",
       "test_node_ids": [
         "tests/test_agent_task_workflows.py::test_agent_history_visible_refresh_tabs_folder_retry_and_continue_workflow",
-        "runtime/brain/tests/test_handler_agent.py::test_agent_history_lists_previous_runtime_runs_after_restart"
+        "tests/integration/brain/test_handler_agent.py::test_agent_history_lists_previous_runtime_runs_after_restart"
       ],
       "success_assertions": [
         "Refresh discovers a newly written second run in newest-first order and Open Memory Folder receives the selected original run path."

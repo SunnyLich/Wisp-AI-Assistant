@@ -2,7 +2,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / ".github" / "README.md"
 REQUIREMENTS_DOC = ROOT / "docs" / "DEPENDENCY_LOCKS.md"
 

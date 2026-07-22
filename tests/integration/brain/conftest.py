@@ -18,8 +18,8 @@ from typing import Any
 import pytest
 
 _TESTS_DIR = Path(__file__).resolve().parent
-_BRAIN_DIR = _TESTS_DIR.parent              # runtime/brain
-_REPO_ROOT = _TESTS_DIR.parents[2]          # repo root (has core/, config.py)
+_REPO_ROOT = _TESTS_DIR.parents[3]          # repo root (has core/, config.py)
+_BRAIN_DIR = _REPO_ROOT / "runtime" / "brain"
 
 for _p in (str(_BRAIN_DIR), str(_REPO_ROOT), str(_TESTS_DIR)):
     if _p not in sys.path:

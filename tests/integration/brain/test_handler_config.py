@@ -835,7 +835,9 @@ def test_auth_chatgpt_browser_login_failure_matrix_is_in_band(monkeypatch):
         )
         events = []
         ctx = handlers.StreamContext(
-            lambda name, data, req_id: events.append((name, data, req_id)),
+            lambda name, data, req_id, events=events: events.append(
+                (name, data, req_id)
+            ),
             req_id=9,
         )
         result = handlers.HANDLERS["brain.auth.chatgpt.browser_login"](

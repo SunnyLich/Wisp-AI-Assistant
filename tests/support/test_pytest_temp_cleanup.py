@@ -14,7 +14,7 @@ from scripts import pytest_temp_cleanup
 def test_child_process_recognizes_live_parent_pid():
     """The Windows handle check must not truncate a live 64-bit process handle."""
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     code = (
         "from scripts.pytest_temp_cleanup import _process_is_running; "
         f"print(_process_is_running({os.getpid()}))"

@@ -15,7 +15,7 @@ from scripts.workflow_manifest import load_manifest
 
 pytestmark = pytest.mark.workflow
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ACCEPTANCE = ROOT / "tests" / "workflows" / "feature_acceptance.json"
 INTERACTIONS = ROOT / "tests" / "workflows" / "feature_interactions.json"
 
