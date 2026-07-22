@@ -925,6 +925,123 @@ def test_three_conversation_system_prompts_save_reload_and_remain_independent(
         driver.pump()
 
 
+def test_conversation_engine_and_owner_settings_drive_runtime_dispatch_matrix(
+    qapp,
+    live_runtime_settings,
+    monkeypatch,
+):
+    """Save every valid engine/owner pairing, then use it for a real brain turn."""
+
+    from PySide6.QtWidgets import QPushButton
+
+    import config
+    from core import harness_clients
+    from core.harness_clients.base import HarnessResult
+    from ui.settings_panel.dialog import SettingsDialog, _set
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "runtime" / "brain"))
+    from wisp_brain import handlers
+
+    driver = QtUserDriver(qapp, timeout=2.0)
+    harness_calls = []
+
+    def fake_harness(provider, prompt, **kwargs):
+        harness_calls.append((provider, prompt, dict(kwargs)))
+        return HarnessResult(provider, f"{provider} answer", "new-session", "/repo")
+
+    monkeypatch.setattr(harness_clients, "run_harness", fake_harness)
+    monkeypatch.setattr(
+        handlers,
+        "_stream_chat_reply",
+        lambda *_args, **_kwargs: iter(["wisp answer"]),
+    )
+
+    scenarios = [
+        ("wisp", "wisp", "wisp"),
+        ("wisp", "agent", "wisp"),
+        ("codex", "wisp", "wisp"),
+        ("codex", "agent", "agent"),
+        ("claude", "wisp", "wisp"),
+        ("claude", "agent", "agent"),
+    ]
+    for index, (provider, requested_owner, effective_owner) in enumerate(scenarios):
+        dialog = SettingsDialog()
+        try:
+            _unique_shortcuts(dialog)
+            _set(dialog._fields["CHAT_EXECUTION_MODE"], provider)
+            driver.pump()
+            owner_field = dialog._fields["CHAT_CONVERSATION_OWNER"]
+            assert owner_field.isEnabled() is (provider != "wisp")
+            if owner_field.isEnabled():
+                _set(owner_field, requested_owner)
+            else:
+                assert requested_owner in {"wisp", "agent"}
+                assert owner_field.currentData() == "wisp"
+            dialog._fields["SYSTEM_PROMPT_UTILITY"].setPlainText(
+                f"Wisp runtime prompt {index}."
+            )
+            driver.pump()
+
+            save = dialog.findChild(QPushButton, "settingsApplyButton")
+            assert save is not None and save.isEnabled()
+            driver.click(save)
+
+            assert config.CHAT_EXECUTION_MODE == provider
+            assert config.CHAT_CONVERSATION_OWNER == effective_owner
+            assert f"Wisp runtime prompt {index}." in config.get_system_prompt()
+
+            # Keep this workflow offline after the real Settings reload. The
+            # selected Wisp route/agent adapter and ownership logic remain real.
+            config.TRUST_PRIVACY_MODE = False
+            harness_calls.clear()
+            events = []
+            ctx = handlers.StreamContext(
+                lambda event, data, request_id: events.append((event, data, request_id)),
+                269,
+            )
+            result = handlers.HANDLERS["brain.chat"](
+                ctx,
+                messages=[
+                    {"role": "user", "content": "Earlier question"},
+                    {"role": "assistant", "content": "Earlier answer"},
+                    {"role": "user", "content": "Continue now"},
+                ],
+                memory_enabled=False,
+                harness_session={
+                    "provider": provider,
+                    "session_id": "old-session",
+                    "cwd": "/repo",
+                },
+            )
+
+            if provider == "wisp":
+                assert harness_calls == []
+                assert result["text"] == "wisp answer"
+                assert "harness" not in result
+            else:
+                assert len(harness_calls) == 1
+                selected, prompt, kwargs = harness_calls[0]
+                assert selected == provider
+                assert kwargs["session_id"] == (
+                    "old-session" if effective_owner == "agent" else ""
+                )
+                assert ("Earlier question" in prompt) is (effective_owner == "wisp")
+                assert prompt.endswith("Continue now")
+                assert result["text"] == f"{provider} answer"
+                assert result["harness"]["conversation_owner"] == effective_owner
+                assert result["harness"]["session_id"] == (
+                    "new-session" if effective_owner == "agent" else ""
+                )
+                assert result["harness"]["clear_session"] is (effective_owner == "wisp")
+            assert [
+                data["text"] for event, data, _request_id in events if event == "reply.done"
+            ] == [result["text"]]
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+            driver.pump()
+
+
 def test_builtin_profile_action_saves_and_reopens_as_the_active_runtime_profile(
     qapp,
     live_runtime_settings,
