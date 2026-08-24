@@ -84,6 +84,31 @@ def test_settings_combo_ignores_wheel_when_popup_closed():
 
 
 @pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
+def test_general_setting_reveals_optional_auto_open_bubble_choice():
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from ui.settings_panel.dialog import SettingsDialog
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    dialog = SettingsDialog()
+    try:
+        auto_open = dialog._fields["CHAT_OPEN_ON_PROMPT"]
+        hide_bubble = dialog._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"]
+
+        auto_open.setChecked(False)
+        assert hide_bubble.isHidden()
+        assert not hide_bubble.isEnabled()
+
+        auto_open.setChecked(True)
+        assert not hide_bubble.isHidden()
+        assert hide_bubble.isEnabled()
+    finally:
+        dialog.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.skipif(pytest.importorskip("PySide6", reason="PySide6 not installed") is None, reason="PySide6 not installed")
 def test_settings_memory_tab_does_not_show_stored_facts():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel

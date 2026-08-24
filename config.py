@@ -880,6 +880,7 @@ def _load_config() -> None:
     global GPT_SOVITS_SEED, GPT_SOVITS_TIMEOUT_SECONDS
     global KOKORO_VOICE, KOKORO_LANG_CODE, KOKORO_DEVICE, KOKORO_SPEED, KOKORO_SAMPLE_RATE, KOKORO_SPLIT_PATTERN
     global THEME_MODE, DARK_MODE, ICON_AUTO_HIDE, START_ON_LOGIN, CHAT_AUTO_ELABORATE, CHAT_ELABORATE_PROMPT
+    global CHAT_OPEN_ON_PROMPT, CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE
     global CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY
     global PRIVACY_MODE, TRUST_PRIVACY_MODE, PRIVACY_REVIEW_BEFORE_SEND, PRIVACY_AI_ENABLED, PRIVACY_CUSTOM_PATTERNS
     global PRIVACY_HIDE_SECRETS, PRIVACY_HIDE_CONTACT_DETAILS, PRIVACY_HIDE_FINANCIAL_DETAILS
@@ -908,7 +909,7 @@ def _load_config() -> None:
     global CONTEXT_BROWSER_MAX_CHARS, CONTEXT_AMBIENT_DOCUMENT_MAX_CHARS, CONTEXT_TOOL_DOCUMENT_MAX_CHARS
     global TOOL_TURN_MAX_CALLS, TOOL_TURN_MAX_RESULT_CHARS, TOOL_TURN_MAX_TOTAL_CHARS
     global TOOL_PLUGIN_DIR, TOOL_GIT_ROOT, TOOL_FILE_ROOTS, TOOL_FILE_MODE, TOOL_FILE_BLOCKED_GLOBS
-    global BUBBLE_WIDTH, BUBBLE_LINES, BUBBLE_FONT_SIZE, CHAT_FONT_SCALE
+    global BUBBLE_WIDTH, BUBBLE_LINES, BUBBLE_FONT_SIZE, CHAT_FONT_SCALE, CHAT_ENTER_SEND
     global BUBBLE_COLOR, BUBBLE_TEXT_COLOR, BUBBLE_READ_WORD_COLOR
     global BUBBLE_SCROLL_ENABLED, BUBBLE_SCROLL_SNAP_ENABLED, BUBBLE_SCROLL_SNAP_DELAY_MS
     global ICON_SIZE, ICON_BACKSTOP_MS, BUBBLE_HIDE_DELAY_MS
@@ -1092,6 +1093,8 @@ def _load_config() -> None:
     # ICON_AUTO_HIDE (formerly DOLL_AUTO_HIDE) — old key still honored for back-compat.
     ICON_AUTO_HIDE        = env_bool("ICON_AUTO_HIDE", env_bool("DOLL_AUTO_HIDE", False))
     START_ON_LOGIN        = env_bool("START_ON_LOGIN", False)
+    CHAT_OPEN_ON_PROMPT   = env_bool("CHAT_OPEN_ON_PROMPT", False)
+    CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE = env_bool("CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE", False)
     APP_LANGUAGE          = os.getenv("APP_LANGUAGE", "")
     ASSISTANT_LANGUAGE    = os.getenv("ASSISTANT_LANGUAGE", "")
     CHAT_AUTO_ELABORATE   = env_bool("CHAT_AUTO_ELABORATE", False)
@@ -1290,6 +1293,7 @@ def _load_config() -> None:
     BUBBLE_FONT_SIZE       = max(6, min(env_int("BUBBLE_FONT_SIZE", 10), 32))
     # Chat-window text zoom multiplier (Ctrl+wheel / Ctrl+±). Clamped 0.7–2.5×.
     CHAT_FONT_SCALE        = max(0.7, min(env_float("CHAT_FONT_SCALE", 1.0), 2.5))
+    CHAT_ENTER_SEND        = env_bool("CHAT_ENTER_SEND", True)
     BUBBLE_COLOR           = os.getenv("BUBBLE_COLOR",           "#16181bdc")
     BUBBLE_TEXT_COLOR      = os.getenv("BUBBLE_TEXT_COLOR",      "#e9e6e0")
     BUBBLE_READ_WORD_COLOR = os.getenv("BUBBLE_READ_WORD_COLOR", "#d8a145")
@@ -1402,3 +1406,14 @@ def set_chat_font_scale(scale: float) -> float:
     except Exception:
         pass  # best-effort: the in-memory scale still applies this session
     return clamped
+
+
+def set_chat_enter_send(enabled: bool) -> bool:
+    """Persist whether bare Enter sends or inserts a newline in Chat."""
+    global CHAT_ENTER_SEND
+    CHAT_ENTER_SEND = bool(enabled)
+    try:
+        write_env_file(_ENV_FILE, {"CHAT_ENTER_SEND": "True" if CHAT_ENTER_SEND else "False"})
+    except Exception:
+        pass
+    return CHAT_ENTER_SEND

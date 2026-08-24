@@ -491,7 +491,9 @@ def test_chat_window_context_preview_send_and_history_workflow(qapp, isolated_ap
         assert call["context_policy"]["context_memory_mode"] == "model"
         assert call["context_policy"]["file_access"] == "read"
         assert call["messages"][0]["role"] == "system"
-        assert "Legacy context block" in call["messages"][0]["content"]
+        assert "Legacy context block" not in call["messages"][0]["content"]
+        assert "Legacy context block" in call["messages"][-1]["content"]
+        assert "untrusted data" in call["messages"][-1]["content"]
         assert "[Attached context for this message]" in call["messages"][-1]["content"]
 
         assert conversations[0]["messages"][-2]["role"] == "user"
@@ -1528,9 +1530,7 @@ def test_chat_auto_elaborate_prompt_reaches_real_send(qapp, monkeypatch, prompt)
 
 
 def test_chat_external_import_buttons_keep_providers_separate(qapp, monkeypatch, tmp_path):
-    """ChatGPT and Claude scan, preview, and import independently."""
-    from PySide6.QtCore import Qt
-    from PySide6.QtTest import QTest
+    """Local Codex and Claude Code histories scan, preview, and import independently."""
     from PySide6.QtWidgets import QMessageBox
 
     from core.conversation_store import external_sync
@@ -1565,27 +1565,12 @@ def test_chat_external_import_buttons_keep_providers_separate(qapp, monkeypatch,
     monkeypatch.setattr(
         chat_window_mod,
         "discover_external_conversations",
-        lambda provider="": external_sync.discover_external_conversations(
+        lambda provider="", on_discovered=None: external_sync.discover_external_conversations(
             codex_home=codex_home,
             claude_home=claude_home,
             provider=provider,
+            on_discovered=on_discovered,
         ),
-    )
-
-    class AcceptAllImportDialog:
-        def __init__(self, _provider, discovered, _parent):
-            self.discovered = discovered
-
-        def exec(self):
-            return chat_window_mod.QDialog.DialogCode.Accepted
-
-        def selected_conversations(self):
-            return self.discovered
-
-    monkeypatch.setattr(
-        chat_window_mod,
-        "ExternalConversationImportDialog",
-        AcceptAllImportDialog,
     )
     information = []
     warnings = []
@@ -1608,13 +1593,19 @@ def test_chat_external_import_buttons_keep_providers_separate(qapp, monkeypatch,
     )
 
     def import_and_wait(provider):
-        button = window._external_sync_btns[provider]
         previous = len(information)
-        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        window._pull_external_conversations(provider)
+        picker = window._external_sync_dialogs[provider]
+        assert picker.isVisible()
+        assert not picker.import_button.isEnabled()
         _pump_until(
             qapp,
-            lambda: button.isEnabled() and len(information) == previous + 1,
+            lambda: not picker._scanning,
         )
+        assert picker._conversation_items
+        picker.select_all_button.click()
+        picker.import_button.click()
+        _pump_until(qapp, lambda: len(information) == previous + 1)
         return information[-1][1]
 
     try:
@@ -1631,8 +1622,10 @@ def test_chat_external_import_buttons_keep_providers_separate(qapp, monkeypatch,
             for conv in conversations
         } == {("codex", "shared"), ("claude", "shared")}
         assert len({conv["id"] for conv in conversations}) == 2
-        assert any("ChatGPT" in button.toolTip() for _idx, button in window._sidebar_btns)
-        assert any("Claude" in button.toolTip() for _idx, button in window._sidebar_btns)
+        assert all(
+            not button.accessibleName().startswith(("Codex ·", "Claude Code ·"))
+            for _idx, button in window._sidebar_btns
+        )
 
         codex_records.append(
             {
@@ -1720,10 +1713,21 @@ def test_external_import_dialog_uses_full_width_chatgpt_style_browser(qapp):
         dialog.resize(1000, 650)
         dialog.show()
         qapp.processEvents()
-
         assert dialog.browser.width() >= 950
-        assert dialog.browser.topLevelItemCount() == 4
+        assert dialog.browser.topLevelItemCount() == 2
         assert set(dialog._scope_items) == {"", "/work/alpha", "/work/beta"}
+        assert dialog._projects_section is dialog.browser.topLevelItem(1)
+        assert dialog._projects_section.childCount() == 2
+        assert dialog._scope_items["/work/alpha"].parent() is dialog._projects_section
+        assert dialog._scope_items["/work/beta"].parent() is dialog._projects_section
+        assert dialog._projects_section.isExpanded()
+        dialog._projects_section.setExpanded(False)
+        assert not dialog._projects_section.isExpanded()
+        dialog._projects_section.setExpanded(True)
+        alpha_scope = dialog._scope_items["/work/alpha"]
+        alpha_scope.setExpanded(False)
+        assert not alpha_scope.isExpanded()
+        alpha_scope.setExpanded(True)
         visible_text = "\n".join(
             item.text(0)
             for _conversation, item in dialog._conversation_items
@@ -1733,13 +1737,13 @@ def test_external_import_dialog_uses_full_width_chatgpt_style_browser(qapp):
         assert "beta" in visible_text
         assert "claude" not in visible_text
 
-        # General and the first project start selected, preserving the previous
-        # conservative import default without hiding the other projects.
+        # Every discovered conversation starts selected; users can opt out of
+        # individual rows instead of silently getting only a small subset.
         assert {
             item["external_source"]["session_id"]
             for item in dialog.selected_conversations()
-        } == {"general-old", "general-new", "alpha-old", "alpha-new"}
-        assert dialog.preview_label.text() == "Conversations to import: 4"
+        } == {"general-old", "general-new", "alpha-old", "alpha-new", "beta"}
+        assert dialog.preview_label.text() == "Conversations to import: 5"
 
         alpha = dialog._scope_items["/work/alpha"]
         alpha.child(1).setCheckState(0, Qt.CheckState.Unchecked)
@@ -1747,7 +1751,7 @@ def test_external_import_dialog_uses_full_width_chatgpt_style_browser(qapp):
         assert {
             item["external_source"]["session_id"]
             for item in dialog.selected_conversations()
-        } == {"alpha-new"}
+        } == {"alpha-new", "beta"}
 
         dialog.search.setText("beta")
         qapp.processEvents()
@@ -1757,6 +1761,107 @@ def test_external_import_dialog_uses_full_width_chatgpt_style_browser(qapp):
         dialog.clear_button.click()
         assert dialog.selected_conversations() == []
         assert not dialog.import_button.isEnabled()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        qapp.processEvents()
+
+
+def test_external_import_dialog_streams_rows_before_scan_finishes(qapp):
+    """The picker is useful immediately and fills without waiting for the full scan."""
+    from ui.chat_window import ExternalConversationImportDialog
+
+    dialog = ExternalConversationImportDialog("codex", [], scanning=True)
+    conversation = {
+        "title": "Arrived while scanning",
+        "updated_at": "2026-08-20T12:00:00Z",
+        "external_source": {
+            "provider": "codex",
+            "session_id": "streamed",
+            "cwd": "",
+        },
+    }
+    try:
+        dialog.open()
+        qapp.processEvents()
+        assert dialog.isVisible()
+        assert "Scanning Codex" in dialog.preview_label.text()
+        assert not dialog.import_button.isEnabled()
+
+        dialog.append_conversation(conversation)
+        qapp.processEvents()
+        assert [item[0]["title"] for item in dialog._conversation_items] == [
+            "Arrived while scanning"
+        ]
+        assert "Found 1 conversation" in dialog.preview_label.text()
+        assert dialog.import_button.text() == "Import selected"
+        assert dialog.import_button.isEnabled()
+
+        dialog.finish_scan()
+        assert dialog.preview_label.text() == "Conversations to import: 1"
+        assert dialog.import_button.isEnabled()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        qapp.processEvents()
+
+
+def test_external_import_dialog_streams_in_selected_sort_order(qapp):
+    """Rows enter their sorted position immediately instead of moving at completion."""
+    from ui.chat_window import ExternalConversationImportDialog
+
+    def conversation(session_id, *, created, updated, activity, cwd):
+        return {
+            "title": session_id,
+            "created_at": created,
+            "updated_at": updated,
+            "messages": [{"role": "user", "content": session_id, "created_at": updated}],
+            "external_source": {
+                "provider": "codex",
+                "session_id": session_id,
+                "cwd": cwd,
+                "source_updated_at": activity,
+            },
+        }
+
+    dialog = ExternalConversationImportDialog(
+        "codex",
+        [
+            conversation(
+                "newly-created-but-idle",
+                created="2026-08-20T10:00:00Z",
+                updated="2026-08-20T10:00:00Z",
+                activity="2026-08-20T10:00:00Z",
+                cwd="/work/idle",
+            ),
+            conversation(
+                "old-but-recently-active",
+                created="2026-01-01T00:00:00Z",
+                updated="2026-01-01T00:00:00Z",
+                activity="2026-08-20T12:00:00Z",
+                cwd="/work/active",
+            ),
+            conversation(
+                "active-older-turn",
+                created="2025-01-01T00:00:00Z",
+                updated="2026-08-20T11:00:00Z",
+                activity="2026-08-20T11:00:00Z",
+                cwd="/work/active",
+            ),
+        ],
+    )
+    try:
+        projects = dialog._projects_section
+        assert projects is not None
+        assert [projects.child(index).text(0) for index in range(projects.childCount())] == [
+            "active",
+            "idle",
+        ]
+        active = dialog._scope_items["/work/active"]
+        assert [active.child(index).toolTip(0) for index in range(active.childCount())] == [
+            "old-but-recently-active",
+            "active-older-turn",
+        ]
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -1810,16 +1915,15 @@ def test_chat_auto_sync_toggles_are_separate_persistent_and_dialog_free(qapp, mo
         lambda provider, *, automatic: started.append((provider, automatic))
     )
     try:
-        codex_toggle = window._external_sync_checkboxes["codex"]
-        claude_toggle = window._external_sync_checkboxes["claude"]
-        assert codex_toggle.parentWidget().objectName() == "chatTitleBar"
-        assert claude_toggle.parentWidget().objectName() == "chatTitleBar"
-        assert codex_toggle.text() == "Automatically sync with ChatGPT"
-        assert claude_toggle.text() == "Automatically sync with Claude"
+        window._open_composer_menu(window._composer_menu_btn)
+        qapp.processEvents()
+        actions = {action.text(): action for action in window._composer_menu.actions()}
+        codex_toggle = actions["Keep Codex imports updated"]
+        claude_toggle = actions["Keep Claude Code imports updated"]
         assert not codex_toggle.isChecked()
         assert not claude_toggle.isChecked()
 
-        codex_toggle.setChecked(True)
+        codex_toggle.trigger()
         qapp.processEvents()
         assert saved == [("codex", True)]
         assert started == [("codex", True)]
@@ -1960,7 +2064,7 @@ def test_chat_real_external_export_provider_by_confirmation_matrix(
         )
         QTest.mouseClick(menu_button, Qt.MouseButton.LeftButton)
         export_menu = next(menu for menu in submenus if menu.title() == "Export as new conversation")
-        label = "ChatGPT" if provider == "codex" else "Claude"
+        label = "Codex" if provider == "codex" else "Claude"
         next(action for action in export_menu.actions() if action.text() == label).trigger()
         qapp.processEvents()
 
@@ -2211,6 +2315,8 @@ def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, mo
         _set(dialog._fields["CHAT_REASONING_EFFORT"], "medium")
         dialog._fields["CHAT_AUTO_ELABORATE"].setChecked(True)
         dialog._fields["CHAT_ELABORATE_PROMPT"].setText("Persisted through the real Apply button")
+        dialog._fields["CHAT_OPEN_ON_PROMPT"].setChecked(True)
+        dialog._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"].setChecked(True)
         qapp.processEvents()
         apply_button = dialog.findChild(QPushButton, "settingsApplyButton")
         assert apply_button is not None and apply_button.isEnabled()
@@ -2226,6 +2332,8 @@ def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, mo
         assert saved["CHAT_REASONING_EFFORT"] == "medium"
         assert saved["CHAT_AUTO_ELABORATE"] == "True"
         assert saved["CHAT_ELABORATE_PROMPT"] == "Persisted through the real Apply button"
+        assert saved["CHAT_OPEN_ON_PROMPT"] == "True"
+        assert saved["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"] == "True"
         assert applied and {
             "BUBBLE_WIDTH",
             "OPENWAND_PLANNED_CHUNKING",
@@ -2234,6 +2342,8 @@ def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, mo
             "CHAT_REASONING_EFFORT",
             "CHAT_AUTO_ELABORATE",
             "CHAT_ELABORATE_PROMPT",
+            "CHAT_OPEN_ON_PROMPT",
+            "CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE",
         } <= set(applied[-1]["changed_keys"])
         assert dialog.isVisible() is False or dialog.result() == 0
         assert not apply_button.isEnabled()
@@ -2246,6 +2356,8 @@ def test_settings_real_apply_click_persists_and_reopens(qapp, tmp_path: Path, mo
         assert _get(reopened._fields["CHAT_REASONING_EFFORT"]) == "medium"
         assert reopened._fields["CHAT_AUTO_ELABORATE"].isChecked()
         assert _get(reopened._fields["CHAT_ELABORATE_PROMPT"]) == "Persisted through the real Apply button"
+        assert reopened._fields["CHAT_OPEN_ON_PROMPT"].isChecked()
+        assert reopened._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"].isChecked()
     finally:
         dialog.close()
         dialog.deleteLater()

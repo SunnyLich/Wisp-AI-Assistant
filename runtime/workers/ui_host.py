@@ -2570,6 +2570,8 @@ class QtProtocolHost:
             return self._overlay_state(**params)
         if method == "ui.overlay.amplitude":
             return self._overlay_amplitude(**params)
+        if method == "ui.reply.presentation":
+            return self._reply_presentation(**params)
         if method == "ui.reply.reset":
             return self._reply_reset()
         if method == "ui.reply.thinking":
@@ -2696,6 +2698,11 @@ class QtProtocolHost:
 
         config.reload()
         self._conversation_scope_key = self._configured_conversation_scope()
+        try:
+            if self._chat is not None:
+                self._chat.refresh_model_label()
+        except (AttributeError, RuntimeError):
+            pass
         try:
             if self._overlay is not None:
                 self._overlay.apply_settings()
@@ -3300,6 +3307,7 @@ class QtProtocolHost:
         focus_overlay: bool = False,
         defer_focus: bool = False,
         action_provider: dict[str, Any] | None = None,
+        tool_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Show intent."""
         from ui.intent_overlay import IntentOverlay
@@ -3319,6 +3327,7 @@ class QtProtocolHost:
             focus_overlay=focus_overlay,
             defer_focus=defer_focus,
             action_provider=action_provider,
+            tool_snapshot=tool_snapshot,
         )
         def _chosen(intent: str, custom: str) -> None:
             overlay = self._intent
@@ -3338,6 +3347,7 @@ class QtProtocolHost:
                         else {"mode": "answer", "source": "custom"}
                     ),
                     "context_choices": overlay.context_choices() if overlay else [],
+                    "tool_choices": overlay.tool_choices() if overlay else [],
                     "project_choice": applied_project,
                     "conversation_choice": applied_choice,
                 },
@@ -3352,6 +3362,7 @@ class QtProtocolHost:
                 {
                     "caller_idx": caller_idx,
                     "context_choices": overlay.context_choices() if overlay else [],
+                    "tool_choices": overlay.tool_choices() if overlay else [],
                     "custom_text": custom_text,
                 },
             )
@@ -3367,6 +3378,7 @@ class QtProtocolHost:
                 {
                     "caller_idx": caller_idx,
                     "context_choices": overlay.context_choices() if overlay else [],
+                    "tool_choices": overlay.tool_choices() if overlay else [],
                     "custom_text": str(custom_text or ""),
                 },
             )
@@ -3625,14 +3637,29 @@ class QtProtocolHost:
             self._overlay_signals.set_mouth_amp.emit(value)
         return {"amplitude": value}
 
+    def _reply_presentation(self, suppress_bubble: bool = False) -> dict[str, Any]:
+        """Arm the presentation mode consumed by the next prompt reply reset."""
+        self._next_prompt_suppress_bubble = bool(suppress_bubble)
+        return {"suppress_bubble": bool(suppress_bubble)}
+
     def _reply_reset(self) -> dict[str, Any]:
         """Handle reply reset for qt protocol host."""
+        suppress = bool(getattr(self, "_next_prompt_suppress_bubble", False))
+        self._next_prompt_suppress_bubble = False
+        self._suppress_prompt_bubble = suppress
+        if suppress:
+            bubble = getattr(self, "_bubble", None)
+            if bubble is not None:
+                bubble.hide()
+            return {"reset": True, "suppressed": True}
         bubble = self._ensure_bubble()
         bubble.clear()
         return {"reset": True}
 
     def _reply_thinking(self) -> dict[str, Any]:
         """Handle reply thinking for qt protocol host."""
+        if bool(getattr(self, "_suppress_prompt_bubble", False)):
+            return {"thinking": True, "suppressed": True}
         self._ensure_bubble().start_thinking()
         return {"thinking": True}
 
@@ -3643,11 +3670,15 @@ class QtProtocolHost:
 
     def _reply_track_speech(self) -> dict[str, Any]:
         """Anchor the bubble to upcoming speech before playback starts."""
+        if bool(getattr(self, "_suppress_prompt_bubble", False)):
+            return {"tracking": True, "suppressed": True}
         self._ensure_bubble().start_speech_tracking()
         return {"tracking": True}
 
     def _reply_start_reveal(self) -> dict[str, Any]:
         """Handle reply start reveal for qt protocol host."""
+        if bool(getattr(self, "_suppress_prompt_bubble", False)):
+            return {"started": True, "suppressed": True}
         self._ensure_bubble().start_word_reveal()
         return {"started": True}
 
@@ -3662,6 +3693,8 @@ class QtProtocolHost:
         """
         words = list(words or [])
         start_ms = [int(x) for x in (start_ms or [])]
+        if bool(getattr(self, "_suppress_prompt_bubble", False)):
+            return {"scheduled": len(words), "suppressed": True}
         self._ensure_bubble().schedule_words(words, start_ms)
         return {"scheduled": len(words)}
 
@@ -3790,6 +3823,12 @@ class QtProtocolHost:
         annotations: list | None = None,
     ) -> dict[str, Any]:
         """Handle reply chunk for qt protocol host."""
+        if bool(getattr(self, "_suppress_prompt_bubble", False)):
+            return {
+                "appended": len(text or ""),
+                "is_progress": bool(is_progress),
+                "suppressed": True,
+            }
         bubble = self._ensure_bubble()
         if is_progress and not is_thought:
             # Transient status (e.g. "Using tools...") — show it as a preview that
@@ -3821,6 +3860,8 @@ class QtProtocolHost:
 
     def _reply_image(self, attachments: list | None = None) -> dict[str, Any]:
         """Render the first safe generated-image attachment in the speech bubble."""
+        if bool(getattr(self, "_suppress_prompt_bubble", False)):
+            return {"shown": False, "suppressed": True}
         from core.conversation_store import store as conversation_store
 
         encoded = ""
@@ -3871,6 +3912,9 @@ class QtProtocolHost:
         used when TTS is off, so BUBBLE_REVEAL_WPM is honored instead of the
         whole reply slamming in the moment the LLM finishes streaming.
         """
+        if bool(getattr(self, "_suppress_prompt_bubble", False)):
+            self._suppress_prompt_bubble = False
+            return {"done": True, "suppressed": True}
         bubble = self._ensure_bubble()
         bubble.finish(flush_remaining=bool(flush))
         return {"done": True}
@@ -4318,14 +4362,16 @@ class QtProtocolHost:
                         is_thought = False
                         is_progress = False
                         local_work = {}
+                        harness_activity = {}
                         if isinstance(payload, dict):
                             chunk = str(payload.get("text") or "")
                             is_thought = bool(payload.get("is_thought"))
                             is_progress = bool(payload.get("is_progress"))
                             local_work = dict(payload.get("local_work") or {})
+                            harness_activity = dict(payload.get("harness_activity") or {})
                         else:
                             chunk = str(payload or "")
-                        if not is_thought and not is_progress and not local_work:
+                        if not is_thought and not is_progress and not local_work and not harness_activity:
                             streamed_text += chunk
                             yield chunk
                         else:
@@ -4336,6 +4382,8 @@ class QtProtocolHost:
                                 item["is_progress"] = True
                             if local_work:
                                 item["local_work"] = local_work
+                            if harness_activity:
+                                item["harness_activity"] = harness_activity
                             yield item
                     elif kind == "done":
                         final_text = ""
@@ -4410,29 +4458,23 @@ class QtProtocolHost:
         is_progress: bool = False,
         is_thought: bool = False,
         local_work: dict | None = None,
+        harness_activity: dict | None = None,
     ) -> dict[str, Any]:
         """Handle chat chunk for qt protocol host."""
         stream = self._chat_stream(request_id)
+        chunk_payload = {
+            "text": text,
+            "is_progress": bool(is_progress),
+            "is_thought": bool(is_thought),
+            "local_work": dict(local_work or {}),
+        }
+        if harness_activity:
+            chunk_payload["harness_activity"] = dict(harness_activity)
         if stream is not None:
-            stream.put(
-                (
-                    "chunk",
-                    {
-                        "text": text,
-                        "is_progress": bool(is_progress),
-                        "is_thought": bool(is_thought),
-                        "local_work": dict(local_work or {}),
-                    },
-                )
-            )
+            stream.put(("chunk", chunk_payload))
         elif conversation_index is not None:
             idx = int(conversation_index)
-            chunk = {
-                "text": text,
-                "is_progress": bool(is_progress),
-                "is_thought": bool(is_thought),
-                "local_work": dict(local_work or {}),
-            }
+            chunk = dict(chunk_payload)
             state = getattr(self, "_external_reply_stream", None)
             if not isinstance(state, dict) or state.get("conversation_index") != idx:
                 state = {"conversation_index": idx, "chunks": [], "attached_chat_id": None, "done": False}
@@ -4568,6 +4610,8 @@ class QtProtocolHost:
 
     def _live_file_approval_request(self, **params: Any) -> dict[str, Any]:
         """Ask the user to approve a live model file write/edit."""
+        if str(params.get("kind") or "") in {"user_input", "mcp_elicitation"}:
+            return self._harness_interaction_request(**params)
         action, path, text = _live_file_approval_summary(params)
         state: dict[str, Any] = {"done": False, "approved": False, "feedback": "", "surface": ""}
         loop = None
@@ -4668,6 +4712,152 @@ class QtProtocolHost:
         box.setDefaultButton(QMessageBox.StandardButton.No)
         approved = box.exec() == QMessageBox.StandardButton.Yes
         return {"approved": bool(approved), "feedback": "", "surface": "modal"}
+
+    def _harness_interaction_request(
+        self,
+        kind: str = "",
+        questions: list[dict[str, Any]] | None = None,
+        server_name: str = "",
+        mode: str = "form",
+        message: str = "",
+        url: str = "",
+        requested_schema: dict[str, Any] | None = None,
+        **_extra: Any,
+    ) -> dict[str, Any]:
+        """Collect Codex request_user_input or MCP elicitation responses."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtWidgets import (
+            QCheckBox,
+            QComboBox,
+            QDialog,
+            QDialogButtonBox,
+            QFormLayout,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QVBoxLayout,
+        )
+
+        parent = self._chat or self._overlay
+        dialog = QDialog(parent)
+        dialog.setModal(True)
+        dialog.setMinimumWidth(520)
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(12)
+        fields: list[tuple[str, Any]] = []
+
+        if kind == "user_input":
+            dialog.setWindowTitle(t("ChatGPT needs your input"))
+            for index, raw in enumerate(questions or []):
+                question = raw if isinstance(raw, dict) else {}
+                prompt = QLabel(str(question.get("question") or question.get("header") or "Question"), dialog)
+                prompt.setWordWrap(True)
+                root.addWidget(prompt)
+                options = [item for item in question.get("options") or [] if isinstance(item, dict)]
+                if options:
+                    editor = QComboBox(dialog)
+                    for option in options:
+                        editor.addItem(str(option.get("label") or ""), str(option.get("label") or ""))
+                    editor.setEditable(bool(question.get("isOther")))
+                else:
+                    editor = QLineEdit(dialog)
+                    if bool(question.get("isSecret")):
+                        editor.setEchoMode(QLineEdit.EchoMode.Password)
+                editor.setObjectName(f"harnessQuestion_{question.get('id') or index}")
+                root.addWidget(editor)
+                fields.append((str(question.get("id") or index), editor))
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+                parent=dialog,
+            )
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            root.addWidget(buttons)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return {"approved": False, "answers": {}, "surface": "harness_input"}
+            answers: dict[str, dict[str, list[str]]] = {}
+            for question_id, editor in fields:
+                value = editor.currentText() if isinstance(editor, QComboBox) else editor.text()
+                answers[question_id] = {"answers": [str(value)]}
+            return {"approved": True, "answers": answers, "surface": "harness_input"}
+
+        title = t("MCP server request")
+        if server_name:
+            title = t("{server} needs your input").format(server=server_name)
+        dialog.setWindowTitle(title)
+        if message:
+            description = QLabel(message, dialog)
+            description.setWordWrap(True)
+            root.addWidget(description)
+        if str(mode or "").lower() == "url":
+            url_label = QLabel(f"<a href='{html.escape(url)}'>{html.escape(url)}</a>", dialog)
+            url_label.setOpenExternalLinks(True)
+            url_label.setWordWrap(True)
+            root.addWidget(url_label)
+            open_button = QPushButton(t("Open in browser"), dialog)
+            open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+            root.addWidget(open_button)
+        else:
+            schema = requested_schema if isinstance(requested_schema, dict) else {}
+            properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+            required = {str(value) for value in schema.get("required") or []}
+            form = QFormLayout()
+            for name, raw in properties.items():
+                spec = raw if isinstance(raw, dict) else {}
+                field_type = str(spec.get("type") or "string")
+                enum = list(spec.get("enum") or [])
+                if enum:
+                    editor = QComboBox(dialog)
+                    for value in enum:
+                        editor.addItem(str(value), value)
+                    default = spec.get("default")
+                    default_index = editor.findData(default)
+                    if default_index >= 0:
+                        editor.setCurrentIndex(default_index)
+                elif field_type == "boolean":
+                    editor = QCheckBox(dialog)
+                    editor.setChecked(bool(spec.get("default", False)))
+                else:
+                    editor = QLineEdit(dialog)
+                    if spec.get("default") is not None:
+                        editor.setText(str(spec.get("default")))
+                    if str(spec.get("format") or "") == "password":
+                        editor.setEchoMode(QLineEdit.EchoMode.Password)
+                editor.setObjectName(f"mcpElicitation_{name}")
+                label = str(spec.get("title") or name) + (" *" if str(name) in required else "")
+                form.addRow(label, editor)
+                fields.append((str(name), editor))
+            root.addLayout(form)
+        buttons = QDialogButtonBox(dialog)
+        accept = buttons.addButton(t("Continue"), QDialogButtonBox.ButtonRole.AcceptRole)
+        decline = buttons.addButton(t("Decline"), QDialogButtonBox.ButtonRole.RejectRole)
+        accept.clicked.connect(dialog.accept)
+        decline.clicked.connect(dialog.reject)
+        root.addWidget(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return {
+                "approved": False,
+                "action": "decline",
+                "content": None,
+                "surface": "mcp_elicitation",
+            }
+        content: dict[str, Any] = {}
+        for name, editor in fields:
+            if isinstance(editor, QComboBox):
+                content[name] = editor.currentData()
+            elif isinstance(editor, QCheckBox):
+                content[name] = editor.isChecked()
+            else:
+                content[name] = editor.text()
+        return {
+            "approved": True,
+            "action": "accept",
+            "content": None if str(mode or "").lower() == "url" else content,
+            "_meta": None,
+            "surface": "mcp_elicitation",
+        }
 
     def _action_preview_request(
         self,
@@ -5431,6 +5621,10 @@ class QtProtocolHost:
                 on_addon_settings=lambda addon_id: self.emit(
                     "ui.addons.open_requested",
                     {"addon_id": addon_id},
+                ),
+                on_addon_setting_change=lambda payload: self.emit(
+                    "ui.addons.set_setting",
+                    dict(payload or {}),
                 ),
                 on_model_settings=lambda: self.emit(
                     "ui.settings.open_requested",

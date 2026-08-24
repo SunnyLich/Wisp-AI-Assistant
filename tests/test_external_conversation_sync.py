@@ -135,6 +135,8 @@ def test_parse_codex_uses_user_and_final_messages_only(tmp_path):
         ("user", "Fix the tests"),
         ("assistant", "Tests fixed"),
     ]
+    assert conversation["created_at"] == "2026-01-01T00:00:02Z"
+    assert conversation["updated_at"] == "2026-01-01T00:00:04Z"
 
 
 def test_parse_claude_follows_active_chain_and_ignores_tools(tmp_path):
@@ -192,6 +194,8 @@ def test_parse_claude_follows_active_chain_and_ignores_tools(tmp_path):
         ("user", "Refactor this"),
         ("assistant", "Done"),
     ]
+    assert conversation["created_at"] == "2026-01-01T00:00:00Z"
+    assert conversation["updated_at"] == "2026-01-01T00:00:02Z"
 
 
 def test_sync_updates_in_place_and_preserves_openwand_tail(tmp_path):
@@ -242,14 +246,17 @@ def test_discovery_does_not_mutate_until_applied(tmp_path):
         ],
     )
     conversations: list[dict] = []
+    streamed: list[dict] = []
 
     discovered, report = discover_external_conversations(
         codex_home=codex_home,
         claude_home=claude_home,
+        on_discovered=streamed.append,
     )
 
     assert conversations == []
     assert len(discovered) == 1
+    assert streamed == discovered
     applied = apply_external_conversations(conversations, discovered, report=report)
     assert applied.imported == 1
     assert conversations[0]["messages"][0]["content"] == "Hello"

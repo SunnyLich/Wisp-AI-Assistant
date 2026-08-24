@@ -68,7 +68,6 @@ BUNDLED_ADDON_DATAS = [
     for path, dest in (
         (ROOT / "addons" / "mcp_bridge", "addons/mcp_bridge"),
         (ROOT / "addons" / "ui_lab", "addons/ui_lab"),
-        (ROOT / "addons" / "formatted_replies", "addons/formatted_replies"),
         (ROOT / "addons" / "virtual_workspace", "addons/virtual_workspace"),
     )
     if path.exists()

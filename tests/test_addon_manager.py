@@ -275,7 +275,6 @@ def test_bundled_addon_action_catalogues_load_without_issues():
         "ui_lab": {"intent", "response_transform", "tool"},
         "virtual_workspace": {"tool"},
         "mcp_bridge": {"tool_provider"},
-        "formatted_replies": {"message_action"},
     }
     for folder_name, kinds in expected.items():
         manifest = am.load_manifest(root / folder_name)

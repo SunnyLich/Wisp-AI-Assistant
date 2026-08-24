@@ -70,6 +70,7 @@ def _tool_request(tool_name: str, input_data: dict[str, Any]) -> dict[str, Any]:
 async def _run_async(
     prompt: str,
     *,
+    model: str | None = None,
     session_id: str,
     cwd: Path,
     on_event: EventCallback | None,
@@ -86,7 +87,7 @@ async def _run_async(
     try:
         import config
 
-        model = str(getattr(config, "OPENWAND_CLAUDE_MODEL", "") or "").strip()
+        configured_model = str(getattr(config, "OPENWAND_CLAUDE_MODEL", "") or "").strip()
         fast_mode = bool(getattr(config, "OPENWAND_CLAUDE_FAST_MODE", False))
         approval_mode = str(getattr(config, "OPENWAND_CLAUDE_APPROVAL_MODE", "ask") or "ask")
         effort = str(getattr(config, "OPENWAND_CLAUDE_REASONING_EFFORT", "high") or "").strip()
@@ -95,12 +96,13 @@ async def _run_async(
         )
         system_prompt = str(getattr(config, "OPENWAND_CLAUDE_SYSTEM_PROMPT", "") or "")
     except (ImportError, AttributeError):
-        model = ""
+        configured_model = ""
         fast_mode = False
         approval_mode = "ask"
         effort = "high"
         reasoning_summary = "summarized"
         system_prompt = ""
+    model = str(configured_model if model is None else model).strip()
 
     async def can_use_tool(tool_name: str, input_data: dict[str, Any], _context: Any) -> Any:
         if approval_callback is None:
@@ -244,6 +246,7 @@ async def _run_async(
 def run_claude(
     prompt: str,
     *,
+    model: str | None = None,
     session_id: str = "",
     cwd: str | Path | None = None,
     on_event: EventCallback | None = None,
@@ -256,6 +259,7 @@ def run_claude(
     except RuntimeError:
         return asyncio.run(_run_async(
             prompt,
+            model=model,
             session_id=session_id,
             cwd=workdir,
             on_event=on_event,

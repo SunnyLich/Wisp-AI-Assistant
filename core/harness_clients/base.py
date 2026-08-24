@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-HarnessEventKind = Literal["reply", "thought", "progress", "status", "image"]
+HarnessEventKind = Literal["reply", "thought", "progress", "status", "image", "activity"]
 EventCallback = Callable[["HarnessEvent"], None]
 ApprovalCallback = Callable[[dict[str, Any]], bool | dict[str, Any]]
 
@@ -63,6 +63,7 @@ def run_harness(
     provider: str,
     prompt: str,
     *,
+    model: str | None = None,
     session_id: str = "",
     cwd: str | Path | None = None,
     on_event: EventCallback | None = None,
@@ -80,6 +81,7 @@ def run_harness(
 
         return run_codex(
             prompt,
+            model=model,
             session_id=session_id,
             cwd=cwd,
             on_event=on_event,
@@ -91,6 +93,7 @@ def run_harness(
 
         return run_claude(
             prompt,
+            model=model,
             session_id=session_id,
             cwd=cwd,
             on_event=on_event,

@@ -4865,6 +4865,22 @@ Demander avant d’écrire — afficher les différences avant toute modificatio
       <translation>Lance OpenWand automatiquement après votre connexion à cet ordinateur.</translation>
     </message>
     <message>
+      <source>Open Chat automatically when I submit a prompt</source>
+      <translation>Ouvrir automatiquement Chat lorsque j’envoie une requête</translation>
+    </message>
+    <message>
+      <source>Open and focus the full Chat window as soon as an overlay prompt is submitted.</source>
+      <translation>Ouvrir la fenêtre Chat complète et lui donner le focus dès qu’une requête est envoyée depuis la superposition.</translation>
+    </message>
+    <message>
+      <source>Hide the floating reply bubble when Chat opens automatically</source>
+      <translation>Masquer la bulle de réponse flottante lorsque Chat s’ouvre automatiquement</translation>
+    </message>
+    <message>
+      <source>Stream the reply only in Chat for automatically opened prompts. Other bubble notices remain available.</source>
+      <translation>Afficher la réponse en streaming uniquement dans Chat pour les requêtes qui l’ouvrent automatiquement. Les autres notifications sous forme de bulle restent disponibles.</translation>
+    </message>
+    <message>
       <source>Use caller context defaults only for new conversations</source>
       <translation>Utiliser les valeurs de contexte de l’appelant uniquement pour les nouvelles conversations</translation>
     </message>

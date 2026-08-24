@@ -646,6 +646,9 @@ def test_caller_hotkey_collects_context_and_shows_intent():
     assert ui.last_call("ui.prewarm_intent")["wait"] is False
     assert brain.last_call("brain.privacy.prewarm")["wait"] is False
     assert brain.last_call("brain.harness.prewarm")["wait"] is False
+    prefix = brain.last_call("brain.llm.prefix.prewarm")
+    assert prefix["wait"] is False
+    assert prefix["params"]["route_kind"] == "query"
     assert audio.last_call("audio.prewarm")["wait"] is False
     assert native.last_call("native.context.snapshot")["params"]["include_selection"] is True
     assert native.last_call("native.context.snapshot")["params"]["selection_dedupe_key"] == "intent"
@@ -2918,6 +2921,21 @@ def test_query_flow_streams_reply_and_adds_chat_conversation_with_context():
     assert "App" in summary_labels
     assert not any(label.startswith(("Selection -", "Clipboard -")) for label in summary_labels)
     assert ui.calls_for("ui.context.clear")
+
+
+def test_query_arms_chat_only_reply_presentation_when_enabled(monkeypatch):
+    rows = [{"paste_back": False, "context_ambient": False}]
+    native = FakeWorker({"native.context.snapshot": context_handler(selected="")})
+    brain = FakeWorker(stream_handlers={"brain.query": query_stream("hello")})
+    with caller_config(rows):
+        flow, _native, ui, _brain, _audio = make_flow(native=native, brain=brain)
+        monkeypatch.setattr(config, "CHAT_OPEN_ON_PROMPT", True, raising=False)
+        monkeypatch.setattr(config, "CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE", True, raising=False)
+        flow.begin_caller(0)
+        ui.emit("ui.intent.chosen", {"custom": "Explain this"})
+
+    assert ui.last_call("ui.reply.presentation")["params"] == {"suppress_bubble": True}
+    assert ui.last_call("ui.show_chat")["params"] == {"new": False}
 
 
 def test_query_flow_persists_image_only_assistant_result():
@@ -7625,7 +7643,7 @@ def test_chat_context_preview_updates_token_estimates_before_send(monkeypatch):
             },
         }
     )
-    _flow, native, ui, _brain, _audio = make_flow(native=native)
+    _flow, native, ui, brain, _audio = make_flow(native=native)
 
     ui.emit(
         "ui.chat.context_preview",
@@ -7657,6 +7675,10 @@ def test_chat_context_preview_updates_token_estimates_before_send(monkeypatch):
         "hwnd": 777,
         "app": "",
     }
+    prefix = brain.last_call("brain.llm.prefix.prewarm")
+    assert prefix["wait"] is False
+    assert prefix["params"]["route_kind"] == "chat"
+    assert prefix["params"]["browser_retrieval"] is False
 
 
 def test_context_estimate_failure_matrix_uses_fallbacks_and_refreshes_before_send():
@@ -8282,6 +8304,67 @@ def test_chat_live_file_approval_routes_to_ui_and_brain():
         "feedback": "",
     }
     assert brain.last_call("brain.live_file.approval.respond")["wait"] is False
+
+
+def test_chat_harness_activity_routes_to_top_right_inspector():
+    """Subagent and capability events stay structured instead of becoming reply text."""
+    activity = {
+        "type": "subagent",
+        "agent_id": "child-thread",
+        "status": "running",
+        "prompt": "Inspect the tests",
+    }
+
+    def chat_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event("harness.activity", activity, 1)
+        on_event("reply.done", {"text": "ok"}, 1)
+        return {"text": "ok"}
+
+    brain = FakeWorker(stream_handlers={"brain.chat": chat_stream})
+    _flow, _native, ui, _brain, _audio = make_flow(brain=brain)
+
+    ui.emit("ui.chat.request", {"request_id": "chat-activity", "messages": [{"role": "user", "content": "go"}]})
+
+    chunks = [call["params"] for call in ui.calls_for("ui.chat.chunk")]
+    assert any(chunk.get("harness_activity") == activity for chunk in chunks)
+
+
+def test_chat_codex_user_input_response_round_trips_to_brain():
+    """Structured request_user_input answers survive the UI/supervisor boundary."""
+    def chat_stream(_params: dict[str, Any], on_event) -> dict[str, Any]:
+        on_event(
+            "live_file.approval.request",
+            {
+                "approval_id": "question-1",
+                "kind": "user_input",
+                "questions": [{"id": "scope", "question": "Which scope?"}],
+            },
+            1,
+        )
+        on_event("reply.done", {"text": "ok"}, 1)
+        return {"text": "ok"}
+
+    brain = FakeWorker(
+        handlers={"brain.live_file.approval.respond": lambda params: params},
+        stream_handlers={"brain.chat": chat_stream},
+    )
+    answers = {"scope": {"answers": ["Project"]}}
+    ui = FakeWorker(
+        handlers={
+            "ui.live_file.approval.request": lambda _params: {
+                "approved": True,
+                "answers": answers,
+                "surface": "harness_input",
+            }
+        }
+    )
+    _flow, _native, _ui, brain, _audio = make_flow(ui=ui, brain=brain)
+
+    ui.emit("ui.chat.request", {"request_id": "chat-question", "messages": [{"role": "user", "content": "go"}]})
+
+    response = brain.last_call("brain.live_file.approval.respond")["params"]
+    assert response["approved"] is True
+    assert response["response"] == {"answers": answers}
 
 
 def test_icon_summon_routes_to_first_caller_like_default_hotkey():

@@ -4810,6 +4810,22 @@ Escribir automáticamente — aplicar las ediciones sin preguntar.</translation>
       <translation>Inicia OpenWand automáticamente después de iniciar sesión en este equipo.</translation>
     </message>
     <message>
+      <source>Open Chat automatically when I submit a prompt</source>
+      <translation>Abrir Chat automáticamente al enviar una solicitud</translation>
+    </message>
+    <message>
+      <source>Open and focus the full Chat window as soon as an overlay prompt is submitted.</source>
+      <translation>Abrir y enfocar la ventana completa de Chat en cuanto se envíe una solicitud desde la superposición.</translation>
+    </message>
+    <message>
+      <source>Hide the floating reply bubble when Chat opens automatically</source>
+      <translation>Ocultar la burbuja flotante de respuesta cuando Chat se abra automáticamente</translation>
+    </message>
+    <message>
+      <source>Stream the reply only in Chat for automatically opened prompts. Other bubble notices remain available.</source>
+      <translation>Mostrar la respuesta en streaming solo en Chat para las solicitudes que lo abran automáticamente. Los demás avisos en burbujas seguirán disponibles.</translation>
+    </message>
+    <message>
       <source>Use caller context defaults only for new conversations</source>
       <translation>Usar los valores de contexto del invocador solo para conversaciones nuevas</translation>
     </message>

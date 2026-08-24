@@ -34,9 +34,13 @@ _HOST_TIMEOUT_SECONDS = 2.0
 _DEFAULT_BUNDLED_ADDONS = (
     "mcp_bridge",
     "ui_lab",
-    "formatted_replies",
     "virtual_workspace",
 )
+
+# These shipped in older builds but are now part of the core product (or no
+# longer supported).  Ignore an already-seeded copy in the user's addon folder
+# so an upgrade cannot silently bring the old UI/actions back.
+_RETIRED_ADDON_IDS = {"formatted-replies"}
 
 
 def _terminal(event: str) -> None:
@@ -296,6 +300,9 @@ class AddonManager:
         """Load addon."""
         try:
             manifest = load_manifest(folder)
+            if manifest.id in _RETIRED_ADDON_IDS:
+                _terminal(f"ignored retired addon {manifest.id}")
+                return
             enabled = addon_store.is_enabled(manifest.id, True)
             addon = LoadedAddon(
                 id=manifest.id,

@@ -32,9 +32,6 @@ _APPROVAL_POLICIES = ("on-request", "unlessTrusted")
 _REASONING_SUMMARY = "detailed"
 _PERSISTENT_CLIENT: _Client | None = None
 _PERSISTENT_CLIENT_LOCK = threading.RLock()
-_ISOLATED_CONFIG = 'history.persistence = "none"\n'
-
-
 def _codex_executable() -> str:
     configured = os.getenv("OPENWAND_CODEX_CLI", "").strip()
     executable = configured or shutil.which("codex") or ""
@@ -45,26 +42,28 @@ def _codex_executable() -> str:
     return executable
 
 
-def _isolated_codex_home() -> Path:
-    """Return OpenWand's private Codex state root, creating it when needed."""
-    configured = os.getenv("OPENWAND_CODEX_HOME", "").strip()
-    if configured:
-        home = Path(configured).expanduser()
-    else:
-        from core.system.paths import USER_DATA_DIR
+def _configured_codex_home() -> Path | None:
+    """Return an explicit OpenWand Codex profile override, if configured.
 
-        home = USER_DATA_DIR / "codex"
+    With no override, OpenWand deliberately leaves ``CODEX_HOME`` untouched so
+    app-server uses the same config, MCP servers, plugins, and skills as Codex
+    CLI. Authentication remains whatever the user selected through Codex/OpenWand.
+    """
+    configured = os.getenv("OPENWAND_CODEX_HOME", "").strip()
+    if not configured:
+        return None
+    home = Path(configured).expanduser()
     home = home.resolve()
     home.mkdir(parents=True, exist_ok=True)
-    config_path = home / "config.toml"
-    if not config_path.exists():
-        config_path.write_text(_ISOLATED_CONFIG, encoding="utf-8")
     return home
 
 
 def _codex_environment_overrides() -> dict[str, str]:
-    """Return state-location overrides shared by every OpenWand Codex command."""
-    home = str(_isolated_codex_home())
+    """Return only an explicitly requested Codex profile override."""
+    configured = _configured_codex_home()
+    if configured is None:
+        return {}
+    home = str(configured)
     return {
         "CODEX_HOME": home,
         "CODEX_SQLITE_HOME": home,
@@ -113,6 +112,7 @@ class _Client:
         self._items: dict[str, dict[str, Any]] = {}
         self._reply_parts: list[str] = []
         self._attachments: list[dict[str, Any]] = []
+        self._active_thread_id = ""
         self._model_thinking_announced = False
         self._stderr: deque[str] = deque(maxlen=30)
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -201,6 +201,7 @@ class _Client:
             if item_id:
                 self._items[item_id] = item
             item_type = str(item.get("type") or "")
+            self._emit_activity_item(params, item, phase="started")
             if item_type == "userMessage":
                 self._model_thinking_announced = True
                 emit(self.on_event, "status", "Model is thinking...")
@@ -224,6 +225,7 @@ class _Client:
         elif method == "item/completed":
             item = params.get("item") if isinstance(params.get("item"), dict) else {}
             item_type = str(item.get("type") or "")
+            self._emit_activity_item(params, item, phase="completed")
             if item_type == "agentMessage" and not self._reply_parts:
                 text = str(item.get("text") or "")
                 if text:
@@ -297,6 +299,70 @@ class _Client:
             return status
         return ""
 
+    def _emit_activity_item(
+        self,
+        params: dict[str, Any],
+        item: dict[str, Any],
+        *,
+        phase: str,
+    ) -> None:
+        """Expose Codex subagent lifecycle and child-thread work to the chat UI."""
+        if self.on_event is None:
+            return
+        item_type = str(item.get("type") or "")
+        event_thread_id = str(params.get("threadId") or "")
+        payload: dict[str, Any] | None = None
+        if item_type == "collabAgentToolCall":
+            receiver_ids = [str(value) for value in item.get("receiverThreadIds") or [] if str(value)]
+            payload = {
+                "type": "subagent",
+                "phase": phase,
+                "item_id": str(item.get("id") or ""),
+                "tool": str(item.get("tool") or ""),
+                "status": str(item.get("status") or phase),
+                "sender_thread_id": str(item.get("senderThreadId") or ""),
+                "receiver_thread_ids": receiver_ids,
+                "agent_id": receiver_ids[0] if receiver_ids else "",
+                "prompt": str(item.get("prompt") or ""),
+                "model": str(item.get("model") or ""),
+                "reasoning_effort": str(item.get("reasoningEffort") or ""),
+                "agent_states": dict(item.get("agentsStates") or {}),
+            }
+        elif item_type == "subAgentActivity":
+            payload = {
+                "type": "subagent",
+                "phase": phase,
+                "item_id": str(item.get("id") or ""),
+                "status": str(item.get("kind") or phase),
+                "agent_id": str(item.get("agentThreadId") or ""),
+                "agent_path": str(item.get("agentPath") or ""),
+            }
+        elif (
+            event_thread_id
+            and getattr(self, "_active_thread_id", "")
+            and event_thread_id != self._active_thread_id
+        ):
+            detail = (
+                item.get("command")
+                or item.get("tool")
+                or item.get("query")
+                or item.get("path")
+                or item.get("text")
+                or item_type
+            )
+            payload = {
+                "type": "subagent",
+                "phase": phase,
+                "item_id": str(item.get("id") or ""),
+                "status": str(item.get("status") or phase),
+                "agent_id": event_thread_id,
+                "activity_type": item_type,
+                "detail": str(detail or ""),
+            }
+        if payload is not None:
+            label = payload.get("prompt") or payload.get("detail") or payload.get("tool") or payload.get("status")
+            self.on_event(HarnessEvent(kind="activity", text=str(label or "Subagent activity"), attachment=payload))
+
     def _handle_server_request(self, request_id: object, method: str, params: dict[str, Any]) -> None:
         item_id = str(params.get("itemId") or "")
         item = self._items.get(item_id, {})
@@ -307,15 +373,72 @@ class _Client:
             self.send({"id": request_id, "result": {"decision": "accept" if allowed else "decline"}})
             return
         if method == "item/permissions/requestApproval":
-            allowed = False
+            response: bool | dict[str, Any] = False
             if self.approval_callback is not None:
-                allowed = approval_allowed(self.approval_callback({
+                response = self.approval_callback({
+                    "kind": "permission",
                     "action": "grant ChatGPT permissions",
                     "path": str(params.get("cwd") or ""),
                     "details": {"reason": params.get("reason"), "permissions": params.get("permissions")},
-                }))
-            result = {"permissions": params.get("permissions") or {}} if allowed else {"permissions": {}}
+                })
+            allowed = approval_allowed(response)
+            scope = str(response.get("scope") or "turn") if isinstance(response, dict) else "turn"
+            result = {
+                "permissions": (params.get("permissions") or {}) if allowed else {},
+                "scope": scope if scope in {"turn", "session"} else "turn",
+            }
             self.send({"id": request_id, "result": result})
+            return
+        if method == "item/tool/requestUserInput":
+            response: dict[str, Any] = {}
+            if self.approval_callback is not None:
+                raw = self.approval_callback({
+                    "kind": "user_input",
+                    "action": "answer ChatGPT question",
+                    "questions": list(params.get("questions") or []),
+                    "details": {
+                        "thread_id": params.get("threadId"),
+                        "turn_id": params.get("turnId"),
+                        "item_id": params.get("itemId"),
+                        "auto_resolution_ms": params.get("autoResolutionMs"),
+                    },
+                })
+                if isinstance(raw, dict):
+                    response = raw
+            answers = response.get("answers") if isinstance(response.get("answers"), dict) else {}
+            self.send({"id": request_id, "result": {"answers": answers}})
+            return
+        if method == "mcpServer/elicitation/request":
+            response: dict[str, Any] = {}
+            if self.approval_callback is not None:
+                raw = self.approval_callback({
+                    "kind": "mcp_elicitation",
+                    "action": "answer MCP server request",
+                    "server_name": str(params.get("serverName") or ""),
+                    "mode": str(params.get("mode") or "form"),
+                    "message": str(params.get("message") or ""),
+                    "url": str(params.get("url") or ""),
+                    "requested_schema": params.get("requestedSchema") or {},
+                    "details": {
+                        "thread_id": params.get("threadId"),
+                        "turn_id": params.get("turnId"),
+                        "elicitation_id": params.get("elicitationId"),
+                        "_meta": params.get("_meta"),
+                    },
+                })
+                if isinstance(raw, dict):
+                    response = raw
+            action = str(response.get("action") or ("accept" if response.get("approved") else "decline"))
+            if action not in {"accept", "decline", "cancel"}:
+                action = "decline"
+            self.send({
+                "id": request_id,
+                "result": {
+                    "action": action,
+                    "content": response.get("content") if action == "accept" else None,
+                    "_meta": response.get("_meta"),
+                },
+            })
             return
         self.send({"id": request_id, "error": {"code": -32601, "message": f"Unsupported request: {method}"}})
 
@@ -340,7 +463,13 @@ def _initialize_client(
     try:
         client.request("initialize", {
             "clientInfo": {"name": "openwand", "title": "OpenWand", "version": VERSION},
-            "capabilities": {"experimentalApi": True},
+            "capabilities": {
+                "experimentalApi": True,
+                # Current Codex releases retain this legacy alias for the
+                # openai/form MCP extension, while older releases reject the
+                # newer generic `extensions` field during initialization.
+                "mcpServerOpenaiFormElicitation": True,
+            },
         })
         client.send({"method": "initialized", "params": {}})
         return client
@@ -504,9 +633,53 @@ def _start_turn(
         return _request_turn(client, params)
 
 
+def _capability_snapshot(client: _Client, thread_id: str, workdir: Path) -> None:
+    """Publish Codex's native skills and MCP inventory without reimplementing it.
+
+    These calls use app-server itself, so discovery and config precedence stay
+    identical to the installed Codex CLI version.
+    """
+    callback = getattr(client, "on_event", None)
+    if callback is None:
+        return
+    skills: list[dict[str, Any]] = []
+    skill_errors: list[dict[str, Any]] = []
+    mcp_servers: list[dict[str, Any]] = []
+    try:
+        response = client.request("skills/list", {"cwds": [str(workdir)]})
+        for entry in response.get("data") or []:
+            if not isinstance(entry, dict):
+                continue
+            skills.extend(item for item in entry.get("skills") or [] if isinstance(item, dict))
+            skill_errors.extend(item for item in entry.get("errors") or [] if isinstance(item, dict))
+    except Exception as exc:  # inventory must never prevent a normal turn
+        skill_errors.append({"message": str(exc)})
+    try:
+        response = client.request(
+            "mcpServerStatus/list",
+            {"detail": "toolsAndAuthOnly", "threadId": thread_id},
+        )
+        mcp_servers = [item for item in response.get("data") or [] if isinstance(item, dict)]
+    except Exception as exc:  # inventory must never prevent a normal turn
+        mcp_servers = [{"name": "MCP", "error": str(exc), "authStatus": "error"}]
+    payload = {
+        "type": "capabilities",
+        "skills": skills,
+        "skill_errors": skill_errors,
+        "mcp_servers": mcp_servers,
+        "cwd": str(workdir),
+    }
+    callback(
+        HarnessEvent(
+            kind="activity",
+            text=f"{len(skills)} skills · {len(mcp_servers)} MCP servers",
+            attachment=payload,
+        )
+    )
 def run_codex(
     prompt: str,
     *,
+    model: str | None = None,
     session_id: str = "",
     cwd: str | Path | None = None,
     on_event: EventCallback | None = None,
@@ -523,7 +696,7 @@ def run_codex(
     try:
         import config
 
-        model = str(getattr(config, "OPENWAND_CODEX_MODEL", "") or "")
+        configured_model = str(getattr(config, "OPENWAND_CODEX_MODEL", "") or "")
         fast_mode = bool(getattr(config, "OPENWAND_CODEX_FAST_MODE", False))
         approval_mode = str(getattr(config, "OPENWAND_CODEX_APPROVAL_MODE", "ask") or "ask")
         reasoning_summary = str(
@@ -532,11 +705,12 @@ def run_codex(
         )
         system_prompt = str(getattr(config, "OPENWAND_CODEX_SYSTEM_PROMPT", "") or "")
     except (ImportError, AttributeError):
-        model = os.getenv("OPENWAND_CODEX_MODEL", "")
+        configured_model = os.getenv("OPENWAND_CODEX_MODEL", "")
         fast_mode = os.getenv("OPENWAND_CODEX_FAST_MODE", "").lower() in {"1", "true", "yes", "on"}
         approval_mode = os.getenv("OPENWAND_CODEX_APPROVAL_MODE", "ask")
         reasoning_summary = os.getenv("OPENWAND_CODEX_REASONING_SUMMARY", _REASONING_SUMMARY)
         system_prompt = os.getenv("OPENWAND_CODEX_SYSTEM_PROMPT", "")
+    model = str(configured_model if model is None else model).strip()
     with _PERSISTENT_CLIENT_LOCK:
         client: _Client | None = None
         try:
@@ -550,6 +724,7 @@ def run_codex(
 
             client._workspace_change_recorder = WorkspaceChangeRecorder(workdir)
             client._model_thinking_announced = False
+            client._active_thread_id = ""
             emit(on_event, "status", "Opening conversation in ChatGPT...")
             thread_id = str(session_id or "").strip()
             if thread_id:
@@ -577,6 +752,8 @@ def run_codex(
                 thread_id = str(thread.get("id") or "")
             if not thread_id:
                 raise CodexAppServerError("ChatGPT's local agent did not return a conversation id")
+            client._active_thread_id = thread_id
+            _capability_snapshot(client, thread_id, workdir)
             emit(on_event, "status", "Preparing ChatGPT turn...")
             _start_turn(
                 client,

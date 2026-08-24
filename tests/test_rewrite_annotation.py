@@ -6,7 +6,11 @@ import pytest
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtTest import QSignalSpy, QTest
 
-from ui.rewrite_annotation import RewriteAnnotationPopup, inline_diff_html
+from ui.rewrite_annotation import (
+    RewriteAnnotationPopup,
+    _native_screen_rect_to_qt,
+    inline_diff_html,
+)
 
 
 def test_inline_diff_marks_deletions_and_additions() -> None:
@@ -104,10 +108,33 @@ def test_processing_balloon_shows_its_comment_number(qapp) -> None:
     qapp.processEvents()
 
     assert popup._balloon_button.display_number_text == "7"
-    assert popup._balloon_button._number_label.text() == "7"
-    assert popup._balloon_button._number_label.geometry() == QRect(5, 5, 34, 34)
+    assert popup._balloon_button.feature_letter_text == "R"
+    assert popup._balloon_button._monogram_label.text() == "R7"
+    assert popup._balloon_button._monogram_label.geometry() == QRect(6, 5, 36, 33)
+    assert "comment 7" in popup._balloon_button.accessibleName()
     assert popup._balloon_button.uses_vector_source
     assert popup.mask().isEmpty()
+    popup.remove()
+
+
+def test_feature_balloon_can_relabel_future_features(qapp) -> None:
+    popup = RewriteAnnotationPopup(annotation_id="feature-letter", selected_text="old words")
+
+    popup._balloon_button.set_feature_letter("summarize")
+
+    assert popup._balloon_button.feature_letter_text == "S"
+    assert popup._balloon_button._monogram_label.text() == "S1"
+    popup.remove()
+
+
+def test_feature_balloon_keeps_multi_digit_comment_number_inline(qapp) -> None:
+    popup = RewriteAnnotationPopup(annotation_id="number-fit", selected_text="old words")
+
+    popup._balloon_button.set_display_number(12)
+
+    assert popup._balloon_button.display_number_text == "12"
+    assert popup._balloon_button._monogram_label.text() == "R12"
+    assert popup._balloon_button._monogram_label.geometry() == QRect(6, 5, 36, 33)
     popup.remove()
 
 
@@ -312,6 +339,100 @@ def test_processing_tail_uses_explicit_native_character_endpoint(qapp) -> None:
 
     assert popup.pos() + popup._balloon_button.tail_tip == QPoint(300, 170)
     popup.remove()
+
+
+def test_native_anchor_converts_inside_negative_origin_mixed_dpi_monitor(monkeypatch) -> None:
+    """Native physical pixels map to Qt DIPs relative to the owning monitor."""
+    import ui.rewrite_annotation as rewrite_annotation
+
+    class FakeScreen:
+        def __init__(self, geometry: QRect, dpr: float) -> None:
+            self._geometry = geometry
+            self._dpr = dpr
+
+        def geometry(self) -> QRect:
+            return QRect(self._geometry)
+
+        def devicePixelRatio(self) -> float:
+            return self._dpr
+
+    monkeypatch.setattr(rewrite_annotation.sys, "platform", "win32")
+    converted = _native_screen_rect_to_qt(
+        {
+            "left": -2260.0,
+            "top": 150.0,
+            "width": 90.0,
+            "height": 30.0,
+            "endpoint_x": -2170.0,
+            "endpoint_y": 165.0,
+        },
+        screens=[
+            FakeScreen(QRect(0, 0, 1920, 1080), 1.0),
+            FakeScreen(QRect(-2560, 0, 1707, 960), 1.5),
+        ],
+    )
+
+    assert converted == {
+        "left": -2360.0,
+        "top": 100.0,
+        "width": 60.0,
+        "height": 20.0,
+        "endpoint_x": -2300.0,
+        "endpoint_y": 110.0,
+    }
+
+
+def test_absolute_anchor_refresh_does_not_double_apply_window_move(qapp, monkeypatch) -> None:
+    popup = RewriteAnnotationPopup(
+        annotation_id="absolute-refresh",
+        selected_text="selected words",
+        source_window_id=101,
+        selection_rect={"left": 100, "top": 120, "width": 80, "height": 20},
+    )
+    first_window = QRect(20, 30, 800, 600)
+    moved_window = QRect(70, 75, 800, 600)
+    assert popup._selection_anchor_for_source(first_window) == QRect(100, 120, 80, 20)
+    assert popup._selection_anchor_for_source(moved_window) == QRect(150, 165, 80, 20)
+    monkeypatch.setattr(popup, "_source_window_state", lambda: (True, moved_window))
+
+    popup.update_selection_anchor(
+        {"left": 150, "top": 165, "width": 80, "height": 20},
+        visible=True,
+    )
+
+    assert popup._selection_anchor_for_source(moved_window) == QRect(150, 165, 80, 20)
+    popup.remove()
+
+
+def test_processing_balloon_remains_visible_at_every_screen_corner(qapp) -> None:
+    available = qapp.primaryScreen().availableGeometry()
+    endpoints = (
+        available.topLeft(),
+        available.topRight(),
+        available.bottomLeft(),
+        available.bottomRight(),
+    )
+    for index, endpoint in enumerate(endpoints):
+        popup = RewriteAnnotationPopup(
+            annotation_id=f"corner-{index}",
+            selected_text="selected words",
+            selection_rect={
+                "left": endpoint.x(),
+                "top": endpoint.y(),
+                "width": 1,
+                "height": 1,
+                "endpoint_x": endpoint.x(),
+                "endpoint_y": endpoint.y(),
+            },
+        )
+        popup.show_processing()
+        qapp.processEvents()
+
+        assert available.contains(popup.geometry())
+        actual_tip = popup.pos() + popup._balloon_button.tail_tip
+        delta = actual_tip - endpoint
+        assert delta.x() * delta.x() + delta.y() * delta.y() <= 22 * 22 + 1
+        popup.remove()
 
 
 def test_accept_and_decline_hide_proposals_immediately(qapp) -> None:

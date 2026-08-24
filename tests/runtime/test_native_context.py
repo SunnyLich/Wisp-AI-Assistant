@@ -245,6 +245,97 @@ def test_windows_uia_selection_uses_last_visible_screen_rectangle(monkeypatch):
     }
 
 
+def test_windows_backward_selection_keeps_hotkey_time_caret_endpoint(monkeypatch):
+    """The bubble follows the active start, not document order, after focus moves."""
+    monkeypatch.setattr(native_host, "IS_WIN", True)
+
+    class FakeRange:
+        @staticmethod
+        def GetBoundingRectangles():
+            return [100.0, 120.0, 80.0, 20.0, 100.0, 140.0, 160.0, 20.0]
+
+    text_range = FakeRange()
+    affinity = native_host._win_uia_anchor_affinity(
+        text_range,
+        caret_rect={"left": 100.0, "top": 120.0, "width": 2.0, "height": 20.0},
+        pointer_rect={},
+    )
+    assert affinity == "start"
+
+    monkeypatch.setattr(
+        native_host,
+        "_focus_cache",
+        {
+            "token": 81,
+            "kind": "win-uia",
+            "range": text_range,
+            "anchor_affinity": affinity,
+        },
+    )
+    result = native_host.selection_anchor_resolve(focus_token=81, allow_mouse=False)
+
+    assert result["source"] == "uia"
+    assert result["selection_rect"] == {
+        "left": 100.0,
+        "top": 120.0,
+        "width": 80.0,
+        "height": 20.0,
+        "endpoint_x": 100.0,
+        "endpoint_y": 130.0,
+    }
+
+
+def test_windows_unrelated_pointer_cannot_reverse_keyboard_selection(monkeypatch):
+    """Mouse fallback is accepted only when it is visibly at a range endpoint."""
+    monkeypatch.setattr(native_host, "IS_WIN", True)
+
+    class FakeRange:
+        @staticmethod
+        def GetBoundingRectangles():
+            return [100.0, 120.0, 180.0, 20.0]
+
+    assert native_host._win_uia_anchor_affinity(
+        FakeRange(),
+        caret_rect={},
+        pointer_rect={"left": 900.0, "top": 700.0, "width": 2.0, "height": 20.0},
+    ) == ""
+
+
+def test_windows_bidirectional_selection_keeps_left_edge_on_document_end(monkeypatch):
+    """The visual caret edge is independent from document start/end ordering."""
+    monkeypatch.setattr(native_host, "IS_WIN", True)
+
+    class FakeRange:
+        @staticmethod
+        def GetBoundingRectangles():
+            return [300.0, 120.0, 80.0, 20.0, 200.0, 140.0, 160.0, 20.0]
+
+    text_range = FakeRange()
+    affinity, edge = native_host._win_uia_anchor_details(
+        text_range,
+        caret_rect={"left": 200.0, "top": 140.0, "width": 2.0, "height": 20.0},
+        pointer_rect={},
+    )
+    assert (affinity, edge) == ("end", "left")
+    monkeypatch.setattr(
+        native_host,
+        "_focus_cache",
+        {
+            "token": 82,
+            "kind": "win-uia",
+            "range": text_range,
+            "anchor_affinity": affinity,
+            "anchor_edge": edge,
+        },
+    )
+
+    result = native_host.selection_anchor_resolve(focus_token=82, allow_mouse=False)
+
+    assert result["selection_rect"]["top"] == 140.0
+    assert result["selection_rect"]["endpoint_x"] == 200.0
+    assert result["selection_rect"]["endpoint_y"] == 150.0
+
+
 def test_windows_uia_selection_rejects_clipped_viewport_sliver(monkeypatch):
     """An offscreen Monaco range can appear as a 2 px strip at the editor edge."""
     monkeypatch.setattr(native_host, "IS_WIN", True)

@@ -37,8 +37,6 @@ const DOCS_PAGES = {
 <h2 id="chat-workspace">Chat workspace</h2>
 <p>The full chat window uses the entire conversation area, groups and searches history by project, and keeps the selected conversation attached to its composer. Replies use safe native Markdown styling for headings, lists, nested steps, quotations, tables, code, links, task markers, and multilingual text without a second model call. Long conversations support the mouse wheel, browser-style middle-button autoscroll, and a wider draggable scrollbar.</p>
 <p>OpenWand can scan local ChatGPT/Codex and Claude conversation files and present the conversations inside a full-width picker instead of a filesystem chooser. You choose the conversations before anything is added, and optional automatic sync remains local to the files already on your computer.</p>
-<p>The optional <strong>Formatted Replies (Experimental)</strong> add-on can restyle an individual reply or every reply. The original remains available, the exact chat model stays beside the composer, and the formatting model appears in the format-button tooltip before a formatting call. OpenWand rejects or repairs output that drops visible source content. The built-in renderer remains available when no formatting model is desired.</p>
-
 <hr />
 <h2 id="design-goals">Design goals</h2>
 <table>

@@ -12,6 +12,8 @@ from openwand_brain import handlers
 def test_config_reload_handler_registered():
     """Verify config reload handler registered behavior."""
     assert "brain.config.reload" in handlers.HANDLERS
+    assert "brain.llm.prefix.prewarm" in handlers.HANDLERS
+    assert "brain.llm.prefix.invalidate" in handlers.HANDLERS
     assert "brain.privacy.prewarm" in handlers.HANDLERS
     assert "brain.harness.prewarm" in handlers.HANDLERS
 
@@ -136,6 +138,38 @@ def test_harness_prewarm_starts_reusable_codex_server(monkeypatch):
         "ready": True,
         "cached": False,
         "backend": "codex-test",
+    }
+
+
+def test_llm_prefix_prewarm_forwards_static_policy_without_dynamic_context(monkeypatch):
+    import config
+    from core.llm_clients import client as llm_client
+
+    monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "openwand", raising=False)
+    captured: dict = {}
+
+    def schedule(**kwargs):
+        captured.update(kwargs)
+        return {"scheduled": True, "identity": "prefix-id"}
+
+    monkeypatch.setattr(llm_client, "schedule_ollama_prefix_prewarm", schedule)
+
+    result = handlers.HANDLERS["brain.llm.prefix.prewarm"](
+        route_kind="chat",
+        allowed_tools=["web_search"],
+        pinned_tools=["web_search"],
+        file_access_mode="off",
+        browser_retrieval=True,
+    )
+
+    assert result == {"scheduled": True, "identity": "prefix-id"}
+    assert captured == {
+        "route_kind": "chat",
+        "allowed_tools": ["web_search"],
+        "pinned_tools": ["web_search"],
+        "file_access_mode": "off",
+        "allow_screenshot_tool": False,
+        "browser_retrieval": True,
     }
 
 

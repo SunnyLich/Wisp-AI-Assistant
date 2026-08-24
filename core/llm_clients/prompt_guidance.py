@@ -48,6 +48,13 @@ MEMORY_SEARCH_NOTE = (
 )
 
 
+BROWSER_RETRIEVAL_NOTE = (
+    "When the user's request depends on a URL they supplied, retrieve and read that "
+    "page before answering. Summarize or extract only the relevant information; do not "
+    "dump the retrieved page text into the reply unless they explicitly request it."
+)
+
+
 REWRITE_SYSTEM_PROMPT = (
     "You are a text editor assistant. "
     "Reason about the user's rewrite instruction normally. "
@@ -93,6 +100,13 @@ def with_memory_search_note(system: str, allowed_tools: list[str] | None) -> str
     if allowed_tools is not None and "memory_search" in set(allowed_tools):
         return append_note(system, MEMORY_SEARCH_NOTE)
     return system
+
+
+def with_browser_retrieval_note(system: str, enabled: bool) -> str:
+    """Append the stable browser-tool instruction for a caller policy."""
+    if not enabled:
+        return system
+    return append_note(system, BROWSER_RETRIEVAL_NOTE)
 
 
 def apply_query_guidance(

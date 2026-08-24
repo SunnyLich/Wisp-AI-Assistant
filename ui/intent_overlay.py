@@ -291,11 +291,11 @@ _INPUT_MAX_H   = 118      # fallback when usable screen geometry is unavailable
 _SCREEN_MARGIN = 24
 _CONV_H        = 77
 _CONV_TOP      = 36
-_CTX_H         = 96
+_CTX_H         = 130
 _CTX_GAP       = 18
 _CTX_CHIP_H    = 22
 _CTX_CHIP_W    = 196
-_CTX_TOP       = 15
+_CTX_TOP       = 49
 _CTX_ROW_GAP   = 3
 _CTX_KEY_W     = 10
 _CTX_KEY_GAP   = 8
@@ -315,6 +315,12 @@ _CTX_PREVIEW_LINE_H = 22
 _CTX_PREVIEW_MAX = 3
 _CTX_PREVIEW_MAX_LINES = 2
 _CTX_PREVIEW_REMOVE_W = 16
+_PANEL_TAB_TOP = 8
+_PANEL_TAB_H = 27
+_PANEL_TAB_GAP = 18
+_TOOLS_TOP = 43
+_TOOLS_ROW_H = 36
+_TOOLS_COLUMN_GAP = 18
 
 # ── Palette ─────────────────────────────────────────────────────────────────
 _BG             = QColor("#16181b")
@@ -601,6 +607,55 @@ def _default_context_items() -> list[dict]:
     ]
 
 
+def _normalize_tool_snapshot(snapshot: dict | None) -> dict:
+    """Return a safe, interactive capability snapshot from the execution layer."""
+    raw = snapshot if isinstance(snapshot, dict) else {}
+    items: list[dict] = []
+    for value in raw.get("items") or []:
+        if not isinstance(value, dict):
+            continue
+        name = " ".join(str(value.get("name") or "").split()).strip()
+        if not name:
+            continue
+        status = str(value.get("status") or "unavailable").strip().lower()
+        if status not in {"ready", "ask", "unavailable"}:
+            status = "unavailable"
+        try:
+            count = max(1, int(value.get("count") or 1))
+        except (TypeError, ValueError, OverflowError):
+            count = 1
+        tools = [
+            str(name).strip()
+            for name in (value.get("tools") or [])
+            if str(name).strip()
+        ]
+        toggleable = (
+            bool(value.get("toggleable"))
+            and status != "unavailable"
+            and bool(tools)
+        )
+        items.append({
+            "id": str(value.get("id") or name).strip(),
+            "name": name,
+            "status": status,
+            "count": count,
+            "description": " ".join(str(value.get("description") or "").split()),
+            "tools": tools,
+            "enabled": bool(value.get("enabled", status != "unavailable")) and status != "unavailable",
+            "toggleable": toggleable,
+        })
+    try:
+        count = max(0, int(raw.get("count") or 0))
+    except (TypeError, ValueError, OverflowError):
+        count = sum(item["count"] for item in items if item["status"] != "unavailable")
+    return {
+        "execution": " ".join(str(raw.get("execution") or "").split()),
+        "count": count,
+        "items": items,
+        "note": " ".join(str(raw.get("note") or "").split()),
+    }
+
+
 class IntentOverlay(QWidget):
     """Model intent overlay."""
     intent_chosen = Signal(str, str)
@@ -625,6 +680,7 @@ class IntentOverlay(QWidget):
         focus_overlay: bool = False,
         defer_focus: bool = False,
         action_provider: dict | None = None,
+        tool_snapshot: dict | None = None,
         parent=None,
     ):
         """Initialize the intent overlay instance."""
@@ -686,6 +742,12 @@ class IntentOverlay(QWidget):
                 self._new_conversation_context_defaults[item_id] = str(
                     next_item.get("default_state") or next_item.get("state") or "off"
                 ).lower()
+        self._tool_snapshot = _normalize_tool_snapshot(tool_snapshot)
+        self._tool_items = list(self._tool_snapshot["items"])
+        self._tool_row_rects: list[tuple[QRect, int]] = []
+        self._active_panel = "context"
+        self._context_tab_rect = QRect()
+        self._tools_tab_rect = QRect()
         self._project_options = self._normalize_project_options(project_options or [])
         self._project_id = active_project_id or self._default_project_id()
         if not any(item.get("id") == self._project_id for item in self._project_options):
@@ -859,6 +921,25 @@ class IntentOverlay(QWidget):
         """Return the current per-prompt context source states."""
         return [dict(item) for item in self._context_items]
 
+    def tool_snapshot(self) -> dict:
+        """Return the current capability snapshot represented by the Tools tab."""
+        return {
+            **self._tool_snapshot,
+            "items": [dict(item) for item in self._tool_items],
+        }
+
+    def tool_choices(self) -> list[dict]:
+        """Return the per-prompt tool switch decisions."""
+        return [
+            {
+                "id": str(item.get("id") or ""),
+                "tools": list(item.get("tools") or []),
+                "enabled": bool(item.get("enabled")),
+                "toggleable": bool(item.get("toggleable")),
+            }
+            for item in self._tool_items
+        ]
+
     def update_action_provider(self, action_provider: dict | None = None) -> None:
         """Load app-specific actions after deferred hotkey context capture."""
         if self._handled:
@@ -909,7 +990,7 @@ class IntentOverlay(QWidget):
     def _base_height(self) -> int:
         """Return the picker height for the current rows and context previews."""
         conversation_h = _CONV_H if self._show_conversation_selector else 0
-        context_h = self._context_controls_height() if self._context_items else 0
+        context_h = self._panel_controls_height()
         intent_count = sum(not bool(row.get("is_custom")) for row in self._rows)
         return (
             conversation_h
@@ -927,6 +1008,42 @@ class IntentOverlay(QWidget):
         rows = max(1, (len(self._context_items) + 1) // 2)
         grid_h = rows * _CTX_CHIP_H + max(0, rows - 1) * _CTX_ROW_GAP
         return max(_CTX_H, _CTX_TOP + max(57, grid_h))
+
+    def _tools_controls_height(self) -> int:
+        """Return the tab-and-inventory height for the tools view."""
+        rows = max(1, (len(self._tool_items) + 1) // 2)
+        return max(_CTX_H, _TOOLS_TOP + rows * _TOOLS_ROW_H + 8)
+
+    def _panel_controls_height(self) -> int:
+        """Return the height of the active Context/Tools sibling view."""
+        if self._active_panel == "tools":
+            return self._tools_controls_height()
+        return self._context_controls_height()
+
+    def _set_active_panel(self, panel: str) -> bool:
+        """Switch between the Context and per-prompt Tools views."""
+        normalized = "tools" if str(panel or "").lower() == "tools" else "context"
+        if normalized == self._active_panel:
+            return False
+        self._active_panel = normalized
+        self._warning_rects = []
+        self._ctx_remove_rects = []
+        self._note_interaction()
+        self._resize_for_context_preview()
+        self.update()
+        return True
+
+    def _tools_shortcut_available(self) -> bool:
+        """Reserve T only when it does not shadow an existing picker command."""
+        used = {
+            str(row.get("glyph") or "").strip().lower()
+            for row in self._rows
+        }
+        used.update(
+            str(item.get("key") or "").strip().lower()
+            for item in self._context_items
+        )
+        return "t" not in used
 
     def _prompt_input_rect(self, height: int | None = None) -> QRect:
         """Return the amber-rail prompt surface at the foot of the picker."""
@@ -1142,9 +1259,12 @@ class IntentOverlay(QWidget):
         if self._show_conversation_selector:
             self._paint_conversation_selector(p, y, _serif_font(13.5), _serif_font(13.5), palette)
             y += _CONV_H
-        if self._context_items:
+        self._paint_panel_tabs(p, y, palette)
+        if self._active_panel == "context":
             self._paint_context_items(p, y, ctx_label_font, ctx_state_font, ctx_token_font, palette)
-            y += self._context_controls_height()
+        else:
+            self._paint_tool_items(p, y, palette)
+        y += self._panel_controls_height()
         y += _ROWS_TOP
         for i, row in enumerate(self._rows):
             if row.get("is_custom"):
@@ -1385,6 +1505,209 @@ class IntentOverlay(QWidget):
         self._conversation_mode_rect = QRect(self._project_rect.right() + 7, top, 96, 29)
         self._conversation_list_rect = QRect(self._conversation_mode_rect.right() + 7, top, 212, 29)
 
+    def _paint_panel_tabs(
+        self,
+        p: QPainter,
+        y: int,
+        palette: dict[str, QColor],
+    ) -> None:
+        """Paint Context and Tools as sibling views above their shared body."""
+        top = y + _PANEL_TAB_TOP
+        font = _serif_font(10.5, QFont.Weight.DemiBold)
+        context_text = f"{t('Context')} · {len(self._context_items)}"
+        tools_text = f"{t('Tools')} · {int(self._tool_snapshot.get('count') or 0)}"
+        context_w = QFontMetrics(font).horizontalAdvance(context_text) + 4
+        tools_w = QFontMetrics(font).horizontalAdvance(tools_text) + 4
+        self._context_tab_rect = QRect(_PAD_H, top, context_w, _PANEL_TAB_H)
+        self._tools_tab_rect = QRect(
+            self._context_tab_rect.right() + _PANEL_TAB_GAP,
+            top,
+            tools_w,
+            _PANEL_TAB_H,
+        )
+        note = str(self._tool_snapshot.get("note") or "").strip()
+        if note:
+            self._warning_rects.append((self._tools_tab_rect, note))
+        p.setFont(font)
+        for name, text, rect in (
+            ("context", context_text, self._context_tab_rect),
+            ("tools", tools_text, self._tools_tab_rect),
+        ):
+            selected = self._active_panel == name
+            p.setPen(QPen(palette["key"] if selected else palette["text_dim"]))
+            p.drawText(
+                rect,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                text,
+            )
+            if selected:
+                p.fillRect(
+                    QRect(rect.x(), rect.bottom() - 1, rect.width(), 2),
+                    QBrush(palette["key"]),
+                )
+        execution = str(self._tool_snapshot.get("execution") or "").upper()
+        if execution:
+            right = _W - _PAD_H
+            left = self._tools_tab_rect.right() + 12
+            p.setFont(_mono_font(7.5, tracking=0.08))
+            p.setPen(QPen(palette["text_dim"]))
+            execution = QFontMetrics(p.font()).elidedText(
+                execution,
+                Qt.TextElideMode.ElideLeft,
+                max(0, right - left),
+            )
+            p.drawText(
+                left,
+                top,
+                max(0, right - left),
+                _PANEL_TAB_H,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                execution,
+            )
+        p.setPen(QPen(palette["sep"], 1))
+        p.drawLine(_PAD_H, top + _PANEL_TAB_H, _W - _PAD_H, top + _PANEL_TAB_H)
+
+    def _paint_tool_items(
+        self,
+        p: QPainter,
+        y: int,
+        palette: dict[str, QColor],
+    ) -> None:
+        """Paint per-prompt tool switches in two columns."""
+        top = y + _TOOLS_TOP
+        self._tool_row_rects = []
+        content_w = _W - _PAD_H * 2
+        column_w = (content_w - _TOOLS_COLUMN_GAP) // 2
+        if not self._tool_items:
+            p.setFont(_serif_font(11.5, italic=True))
+            p.setPen(QPen(palette["text_dim"]))
+            p.drawText(
+                _PAD_H + 10,
+                top,
+                content_w - 20,
+                _TOOLS_ROW_H,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                t("No tools are offered for this prompt."),
+            )
+            return
+
+        label_font = _serif_font(11.5, QFont.Weight.DemiBold)
+        status_font = _mono_font(7.3, tracking=0.07)
+        for index, item in enumerate(self._tool_items):
+            column = index % 2
+            row = index // 2
+            rect = QRect(
+                _PAD_H + column * (column_w + _TOOLS_COLUMN_GAP),
+                top + row * _TOOLS_ROW_H,
+                column_w,
+                _TOOLS_ROW_H,
+            )
+            self._tool_row_rects.append((QRect(rect), index))
+            p.setPen(QPen(palette["sep"], 1))
+            p.drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom())
+            status = str(item.get("status") or "unavailable")
+            enabled = bool(item.get("enabled"))
+            toggleable = bool(item.get("toggleable"))
+            status_text = (
+                t("UNAVAILABLE")
+                if status == "unavailable"
+                else (
+                    t("LOCKED")
+                    if not toggleable
+                    else (
+                        t("OFF")
+                        if not enabled
+                        else (t("ASK") if status == "ask" else t("ON"))
+                    )
+                )
+            )
+            status_color = (
+                palette["text_faint"]
+                if status == "unavailable"
+                else (palette["key"] if enabled else palette["text_dim"])
+            )
+            p.setFont(status_font)
+            status_w = QFontMetrics(status_font).horizontalAdvance(status_text)
+            switch_w = 28 if toggleable else 0
+            switch_gap = 8 if toggleable else 0
+            p.setPen(QPen(status_color))
+            p.drawText(
+                rect.right() - status_w - switch_w - switch_gap,
+                rect.y(),
+                status_w,
+                rect.height(),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                status_text,
+            )
+            if toggleable:
+                switch_rect = QRect(rect.right() - switch_w, rect.center().y() - 7, switch_w, 14)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(palette["key"] if enabled else palette["ctx_off"]))
+                p.drawRoundedRect(switch_rect, 7, 7)
+                knob_x = switch_rect.right() - 11 if enabled else switch_rect.x() + 3
+                p.setBrush(QBrush(palette["bg"] if enabled else palette["text_dim"]))
+                p.drawEllipse(QRect(knob_x, switch_rect.y() + 3, 8, 8))
+            else:
+                dot_rect = QRect(rect.x() + 9, rect.center().y() - 3, 6, 6)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(palette["key"] if status != "unavailable" else palette["ctx_off"]))
+                p.drawEllipse(dot_rect)
+            count = int(item.get("count") or 1)
+            label = str(item.get("name") or "")
+            if count > 1:
+                label = f"{label} · {count}"
+            label_x = rect.x() + 9 if toggleable else rect.x() + 23
+            label_w = max(8, rect.right() - status_w - switch_w - switch_gap - 12 - label_x)
+            p.setFont(label_font)
+            p.setPen(
+                QPen(
+                    palette["label"]
+                    if status != "unavailable" and enabled
+                    else palette["text_faint"]
+                )
+            )
+            p.drawText(
+                label_x,
+                rect.y(),
+                label_w,
+                rect.height(),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                QFontMetrics(label_font).elidedText(
+                    label,
+                    Qt.TextElideMode.ElideRight,
+                    label_w,
+                ),
+            )
+            description = str(item.get("description") or "").strip()
+            if description:
+                self._warning_rects.append((rect, description))
+
+    def _tool_item_at(self, pos: QPoint) -> int | None:
+        """Return the toggleable tool row under a point."""
+        if self._active_panel != "tools":
+            return None
+        for rect, index in self._tool_row_rects:
+            if rect.contains(pos) and bool(self._tool_items[index].get("toggleable")):
+                return index
+        return None
+
+    def _toggle_tool_at(self, pos: QPoint) -> bool:
+        """Toggle one enforceable tool group for this prompt."""
+        index = self._tool_item_at(pos)
+        if index is None:
+            return False
+        item = self._tool_items[index]
+        item["enabled"] = not bool(item.get("enabled"))
+        self._tool_snapshot["count"] = sum(
+            int(candidate.get("count") or 1)
+            for candidate in self._tool_items
+            if bool(candidate.get("enabled"))
+            and str(candidate.get("status") or "") != "unavailable"
+        )
+        self._note_interaction()
+        self.update()
+        return True
+
     def _paint_context_items(
         self,
         p: QPainter,
@@ -1599,6 +1922,8 @@ class IntentOverlay(QWidget):
 
     def _context_preview_height(self) -> int:
         """Return the extra height needed for bottom context preview lines."""
+        if self._active_panel != "context":
+            return 0
         rows = self._context_preview_layout()
         if not rows:
             return 0
@@ -1685,6 +2010,7 @@ class IntentOverlay(QWidget):
         """Cycle one context source through its explicit prompt states."""
         if item.get("locked"):
             return
+        self._active_panel = "context"
         item_id = str(item.get("id") or "")
         state = str(item.get("state") or "off").lower()
         if state == "auto":
@@ -1750,7 +2076,7 @@ class IntentOverlay(QWidget):
 
     def _context_item_at(self, pos: QPoint) -> dict | None:
         """Return the context chip under a mouse position."""
-        if not self._context_items:
+        if self._active_panel != "context" or not self._context_items:
             return None
         top = _PAD_V + (_CONV_H if self._show_conversation_selector else 0) + _CTX_TOP
         for item, rect in self._context_chip_rects(top):
@@ -1919,6 +2245,14 @@ class IntentOverlay(QWidget):
             return True
         return False
 
+    def _panel_tab_at(self, pos: QPoint) -> str:
+        """Return the sibling panel under a mouse position."""
+        if self._context_tab_rect.contains(pos):
+            return "context"
+        if self._tools_tab_rect.contains(pos):
+            return "tools"
+        return ""
+
     def _cycle_context_at(self, pos: QPoint) -> bool:
         """Cycle a context chip at a mouse position."""
         item = self._context_item_at(pos)
@@ -1961,14 +2295,23 @@ class IntentOverlay(QWidget):
                 self._hovered = row_idx
                 self.setCursor(
                     Qt.CursorShape.PointingHandCursor
-                    if row_idx is not None or self._remove_button_at(pos) is not None
+                    if (
+                        row_idx is not None
+                        or self._remove_button_at(pos) is not None
+                        or bool(self._panel_tab_at(pos))
+                        or self._tool_item_at(pos) is not None
+                    )
                     else Qt.CursorShape.ArrowCursor
                 )
                 self.update()
             elif row_idx is None:
                 self.setCursor(
                     Qt.CursorShape.PointingHandCursor
-                    if self._remove_button_at(pos) is not None
+                    if (
+                        self._remove_button_at(pos) is not None
+                        or bool(self._panel_tab_at(pos))
+                        or self._tool_item_at(pos) is not None
+                    )
                     else Qt.CursorShape.ArrowCursor
                 )
         found = self._context_warning_at(pos)
@@ -1989,6 +2332,14 @@ class IntentOverlay(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
             if self._handle_conversation_click(pos):
+                event.accept()
+                return
+            panel = self._panel_tab_at(pos)
+            if panel:
+                self._set_active_panel(panel)
+                event.accept()
+                return
+            if self._toggle_tool_at(pos):
                 event.accept()
                 return
             removed = self._remove_button_at(pos)
@@ -2340,6 +2691,10 @@ class IntentOverlay(QWidget):
                 self._toggle_conversation_mode()
             self._mark_raw_context_key("space")
             return
+        if name.lower() == "t" and self._tools_shortcut_available():
+            self._set_active_panel("tools")
+            self._mark_raw_context_key("t")
+            return
         if self._cycle_context_key(name):
             self._mark_raw_context_key(name)
             return
@@ -2378,6 +2733,10 @@ class IntentOverlay(QWidget):
         if text and self._is_duplicate_qt_context_key(text):
             event.accept()
             return
+        if text.lower() == "t" and self._tools_shortcut_available():
+            self._set_active_panel("tools")
+            event.accept()
+            return
         if text and self._cycle_context_key(text):
             event.accept()
             return
@@ -2395,6 +2754,8 @@ class IntentOverlay(QWidget):
     def _raw_shortcut_names(self) -> list[str]:
         """Return overlay-local keys that should be captured by the raw hook."""
         keys: list[str] = ["escape", "space"]
+        if self._tools_shortcut_available():
+            keys.append("t")
         for item in self._context_items:
             key = str(item.get("key") or "").strip().lower()
             if key and key not in keys:

@@ -4813,6 +4813,22 @@ Write automatically — apply edits without asking.</source><translation>本機�
       <translation>登入這台電腦後自動啟動 OpenWand。</translation>
     </message>
     <message>
+      <source>Open Chat automatically when I submit a prompt</source>
+      <translation>提交提示詞時自動開啟聊天視窗</translation>
+    </message>
+    <message>
+      <source>Open and focus the full Chat window as soon as an overlay prompt is submitted.</source>
+      <translation>提交浮動視窗中的提示詞後，立即開啟完整聊天視窗並將焦點移至該視窗。</translation>
+    </message>
+    <message>
+      <source>Hide the floating reply bubble when Chat opens automatically</source>
+      <translation>自動開啟聊天視窗時隱藏浮動回覆氣泡</translation>
+    </message>
+    <message>
+      <source>Stream the reply only in Chat for automatically opened prompts. Other bubble notices remain available.</source>
+      <translation>對於會自動開啟聊天視窗的提示詞，僅在聊天視窗中串流顯示回覆。其他氣泡通知仍會顯示。</translation>
+    </message>
+    <message>
       <source>Use caller context defaults only for new conversations</source>
       <translation>僅在新對話中使用呼叫項目的預設內容</translation>
     </message>

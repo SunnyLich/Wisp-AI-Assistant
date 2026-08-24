@@ -200,11 +200,14 @@ def test_chat_harness_streams_thought_and_reply_and_returns_session(record_ctx, 
 
     # IPC selection must win over a stale value in the long-lived brain worker.
     monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "openwand", raising=False)
+    monkeypatch.setattr(config, "CHAT_LLM_MODEL", "gpt-5.6-sol", raising=False)
+    monkeypatch.setattr(config, "OPENWAND_CODEX_MODEL", "gpt-5.6-luna", raising=False)
     monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
 
     def fake_run(provider, prompt, **kwargs):
         assert provider == "codex"
         assert "Continue this" in prompt
+        assert kwargs["model"] == "gpt-5.6-sol"
         assert kwargs["session_id"] == "thread-old"
         kwargs["on_event"](HarnessEvent("status", "Opening conversation in ChatGPT..."))
         kwargs["on_event"](HarnessEvent("status", "Preparing ChatGPT turn..."))
@@ -259,12 +262,15 @@ def test_chat_harness_forwards_newest_user_image_as_turn_input(record_ctx, monke
     from core.system import paths
 
     monkeypatch.setattr(config, "TRUST_PRIVACY_MODE", False)
+    monkeypatch.setattr(config, "CHAT_LLM_MODEL", "gpt-5.6-sol", raising=False)
+    monkeypatch.setattr(config, "VISION_LLM_MODEL", "gpt-5.6-luna", raising=False)
     captured = {}
 
     def fake_run(provider, prompt, **kwargs):
         image_paths = [Path(value) for value in kwargs.get("images", ())]
         captured["bytes"] = [path.read_bytes() for path in image_paths]
         captured["paths"] = image_paths
+        captured["model"] = kwargs.get("model")
         return HarnessResult("codex", "A chart", "thread-new", "/repo")
 
     monkeypatch.setattr(harness_clients, "run_harness", fake_run)
@@ -295,6 +301,7 @@ def test_chat_harness_forwards_newest_user_image_as_turn_input(record_ctx, monke
     # Only the newest user turn's image is this turn's input; older images
     # stay in the text history. The temp file is gone after the turn.
     assert captured["bytes"] == [new_png]
+    assert captured["model"] == "gpt-5.6-luna"
     assert not captured["paths"][0].exists()
 
 

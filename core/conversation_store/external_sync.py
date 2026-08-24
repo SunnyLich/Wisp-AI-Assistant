@@ -5,8 +5,10 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -183,11 +185,6 @@ def _append_message(messages: list[dict], role: str, text: str, timestamp: str, 
     content = _text(text)
     if role not in {"user", "assistant"} or not content:
         return
-    if messages and messages[-1].get("role") == role:
-        previous = _text(messages[-1].get("content"))
-        if content != previous:
-            messages[-1]["content"] = f"{previous}\n\n{content}" if previous else content
-        return
     messages.append(
         {
             "id": message_id or str(uuid.uuid4()),
@@ -242,6 +239,7 @@ def _conversation(
         "updated_at": updated_at or fallback_time,
         "external_source": {
             "provider": provider,
+            "origin": "imported",
             "session_id": session_id,
             "path": str(path),
             "signature": _file_signature(path),
@@ -253,39 +251,89 @@ def _conversation(
     }
 
 
-def parse_codex_session(path: Path) -> dict | None:
-    """Convert one Codex session transcript into a OpenWand conversation."""
+def parse_codex_session(
+    path: Path,
+    *,
+    thread_titles: dict[str, str] | None = None,
+) -> dict | None:
+    """Convert one user-facing Codex session into an OpenWand conversation."""
     records = _read_jsonl(path)
     session_id = ""
     cwd = ""
-    messages: list[dict] = []
+    event_messages: list[dict] = []
+    response_messages: list[dict] = []
     for index, record in enumerate(records):
         outer_type = _text(record.get("type"))
         payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
         timestamp = _text(record.get("timestamp") or payload.get("timestamp"))
         if outer_type == "session_meta":
+            source = payload.get("source")
+            if (
+                _text(payload.get("thread_source")).lower() == "subagent"
+                or isinstance(source, dict) and isinstance(source.get("subagent"), dict)
+            ):
+                # Guardian, reviewer, and worker rollouts are implementation
+                # details of a parent Codex task. Showing them as independent
+                # chats imports safety wrappers and delegated prompts instead
+                # of the user's conversation.
+                return None
             session_id = _text(payload.get("id") or payload.get("session_id")) or session_id
             cwd = _text(payload.get("cwd")) or cwd
+            continue
+        if outer_type == "response_item" and _text(payload.get("type")) == "message":
+            role = _text(payload.get("role"))
+            raw_content = payload.get("content")
+            if isinstance(raw_content, str):
+                content = raw_content
+            elif isinstance(raw_content, list):
+                content = "\n\n".join(
+                    _text(block.get("text"))
+                    for block in raw_content
+                    if isinstance(block, dict)
+                    and _text(block.get("type")) in {"input_text", "output_text", "text"}
+                    and _text(block.get("text"))
+                )
+            else:
+                content = ""
+            if role == "user" and _is_codex_injected_user_context(content):
+                continue
+            _append_message(
+                response_messages,
+                role,
+                content,
+                timestamp,
+                f"codex-{session_id or path.stem}-{index}",
+            )
             continue
         if outer_type != "event_msg":
             continue
         event_type = _text(payload.get("type"))
         if event_type == "user_message":
+            content = _text(payload.get("message"))
+            if _is_codex_injected_user_context(content):
+                continue
             _append_message(
-                messages,
+                event_messages,
                 "user",
-                _text(payload.get("message")),
+                content,
                 timestamp,
                 f"codex-{session_id or path.stem}-{index}",
             )
         elif event_type == "agent_message" and _text(payload.get("phase")) == "final_answer":
             _append_message(
-                messages,
+                event_messages,
                 "assistant",
                 _text(payload.get("message")),
                 timestamp,
                 f"codex-{session_id or path.stem}-{index}",
             )
+    event_has_assistant = any(message.get("role") == "assistant" for message in event_messages)
+    response_has_assistant = any(message.get("role") == "assistant" for message in response_messages)
+    messages = (
+        event_messages
+        if event_messages and (event_has_assistant or not response_has_assistant)
+        else response_messages
+    )
     if not session_id:
         match = _CODEX_ID_RE.search(path.stem)
         session_id = match.group(1) if match else path.stem
@@ -295,10 +343,55 @@ def parse_codex_session(path: Path) -> dict | None:
         provider="codex",
         session_id=session_id,
         path=path,
-        title=_derived_title(messages, "ChatGPT conversation"),
+        title=(thread_titles or {}).get(session_id)
+        or _derived_title(messages, "Codex conversation"),
         messages=messages,
         cwd=cwd,
     )
+
+
+def _is_codex_injected_user_context(text: object) -> bool:
+    """Return whether a user-role record is Codex runtime context, not a user turn."""
+    value = _text(text).lower()
+    return value.startswith(
+        (
+            "<environment_context>",
+            "<permissions instructions>",
+            "<collaboration_mode>",
+            "<app-context>",
+            "<skills_instructions>",
+            "<plugins_instructions>",
+            "<apps_instructions>",
+            "<recommended_plugins>",
+        )
+    )
+
+
+def _codex_thread_titles(codex_home: Path) -> dict[str, str]:
+    """Read Codex's generated/renamed thread titles without mutating its database."""
+    database = codex_home / "state_5.sqlite"
+    if not database.is_file():
+        return {}
+    try:
+        connection = sqlite3.connect(
+            f"file:{database.resolve().as_posix()}?mode=ro",
+            uri=True,
+            timeout=1.0,
+        )
+        try:
+            rows = connection.execute(
+                "SELECT id, name, title FROM threads WHERE thread_source IS NULL "
+                "OR thread_source <> 'subagent'"
+            ).fetchall()
+        finally:
+            connection.close()
+    except (OSError, sqlite3.Error):
+        return {}
+    return {
+        _text(thread_id): _text(name) or _text(title)
+        for thread_id, name, title in rows
+        if _text(thread_id) and (_text(name) or _text(title))
+    }
 
 
 def _claude_content_text(content: object, *, role: str) -> str:
@@ -726,6 +819,7 @@ def export_conversation_as_new_session(
     _write_new_jsonl(path, records)
     source = {
         "provider": provider,
+        "origin": "exported",
         "session_id": session_id,
         "path": str(path),
         "signature": _file_signature(path),
@@ -820,8 +914,14 @@ def discover_external_conversations(
     codex_home: Path | None = None,
     claude_home: Path | None = None,
     provider: str = "",
+    on_discovered: Callable[[dict], None] | None = None,
 ) -> tuple[list[dict], SyncReport]:
-    """Read external transcripts without mutating OpenWand's live conversation list."""
+    """Read transcripts, optionally reporting each discovery as it becomes available.
+
+    ``on_discovered`` runs on the caller's thread. Callers updating a UI must
+    bridge the callback back to the UI thread rather than touching widgets
+    directly.
+    """
     report = SyncReport()
     codex_home = codex_home or _default_codex_home()
     claude_home = claude_home or _default_claude_home()
@@ -829,13 +929,14 @@ def discover_external_conversations(
     if provider not in {"", "codex", "claude"}:
         raise ValueError("unsupported external conversation provider")
     discovered: dict[str, dict] = {}
+    codex_titles = _codex_thread_titles(codex_home) if provider in {"", "codex"} else {}
 
     for source_provider, path in _session_files(codex_home, claude_home):
         if provider and source_provider != provider:
             continue
         try:
             imported = (
-                parse_codex_session(path)
+                parse_codex_session(path, thread_titles=codex_titles)
                 if source_provider == "codex"
                 else parse_claude_session(path)
             )
@@ -851,6 +952,8 @@ def discover_external_conversations(
         current_time = _text(imported.get("external_source", {}).get("source_updated_at"))
         if not previous or current_time >= previous_time:
             discovered[key] = imported
+            if on_discovered is not None:
+                on_discovered(imported)
 
     return list(discovered.values()), report
 
@@ -941,7 +1044,14 @@ def apply_external_conversations(
         old_source = current.get("external_source") if isinstance(current.get("external_source"), dict) else {}
         new_source = imported["external_source"]
         if _text(old_source.get("signature")) == _text(new_source.get("signature")):
-            report.unchanged += 1
+            if (
+                not _text(current.get("title_override"))
+                and _text(current.get("title")) != _text(imported.get("title"))
+            ):
+                current["title"] = imported["title"]
+                report.updated += 1
+            else:
+                report.unchanged += 1
             continue
         old_count = old_source.get("message_count", 0)
         if not isinstance(old_count, int) or old_count < 0:

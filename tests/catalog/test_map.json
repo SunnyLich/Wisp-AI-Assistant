@@ -154,7 +154,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 34
+      "node_count": 35
     },
     {
       "path": "tests/integration/brain/test_handler_context.py",
@@ -364,7 +364,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 240
+      "node_count": 242
     },
     {
       "path": "tests/runtime/test_flows_live_voice.py",
@@ -454,7 +454,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 50
+      "node_count": 53
     },
     {
       "path": "tests/runtime/test_runtime_log.py",
@@ -514,7 +514,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 60
+      "node_count": 61
     },
     {
       "path": "tests/runtime/test_ui_host_runtime_status.py",
@@ -1039,7 +1039,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 102
+      "node_count": 104
     },
     {
       "path": "tests/test_assistant_text.py",
@@ -1234,7 +1234,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 50
+      "node_count": 54
     },
     {
       "path": "tests/test_chatgpt_auth.py",
@@ -1603,7 +1603,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 34
+      "node_count": 41
     },
     {
       "path": "tests/test_ghost_cursor.py",
@@ -1663,7 +1663,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 28
+      "node_count": 34
     },
     {
       "path": "tests/test_harness_controls.py",
@@ -1779,7 +1779,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 61
+      "node_count": 67
     },
     {
       "path": "tests/test_intent_overlay_keyboard_hook.py",
@@ -1882,7 +1882,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 7
+      "node_count": 10
     },
     {
       "path": "tests/test_local_file_security.py",
@@ -2382,7 +2382,7 @@
         "macos"
       ],
       "schedule": "isolated-host",
-      "node_count": 2
+      "node_count": 4
     },
     {
       "path": "tests/test_real_host_native_smoke.py",
@@ -2442,7 +2442,7 @@
         "macos"
       ],
       "schedule": "github-actions",
-      "node_count": 24
+      "node_count": 29
     },
     {
       "path": "tests/test_rewrite_browser.py",

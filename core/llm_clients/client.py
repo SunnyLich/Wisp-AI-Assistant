@@ -12,12 +12,14 @@ calls, eliminating handshake overhead from every request.
 from __future__ import annotations
 
 import gzip
+import hashlib as _hashlib
 import json as _stdlib_json
 import os
 import re as _stdlib_re
 import ssl as _ssl
 import sys
 import threading as _threading
+import time as _time
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
 from collections.abc import Callable, Generator
@@ -1958,6 +1960,18 @@ _vision_anthropic_client = None
 _codex_client = None
 _chat_codex_client = None
 
+# Ollama keeps prompt KV state in its runner.  The coordinator below owns only
+# the client-side knowledge of which exact static prefix has been submitted; the
+# cache itself stays inside Ollama.  A single latest-wins worker avoids loading
+# several local models or competing prefixes at once while settings are changed.
+_ollama_prefix_lock = _threading.Lock()
+_ollama_prefix_ready: dict[str, dict] = {}
+_ollama_prefix_pending: tuple[int, str, dict, dict] | None = None
+_ollama_prefix_active = ""
+_ollama_prefix_worker_running = False
+_ollama_prefix_generation = 0
+_OLLAMA_PREFIX_READY_LIMIT = 8
+
 _TEST_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
 
 # How many times the OpenAI SDK may retry the *same* model inside one call.
@@ -3187,6 +3201,253 @@ def prewarm() -> None:
         # chatgpt/copilot use the Codex transport, which builds no SSL context here.
     except Exception:
         pass
+
+
+def _ollama_prefix_route(route_kind: str) -> tuple[str, str]:
+    """Return the configured provider/model for an interactive prefix scope."""
+    if str(route_kind or "").strip().lower() == "chat":
+        return (
+            str(getattr(config, "CHAT_LLM_PROVIDER", "") or "").strip().lower(),
+            str(getattr(config, "CHAT_LLM_MODEL", "") or "").strip(),
+        )
+    return (
+        str(getattr(config, "LLM_PROVIDER", "") or "").strip().lower(),
+        str(getattr(config, "LLM_MODEL", "") or "").strip(),
+    )
+
+
+def _build_ollama_prefix_request(
+    *,
+    route_kind: str = "query",
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
+    file_access_mode: str = "",
+    allow_screenshot_tool: bool = False,
+    browser_retrieval: bool = False,
+    system_prompt: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+) -> tuple[str, dict, dict] | None:
+    """Build the exact static front of an Ollama OpenAI-compatible request.
+
+    Conversation history, captured context, memory, and the user's new prompt
+    are intentionally absent.  Tool schemas and their system guidance mirror
+    ``_stream_openai_compat`` so Ollama can reuse the common token prefix.
+    """
+    configured_provider, configured_model = _ollama_prefix_route(route_kind)
+    provider = str(provider or configured_provider).strip().lower()
+    model = _normalize_model_for_provider(provider, str(model or configured_model).strip())
+    if provider != "ollama" or not model:
+        return None
+
+    from core.llm_clients.prompt_guidance import with_browser_retrieval_note
+
+    cap = _get_route_capabilities(provider, model)
+    tools_requested = bool(allowed_tools) or bool(allow_screenshot_tool)
+    tools_allowed = macos_safety.openai_compat_tools_enabled() and cap.supports_tools is not False
+    tools = (
+        _get_openai_tool_schemas(
+            "",
+            include_general=bool(allowed_tools),
+            include_screenshot=bool(allow_screenshot_tool),
+            allowed_tools=allowed_tools,
+            pinned_tools=pinned_tools,
+        )
+        if tools_requested and tools_allowed
+        else None
+    )
+    system = with_browser_retrieval_note(
+        system_prompt if system_prompt is not None else config.get_system_prompt(),
+        bool(browser_retrieval),
+    )
+    if allow_screenshot_tool and tools_allowed:
+        system = _with_screenshot_note(system, True)
+    if tools:
+        previous_mode = getattr(_LIVE_TOOL_CONTEXT, "file_access_mode", None)
+        set_live_file_access_mode(file_access_mode or None)
+        try:
+            system = _with_tools_note(system, True)
+            system = _with_local_file_tools_note(system, allowed_tools)
+            system = _with_memory_search_note(system, allowed_tools)
+            system = _with_memory_save_note(system, allowed_tools)
+        finally:
+            set_live_file_access_mode(previous_mode)
+
+    request: dict = {
+        "model": model,
+        # The one-character user probe comes *after* the reusable prefix. Some
+        # model chat templates reject a system-only request; on a real turn the
+        # token stream diverges at the probe content, so only the preceding
+        # system/tool KV is reused.
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": "."},
+        ],
+        "stream": False,
+        # Ten minutes comfortably covers the measured 2-minute idle case while
+        # allowing an old model to leave VRAM after the user switches models.
+        "extra_body": {"keep_alive": "10m"},
+    }
+    _apply_sampling(request, model, 0.0)
+    _apply_max_output(request, model, 1)
+    if tools:
+        request["tools"] = tools
+        if cap.supports_parallel_tools is True:
+            request["parallel_tool_calls"] = True
+
+    identity_payload = {
+        "endpoint": _OLLAMA_BASE_URL,
+        "model": model,
+        "messages": request["messages"],
+        "tools": tools or [],
+    }
+    identity = _hashlib.sha256(
+        _stdlib_json.dumps(
+            identity_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    metadata = {
+        "provider": provider,
+        "model": model,
+        "route_kind": str(route_kind or "query"),
+        "prefix_chars": len(system),
+        "tool_count": len(tools or []),
+    }
+    return identity, request, metadata
+
+
+def _run_ollama_prefix_worker() -> None:
+    """Process the latest queued static prefix without blocking UI or IPC."""
+    global _ollama_prefix_active, _ollama_prefix_pending, _ollama_prefix_worker_running
+    while True:
+        with _ollama_prefix_lock:
+            pending = _ollama_prefix_pending
+            _ollama_prefix_pending = None
+            if pending is None:
+                _ollama_prefix_active = ""
+                _ollama_prefix_worker_running = False
+                return
+            generation, identity, request, metadata = pending
+            _ollama_prefix_active = identity
+
+        started = _time.monotonic()
+        error = ""
+        try:
+            _dynamic_openai_client("ollama").chat.completions.create(**request)
+        except Exception as exc:  # noqa: BLE001 - idle warmup is best effort
+            error = f"{type(exc).__name__}: {exc}"
+        elapsed = _time.monotonic() - started
+
+        with _ollama_prefix_lock:
+            _ollama_prefix_active = ""
+            if not error and generation == _ollama_prefix_generation:
+                _ollama_prefix_ready[identity] = {
+                    **metadata,
+                    "identity": identity,
+                    "elapsed_seconds": elapsed,
+                    "ready_at": _time.time(),
+                }
+                if len(_ollama_prefix_ready) > _OLLAMA_PREFIX_READY_LIMIT:
+                    oldest = min(
+                        _ollama_prefix_ready,
+                        key=lambda key: float(_ollama_prefix_ready[key].get("ready_at") or 0.0),
+                    )
+                    _ollama_prefix_ready.pop(oldest, None)
+
+        if error:
+            log_event(
+                "llm.ollama_prefix_failed",
+                f"Ollama static-prefix prefill failed for {metadata.get('model')}: {error}",
+                **metadata,
+                elapsed_seconds=elapsed,
+                error=error,
+            )
+        else:
+            log_event(
+                "llm.ollama_prefix_ready",
+                f"Ollama static prefix ready for {metadata.get('model')} in {elapsed:.2f}s",
+                **metadata,
+                elapsed_seconds=elapsed,
+                prefix_identity=identity[:12],
+            )
+
+
+def schedule_ollama_prefix_prewarm(
+    *,
+    route_kind: str = "query",
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
+    file_access_mode: str = "",
+    allow_screenshot_tool: bool = False,
+    browser_retrieval: bool = False,
+    system_prompt: str | None = None,
+) -> dict:
+    """Queue one exact Ollama static prefix for idle-time prefill."""
+    global _ollama_prefix_pending, _ollama_prefix_worker_running
+    built = _build_ollama_prefix_request(
+        route_kind=route_kind,
+        allowed_tools=allowed_tools,
+        pinned_tools=pinned_tools,
+        file_access_mode=file_access_mode,
+        allow_screenshot_tool=allow_screenshot_tool,
+        browser_retrieval=browser_retrieval,
+        system_prompt=system_prompt,
+    )
+    if built is None:
+        provider, model = _ollama_prefix_route(route_kind)
+        return {
+            "ready": False,
+            "scheduled": False,
+            "skipped": True,
+            "reason": "provider_not_ollama" if provider != "ollama" else "model_missing",
+            "provider": provider,
+            "model": model,
+        }
+    identity, request, metadata = built
+    with _ollama_prefix_lock:
+        if identity in _ollama_prefix_ready:
+            return {**_ollama_prefix_ready[identity], "ready": True, "scheduled": False, "cached": True}
+        if identity == _ollama_prefix_active:
+            return {**metadata, "identity": identity, "ready": False, "scheduled": False, "building": True}
+        if _ollama_prefix_pending is not None and _ollama_prefix_pending[1] == identity:
+            return {**metadata, "identity": identity, "ready": False, "scheduled": False, "queued": True}
+        _ollama_prefix_pending = (
+            _ollama_prefix_generation,
+            identity,
+            request,
+            metadata,
+        )
+        should_start = not _ollama_prefix_worker_running
+        if should_start:
+            _ollama_prefix_worker_running = True
+    if should_start:
+        _threading.Thread(
+            target=_run_ollama_prefix_worker,
+            name="openwand-ollama-prefix-prewarm",
+            daemon=True,
+        ).start()
+    return {
+        **metadata,
+        "identity": identity,
+        "ready": False,
+        "scheduled": True,
+        "queued": not should_start,
+    }
+
+
+def invalidate_ollama_prefix_cache() -> dict:
+    """Forget prewarm identities after a static-prefix-affecting change."""
+    global _ollama_prefix_generation, _ollama_prefix_pending
+    with _ollama_prefix_lock:
+        cleared = len(_ollama_prefix_ready)
+        _ollama_prefix_generation += 1
+        _ollama_prefix_ready.clear()
+        _ollama_prefix_pending = None
+        generation = _ollama_prefix_generation
+    return {"ok": True, "cleared": cleared, "generation": generation}
 
 
 def list_models(provider: str, *, api_key: str = "", base_url: str = "") -> list[str]:

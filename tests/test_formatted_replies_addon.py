@@ -258,6 +258,7 @@ def test_addon_settings_discover_installed_ollama_models(monkeypatch) -> None:
     assert settings[0]["value"] == "qwen3:8b"
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_format_failure_keeps_quiet_diagnostic_on_the_message(qapp) -> None:
     from core.addon_manager import _safe_message_action_result
     from ui.chat_window import ChatWindow
@@ -515,6 +516,7 @@ def test_optional_verification_is_a_second_separately_counted_operation(monkeypa
     assert completed["token_usage"]["verification_output_estimate"] == 8
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_chat_message_action_persists_presentation_beside_canonical_text(qapp) -> None:
     from ui.chat_window import ChatWindow
 
@@ -563,6 +565,7 @@ def test_chat_message_action_persists_presentation_beside_canonical_text(qapp) -
     window.close()
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_chat_shows_formatter_model_only_in_action_hover(qapp) -> None:
     """Formatting model information must not add controls beneath the reply."""
     from PySide6.QtWidgets import QLabel, QPushButton
@@ -673,10 +676,18 @@ def test_formatted_chat_composer_shows_exact_chat_model_and_settings_shortcut(
         assert change_model.x() > label.x()
         change_model.click()
         assert opened == [True]
+
+        monkeypatch.setattr(config, "CHAT_LLM_MODEL", "gpt-5.6-sol", raising=False)
+        monkeypatch.setattr(config, "CHAT_EXECUTION_MODE", "codex", raising=False)
+        monkeypatch.setattr(config, "OPENWAND_CODEX_MODEL", "gpt-5.6-luna", raising=False)
+        window.refresh_model_label()
+        assert label.text() == "gpt-5.6-sol"
+        assert "gpt-5.6-sol" in label.toolTip()
     finally:
         window.close()
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_format_and_original_toggle_stay_in_the_same_chat_window(qapp) -> None:
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtTest import QTest
@@ -901,6 +912,7 @@ def test_parallel_presentation_does_not_keep_an_estimated_blank_tail(qapp) -> No
         qapp.processEvents()
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_just_finished_last_reply_format_works_without_reopening_chat(qapp) -> None:
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
@@ -954,6 +966,7 @@ def test_just_finished_last_reply_format_works_without_reopening_chat(qapp) -> N
         window.close()
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_multiple_message_formats_can_run_independently(qapp) -> None:
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
@@ -1033,6 +1046,7 @@ def test_multiple_message_formats_can_run_independently(qapp) -> None:
         window.close()
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_addon_enable_switches_chat_ui_and_disable_restores_original(qapp, monkeypatch) -> None:
     from PySide6.QtWidgets import QPushButton
 
@@ -1098,6 +1112,7 @@ def test_addon_enable_switches_chat_ui_and_disable_restores_original(qapp, monke
         chat_module._refresh_chat_palette(False)
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_repeated_addon_action_refresh_keeps_formatted_conversation_page(qapp) -> None:
     """Only changed addon discovery may recreate live WebEngine replies."""
     from PySide6.QtWidgets import QPushButton
@@ -1186,7 +1201,7 @@ def test_chat_first_paint_uses_shared_light_palette(qapp, monkeypatch) -> None:
         chat_module._refresh_chat_palette(False)
 
 
-def test_enabled_addon_uses_approved_chat_shell_geometry(qapp) -> None:
+def test_default_chat_uses_approved_workspace_geometry(qapp) -> None:
     from PySide6.QtWidgets import QFrame, QLineEdit, QPushButton
 
     from ui.chat_window import ChatWindow
@@ -1221,15 +1236,302 @@ def test_enabled_addon_uses_approved_chat_shell_geometry(qapp) -> None:
         composer = window.findChild(QFrame, "formattedComposer")
         search = window.findChild(QLineEdit)
         options = window.findChild(QPushButton, "conversationOptionsButton")
-        delete_all = window.findChild(QPushButton, "deleteAllConversationsButton")
         assert sidebar is not None and sidebar.width() == 260
         assert composer is not None and composer.maximumWidth() == 768
         assert search is not None and search.placeholderText() == "Search chats"
-        assert options is not None and options.text() == "Conversation options"
-        assert options.width() >= 132
-        assert delete_all is not None and delete_all.text() == "Delete all conversations"
+        assert options is not None and options.text() == "⋮"
+        assert options.size().width() == 34
+        assert window.findChild(QPushButton, "deleteAllConversationsButton") is None
         assert window._past_notice.isVisible() is False
-        assert window._context_controls == {}
+        assert set(window._context_controls) == {
+            "ambient", "browser", "selection", "clipboard",
+            "screenshot", "github", "memory", "files",
+        }
+        assert window._context_policy_panel.isVisible() is False
+    finally:
+        window.close()
+
+
+def test_composer_overflow_keeps_options_inside_bottom_card(qapp) -> None:
+    from PySide6.QtWidgets import QFrame, QPushButton
+
+    from ui.chat_window import ChatWindow
+
+    action = {
+        "addon_id": "formatted-replies",
+        "id": "format-reply",
+        "label": "Format",
+        "role": "assistant",
+        "presentation": True,
+        "auto": True,
+    }
+    window = ChatWindow(
+        [{"id": "composer-menu", "messages": []}],
+        lambda _messages: iter(()),
+        addon_message_actions=[action],
+    )
+    try:
+        window.show()
+        qapp.processEvents()
+        composer = window.findChild(QFrame, "formattedComposer")
+        menu_button = window.findChild(QPushButton, "formattedComposerMenuButton")
+        assert composer is not None and menu_button is not None
+        assert composer.isAncestorOf(menu_button)
+
+        window._open_composer_menu(menu_button)
+        qapp.processEvents()
+        menu = window._composer_menu
+        assert menu is not None
+        by_label = {item.text(): item for item in menu.actions()}
+        assert "Auto-format replies" not in by_label
+        assert "Formatting settings…" not in by_label
+        assert "Formatting unavailable" not in by_label
+        assert by_label["Enter sends message"].isCheckable()
+    finally:
+        if window._composer_menu is not None:
+            window._composer_menu.close()
+        window.close()
+
+
+def test_retired_formatted_reply_addon_cannot_reenter_chat_ui(qapp) -> None:
+    from PySide6.QtWidgets import QPushButton
+
+    from ui.chat_window import ChatWindow
+
+    requested: list[dict] = []
+    action = {
+        "addon_id": "formatted-replies",
+        "id": "format-reply",
+        "label": "Format",
+        "role": "assistant",
+        "presentation": True,
+        "auto": True,
+    }
+    conversation = {
+        "id": "retired-formatter",
+        "messages": [
+            {"id": "u1", "role": "user", "content": "Explain it."},
+            {
+                "id": "a1",
+                "role": "assistant",
+                "content": "Canonical answer.",
+                "addon_presentations": {
+                    "formatted-replies": {"html": DECISION_HTML, "label": "Formatted"}
+                },
+            },
+        ],
+    }
+    window = ChatWindow(
+        [conversation],
+        lambda _messages: iter(()),
+        addon_message_actions=[action],
+        on_addon_message_action=requested.append,
+    )
+    try:
+        window.show()
+        qapp.processEvents()
+        assert window._addon_message_actions == []
+        assert not any(
+            button.objectName() == "addonMessageActionButton"
+            for button in window.findChildren(QPushButton)
+        )
+        window._request_addon_message_action(0, 1, "formatted-replies", "format-reply")
+        qapp.processEvents()
+        assert requested == []
+        result = window.apply_addon_message_action_result(
+            conversation_id="retired-formatter",
+            message_id="a1",
+            addon_id="formatted-replies",
+            action_id="format-reply",
+            result={"presentation": {"html": DECISION_HTML}},
+        )
+        assert result == {"updated": False, "reason": "retired_addon"}
+    finally:
+        window.close()
+
+
+def test_streaming_reply_stops_following_after_reader_scrolls_up(qapp) -> None:
+    from ui.chat_window import ChatWindow
+
+    history = [
+        {"role": "user" if index % 2 == 0 else "assistant", "content": f"Message {index} " * 20}
+        for index in range(30)
+    ]
+    window = ChatWindow(
+        [{"id": "stream-scroll", "messages": history}],
+        lambda _messages: iter(()),
+    )
+    try:
+        window.resize(760, 520)
+        window.show()
+        qapp.processEvents()
+        window.begin_external_reply_stream(0)
+        qapp.processEvents()
+
+        scroll = window._active_scroll()
+        assert scroll is not None
+        bar = scroll.verticalScrollBar()
+        assert bar.maximum() > 0
+        bar.setValue(max(0, bar.maximum() // 2))
+        window._on_transcript_manual_scroll(scroll)
+        assert window._stream_follow_enabled is False
+
+        window._on_chunk("Additional streaming content. " * 300)
+        qapp.processEvents()
+        assert bar.value() < bar.maximum()
+        assert window._jump_to_latest_btn.isVisible() is True
+
+        window._jump_to_latest_btn.click()
+        qapp.processEvents()
+        assert window._is_near_transcript_bottom(scroll) is True
+        assert window._stream_follow_enabled is True
+        assert window._jump_to_latest_btn.isVisible() is False
+    finally:
+        window.close()
+
+
+def test_composer_grows_and_pasted_image_becomes_preview(qapp) -> None:
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtGui import QImage
+
+    from ui.chat_window import ChatWindow
+
+    action = {
+        "addon_id": "formatted-replies",
+        "id": "format-reply",
+        "label": "Format",
+        "role": "assistant",
+        "presentation": True,
+        "auto": False,
+    }
+    window = ChatWindow(
+        [{"id": "composer-rich-input", "messages": []}],
+        lambda _messages: iter(()),
+        addon_message_actions=[action],
+    )
+    try:
+        window.resize(1000, 720)
+        window.show()
+        qapp.processEvents()
+        starting_height = window._input.height()
+        window._input.setPlainText("\n".join(f"Line {index}" for index in range(9)))
+        qapp.processEvents()
+        assert starting_height < window._input.height() <= 180
+
+        image = QImage(12, 8, QImage.Format.Format_ARGB32)
+        image.fill(0xFF336699)
+        mime = QMimeData()
+        mime.setImageData(image)
+        window._input.insertFromMimeData(mime)
+        qapp.processEvents()
+
+        assert window._pending_attachment_image_b64
+        assert window._attachment_preview.isVisible()
+        assert window._attachment_thumbnail.isVisible()
+        assert window._pending_attachment_labels
+    finally:
+        window.close()
+
+
+def test_composer_enter_behavior_is_configurable(qapp, monkeypatch) -> None:
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from ui import chat_window as chat_module
+    from ui.chat_window import ChatWindow
+
+    saved: list[bool] = []
+    monkeypatch.setattr(chat_module.config, "set_chat_enter_send", saved.append)
+    window = ChatWindow(
+        [{"id": "composer-enter", "messages": []}],
+        lambda _messages: iter(()),
+    )
+    sends: list[bool] = []
+    window._on_send_clicked = lambda: sends.append(True)
+    try:
+        window.show()
+        qapp.processEvents()
+        window._set_enter_send(False)
+        window._input.setFocus()
+        QTest.keyClick(window._input, Qt.Key.Key_Return)
+        assert sends == []
+        assert "\n" in window._input.toPlainText()
+
+        QTest.keyClick(
+            window._input,
+            Qt.Key.Key_Return,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        assert sends == [True]
+        assert saved == [False]
+        assert "Ctrl+Enter sends" in window._input.placeholderText()
+    finally:
+        window.close()
+
+
+def test_chat_window_restores_saved_normal_geometry(qapp, tmp_path) -> None:
+    from ui.chat_window import ChatWindow
+
+    state_path = tmp_path / "chat-window-state.json"
+    available = qapp.primaryScreen().availableGeometry()
+    width = min(max(840, available.width() - 120), available.width())
+    height = min(max(640, available.height() - 120), available.height())
+    x = available.left() + max(0, (available.width() - width) // 3)
+    y = available.top() + max(0, (available.height() - height) // 3)
+
+    first = ChatWindow(
+        [{"id": "geometry-one", "messages": []}],
+        lambda _messages: iter(()),
+        window_state_path=state_path,
+    )
+    first.setGeometry(x, y, width, height)
+    accepted = first.geometry()
+    first._save_window_state()
+    first.close()
+
+    second = ChatWindow(
+        [{"id": "geometry-two", "messages": []}],
+        lambda _messages: iter(()),
+        window_state_path=state_path,
+    )
+    try:
+        restored = second.geometry()
+        assert restored == accepted
+    finally:
+        second.close()
+
+
+def test_import_source_is_not_promoted_into_the_conversation_header(qapp) -> None:
+    from PySide6.QtWidgets import QLabel
+
+    from ui.chat_window import ChatWindow
+
+    action = {
+        "addon_id": "formatted-replies",
+        "id": "format-reply",
+        "label": "Format",
+        "role": "assistant",
+        "presentation": True,
+        "auto": False,
+    }
+    conversation = {
+        "id": "imported-codex",
+        "messages": [],
+        "external_source": {
+            "provider": "codex",
+            "origin": "imported",
+            "session_id": "local-session",
+        },
+    }
+    window = ChatWindow(
+        [conversation],
+        lambda _messages: iter(()),
+        addon_message_actions=[action],
+    )
+    try:
+        label = window.findChild(QLabel, "conversationSourceStatus")
+        assert label is None
+        assert window._conversation_header_label.text() == "Conversation 1"
     finally:
         window.close()
 
@@ -1273,6 +1575,7 @@ def test_enabled_addon_new_chat_uses_formatted_sidebar_search(qapp, enabled_at_s
         window.close()
 
 
+@pytest.mark.skip(reason="formatted-replies addon retired; covered by retirement contract")
 def test_addon_ui_switch_waits_until_streaming_finishes(qapp) -> None:
     from ui.chat_window import ChatWindow
 

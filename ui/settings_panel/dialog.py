@@ -8645,6 +8645,21 @@ class SettingsDialog(QDialog):
         self._fields["START_ON_LOGIN"].setToolTip(
             t("Launch OpenWand automatically after you sign in to this computer.")
         )
+        self._fields["CHAT_OPEN_ON_PROMPT"] = QCheckBox(
+            t("Open Chat automatically when I submit a prompt")
+        )
+        self._fields["CHAT_OPEN_ON_PROMPT"].setToolTip(
+            t("Open and focus the full Chat window as soon as an overlay prompt is submitted.")
+        )
+        self._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"] = QCheckBox(
+            t("Hide the floating reply bubble when Chat opens automatically")
+        )
+        self._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"].setToolTip(
+            t("Stream the reply only in Chat for automatically opened prompts. Other bubble notices remain available.")
+        )
+        self._fields["CHAT_OPEN_ON_PROMPT"].toggled.connect(
+            self._update_chat_open_on_prompt_options
+        )
         self._fields["CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY"] = QCheckBox(
             t("Use caller context defaults only for new conversations")
         )
@@ -8722,7 +8737,10 @@ class SettingsDialog(QDialog):
         f.addRow(t("Read word color"), _read_word_color_row)
         f.addRow("", self._fields["ICON_AUTO_HIDE"])
         f.addRow("", self._fields["START_ON_LOGIN"])
+        f.addRow("", self._fields["CHAT_OPEN_ON_PROMPT"])
+        f.addRow("", self._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"])
         f.addRow("", self._fields["CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY"])
+        self._update_chat_open_on_prompt_options()
         cv.addWidget(fw)
         outer.addWidget(card)
 
@@ -8945,6 +8963,16 @@ class SettingsDialog(QDialog):
         outer.addStretch()
         scroll.setWidget(outer_w)
         return scroll
+
+    def _update_chat_open_on_prompt_options(self, checked: bool | None = None) -> None:
+        """Show the bubble choice only when prompt-driven Chat opening is enabled."""
+        parent = self._fields.get("CHAT_OPEN_ON_PROMPT")
+        child = self._fields.get("CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE")
+        if checked is None and hasattr(parent, "isChecked"):
+            checked = bool(parent.isChecked())
+        if child is not None:
+            child.setVisible(bool(checked))
+            child.setEnabled(bool(checked))
 
     def _refresh_privacy_model_status(self) -> None:
         """Refresh the optional privacy-model controls without loading the model."""
@@ -10357,6 +10385,21 @@ class SettingsDialog(QDialog):
             self._env.get("START_ON_LOGIN", str(getattr(cfg, "START_ON_LOGIN", False))).lower()
             == "true"
         )
+        self._fields["CHAT_OPEN_ON_PROMPT"].setChecked(
+            self._env.get(
+                "CHAT_OPEN_ON_PROMPT",
+                str(getattr(cfg, "CHAT_OPEN_ON_PROMPT", False)),
+            ).lower()
+            == "true"
+        )
+        self._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"].setChecked(
+            self._env.get(
+                "CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE",
+                str(getattr(cfg, "CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE", False)),
+            ).lower()
+            == "true"
+        )
+        self._update_chat_open_on_prompt_options()
         self._fields["CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY"].setChecked(
             self._env.get(
                 "CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY",
@@ -12201,6 +12244,7 @@ class SettingsDialog(QDialog):
                 "PRIVACY_HIDE_FINANCIAL_DETAILS", "PRIVACY_HIDE_GOVERNMENT_IDS",
                 "PRIVACY_HIDE_URLS", "PROMPT_INJECTION_PROTECTION", "PROMPT_INJECTION_WARN",
                 "ICON_AUTO_HIDE", "DOLL_AUTO_HIDE", "START_ON_LOGIN",
+                "CHAT_OPEN_ON_PROMPT", "CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE",
                 "CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY",
                 "THEME_DARK_BG", "THEME_DARK_SURFACE", "THEME_DARK_TEXT", "THEME_DARK_ACCENT",
                 "THEME_LIGHT_BG", "THEME_LIGHT_SURFACE", "THEME_LIGHT_TEXT", "THEME_LIGHT_ACCENT",
@@ -12729,6 +12773,10 @@ class SettingsDialog(QDialog):
             "PROMPT_INJECTION_WARN": str(self._fields["PROMPT_INJECTION_WARN"].isChecked()),
             "ICON_AUTO_HIDE":    str(self._fields["ICON_AUTO_HIDE"].isChecked()),  # type: ignore
             "START_ON_LOGIN": str(self._fields["START_ON_LOGIN"].isChecked()),  # type: ignore
+            "CHAT_OPEN_ON_PROMPT": str(self._fields["CHAT_OPEN_ON_PROMPT"].isChecked()),
+            "CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE": str(
+                self._fields["CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE"].isChecked()
+            ),
             "CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY": str(
                 self._fields["CONTEXT_DEFAULTS_FIRST_PROMPT_ONLY"].isChecked()
             ),

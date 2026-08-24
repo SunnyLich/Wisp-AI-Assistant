@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import html
 import inspect
+import json
+import os
 import re
 import threading
 import uuid
@@ -17,7 +19,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QEventLoop, QMimeData, QObject, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QEventLoop, QMimeData, QObject, QRect, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -77,6 +79,7 @@ from core.conversation_store.external_sync import (
 )
 from core.conversation_store.store import GENERAL_PROJECT_ID as _GENERAL_PROJECT_ID
 from core.system import file_browser as _file_browser
+from core.system.paths import CHATS_DIR
 from runtime.supervisor import tool_modes
 from ui.chat_rendering import (
     _assistant_segments_to_html,
@@ -121,6 +124,7 @@ _DISABLED_BG = "#444444"
 _DISABLED_TEXT = "#666666"
 _REVERT_DELAY_MS = 3000   # how long bold words stay highlighted after TTS finishes
 _CHAT_RENDER_CHAR_LIMIT = 24_000
+_CHAT_FOLLOW_BOTTOM_THRESHOLD_PX = 24
 _CONTEXT_TOOLTIP_CHAR_LIMIT = 4_000
 _ATTACHMENT_CONTEXT_CHAR_LIMIT = 40_000
 _SAFE_LOCAL_PREVIEW_SUFFIXES = frozenset(
@@ -145,16 +149,41 @@ _FORMATTED_REPLIES_ADDON_ID = "formatted-replies"
 # window off screen. Comfortably more than one screenful at any usable height.
 _SIDEBAR_INITIAL_ROWS = 25
 _EXTERNAL_AUTO_SYNC_INTERVAL_MS = 60_000
+_CHAT_WINDOW_STATE_FILE = CHATS_DIR / "chat_window_state.json"
+_CHAT_WINDOW_GEOMETRY_SAVE_DELAY_MS = 350
 
 
 def _external_provider_display_name(provider: object) -> str:
-    """Return the user-facing name without changing stored provider keys."""
+    """Return the local history provider name without implying a web-chat link."""
     key = str(provider or "").strip().lower()
     if key == "codex":
-        return "ChatGPT"
+        return "Codex"
     if key == "claude":
-        return "Claude"
+        return "Claude Code"
     return key.title()
+
+
+def _conversation_source_status(conversation: dict | None) -> tuple[str, str]:
+    """Return a truthful short label and explanation for one conversation source."""
+    conversation = conversation if isinstance(conversation, dict) else {}
+    source = conversation.get("external_source")
+    if not isinstance(source, dict):
+        return (
+            t("Local OpenWand"),
+            t("Stored locally by OpenWand. It is not linked to an external chat thread."),
+        )
+    provider = _external_provider_display_name(source.get("provider")) or t("external history")
+    exported = str(source.get("origin") or "").strip().lower() == "exported"
+    label = (
+        t("Exported to {provider} · pull-only").format(provider=provider)
+        if exported
+        else t("Imported from {provider} · pull-only").format(provider=provider)
+    )
+    detail = t(
+        "This is a local transcript relationship, not a ChatGPT or Claude web conversation. "
+        "OpenWand can pull later transcript changes, but new OpenWand turns are not written back automatically."
+    )
+    return label, detail
 
 
 def _mix_hex(a: str, b: str, t: float) -> str:
@@ -792,13 +821,15 @@ class ExternalConversationImportDialog(QDialog):
 
     _ITEM_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 1
     _SCOPE_PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 2
-    _DEFAULT_SCOPE_LIMIT = 20
+    _DISCOVERY_ORDER_ROLE = int(Qt.ItemDataRole.UserRole) + 3
 
     def __init__(
         self,
         provider: str,
         discovered: list[dict],
         parent: QWidget | None = None,
+        *,
+        scanning: bool = False,
     ) -> None:
         super().__init__(parent)
         self._provider = str(provider or "").strip().lower()
@@ -812,8 +843,20 @@ class ExternalConversationImportDialog(QDialog):
         ]
         self._scope_items: dict[str, QTreeWidgetItem] = {}
         self._conversation_items: list[tuple[dict, QTreeWidgetItem]] = []
+        self._conversation_items_by_key: dict[str, tuple[dict, QTreeWidgetItem]] = {}
+        self._discovery_order_by_key = {
+            self._conversation_key(conversation): index
+            for index, conversation in enumerate(self._discovered)
+            if self._conversation_key(conversation)
+        }
+        self._next_discovery_order = len(self._discovered)
+        self._sort_by = "activity"
+        self._sort_descending = True
         self._updating_checks = False
+        self._scanning = bool(scanning)
+        self._scan_error = ""
         provider_name = _external_provider_display_name(self._provider)
+        self._provider_name = provider_name
         self.setWindowTitle(t("Import {provider} conversations").format(provider=provider_name))
         self.setMinimumSize(760, 560)
         enable_standard_window_controls(self)
@@ -843,6 +886,21 @@ class ExternalConversationImportDialog(QDialog):
             f"QLineEdit:focus {{ border-color: {_ACCENT}; }}"
         )
         tools_row.addWidget(self.search, 1)
+        self.sort_by = QComboBox()
+        self.sort_by.setObjectName("externalImportSortBy")
+        self.sort_by.setAccessibleName(t("Sort conversations by"))
+        self.sort_by.addItem(t("Last activity"), "activity")
+        self.sort_by.addItem(t("Date created"), "created")
+        self.sort_by.addItem(t("Title"), "title")
+        self.sort_by.addItem(t("Discovery order"), "discovered")
+        self.sort_by.setFixedWidth(150)
+        tools_row.addWidget(self.sort_by)
+        self.sort_order = QComboBox()
+        self.sort_order.setObjectName("externalImportSortOrder")
+        self.sort_order.setAccessibleName(t("Sort order"))
+        self.sort_order.setFixedWidth(125)
+        self._refresh_sort_order_options()
+        tools_row.addWidget(self.sort_order)
         self.select_all_button = QPushButton(t("Select all"))
         self.select_all_button.setObjectName("externalImportSelectAll")
         self.clear_button = QPushButton(t("Clear"))
@@ -858,8 +916,8 @@ class ExternalConversationImportDialog(QDialog):
         self.browser.setObjectName("externalImportBrowser")
         self.browser.setHeaderHidden(True)
         self.browser.setColumnCount(1)
-        self.browser.setRootIsDecorated(False)
-        self.browser.setItemsExpandable(False)
+        self.browser.setRootIsDecorated(True)
+        self.browser.setItemsExpandable(True)
         self.browser.setIndentation(26)
         self.browser.setUniformRowHeights(False)
         self.browser.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -887,6 +945,8 @@ class ExternalConversationImportDialog(QDialog):
         self._populate_browser()
         self.browser.itemChanged.connect(self._on_item_changed)
         self.search.textChanged.connect(self._filter_browser)
+        self.sort_by.currentIndexChanged.connect(self._on_sort_changed)
+        self.sort_order.currentIndexChanged.connect(self._on_sort_order_changed)
         self.select_all_button.clicked.connect(lambda: self._set_all_checked(True))
         self.clear_button.clicked.connect(lambda: self._set_all_checked(False))
         self._refresh_selection_summary()
@@ -900,8 +960,34 @@ class ExternalConversationImportDialog(QDialog):
         )
 
     @staticmethod
-    def _scope_sort_key(conversation: dict) -> str:
-        return str(conversation.get("updated_at") or "")
+    def _conversation_key(conversation: dict) -> str:
+        source = conversation.get("external_source")
+        if not isinstance(source, dict):
+            return ""
+        provider = str(source.get("provider") or "").strip().lower()
+        session_id = str(source.get("session_id") or "").strip()
+        return f"{provider}:{session_id}" if provider and session_id else ""
+
+    @staticmethod
+    def _activity_timestamp(conversation: dict) -> str:
+        """Return the newest real activity time available for one conversation."""
+        candidates = [str(conversation.get("updated_at") or "")]
+        messages = conversation.get("messages")
+        if isinstance(messages, list):
+            candidates.extend(
+                str(message.get("updated_at") or message.get("created_at") or "")
+                for message in messages
+                if isinstance(message, dict)
+            )
+        source = conversation.get("external_source")
+        if isinstance(source, dict):
+            candidates.append(str(source.get("source_updated_at") or ""))
+        parsed = [
+            (value, stamp)
+            for value in candidates
+            if (stamp := _parse_iso_datetime(value)) is not None
+        ]
+        return max(parsed, key=lambda pair: pair[1])[0] if parsed else ""
 
     def _populate_browser(self) -> None:
         """Build general and project groups without exposing filesystem paths."""
@@ -925,12 +1011,8 @@ class ExternalConversationImportDialog(QDialog):
                 folder=False,
             )
 
-        ordered_projects = sorted(
-            projects.values(),
-            key=lambda value: ((Path(value[0]).name or value[0]).casefold(), value[0].casefold()),
-        )
         self._projects_section: QTreeWidgetItem | None = None
-        if ordered_projects:
+        if projects:
             self._projects_section = QTreeWidgetItem(
                 self.browser,
                 [t("Projects")],
@@ -940,15 +1022,18 @@ class ExternalConversationImportDialog(QDialog):
             self._projects_section.setForeground(0, QColor(_HINT))
             self._projects_section.setFont(0, _ui_font(9, QFont.Weight.Bold))
             self._projects_section.setSizeHint(0, QSize(0, 34))
-            for position, (path, conversations) in enumerate(ordered_projects):
+            self._projects_section.setExpanded(True)
+            for path, conversations in projects.values():
                 self._add_scope(
                     Path(path).name or t("Untitled project"),
                     path,
                     conversations,
-                    checked_by_default=position == 0,
+                    checked_by_default=True,
                     folder=True,
+                    parent=self._projects_section,
                 )
         self.browser.expandAll()
+        self._sort_all_conversations()
 
     def _add_scope(
         self,
@@ -974,26 +1059,230 @@ class ExternalConversationImportDialog(QDialog):
         scope.setSizeHint(0, QSize(0, 42))
         self._scope_items[path] = scope
 
-        ordered = sorted(conversations, key=self._scope_sort_key, reverse=True)
-        for position, conversation in enumerate(ordered):
-            title = str(conversation.get("title") or t("Untitled conversation")).strip()
-            updated = _format_conversation_datetime(str(conversation.get("updated_at") or ""))
-            label = title if not updated else f"{title}\n{updated}"
-            item = QTreeWidgetItem(scope, [label])
-            item.setData(0, self._ITEM_KIND_ROLE, "conversation")
-            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(
-                0,
-                Qt.CheckState.Checked
-                if checked_by_default and position < self._DEFAULT_SCOPE_LIMIT
-                else Qt.CheckState.Unchecked,
+        for conversation in conversations:
+            self._insert_conversation_item(
+                scope,
+                conversation,
+                checked=checked_by_default,
             )
-            item.setForeground(0, QColor(_TEXT))
-            item.setSizeHint(0, QSize(0, 52 if updated else 42))
-            item.setToolTip(0, title)
-            self._conversation_items.append((conversation, item))
         self._update_scope_check_state(scope)
         scope.setExpanded(True)
+
+    def _insert_conversation_item(
+        self,
+        scope: QTreeWidgetItem,
+        conversation: dict,
+        *,
+        checked: bool,
+        tree_index: int | None = None,
+        discovery_index: int | None = None,
+        discovery_order: int | None = None,
+    ) -> QTreeWidgetItem:
+        """Insert one streamed conversation in newest-first order."""
+        title = str(conversation.get("title") or t("Untitled conversation")).strip()
+        updated = _format_conversation_datetime(self._activity_timestamp(conversation))
+        label = title if not updated else f"{title}\n{updated}"
+        item = QTreeWidgetItem([label])
+        item.setData(0, self._ITEM_KIND_ROLE, "conversation")
+        key = self._conversation_key(conversation)
+        if discovery_order is None:
+            discovery_order = self._discovery_order_by_key.get(key)
+        if discovery_order is None:
+            discovery_order = self._next_discovery_order
+            self._next_discovery_order += 1
+        if key:
+            self._discovery_order_by_key[key] = discovery_order
+        item.setData(0, self._DISCOVERY_ORDER_ROLE, discovery_order)
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+        item.setCheckState(
+            0,
+            Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked,
+        )
+        item.setForeground(0, QColor(_TEXT))
+        item.setSizeHint(0, QSize(0, 52 if updated else 42))
+        item.setToolTip(0, title)
+        if tree_index is None or tree_index < 0:
+            scope.addChild(item)
+        else:
+            scope.insertChild(tree_index, item)
+        pair = (conversation, item)
+        if discovery_index is None or discovery_index < 0:
+            self._conversation_items.append(pair)
+        else:
+            self._conversation_items.insert(discovery_index, pair)
+        if key:
+            self._conversation_items_by_key[key] = pair
+        return item
+
+    def append_conversation(self, conversation: dict) -> None:
+        """Add or update one conversation while the background scan is running."""
+        source = conversation.get("external_source")
+        if not isinstance(source, dict) or str(source.get("provider") or "").lower() != self._provider:
+            return
+        key = self._conversation_key(conversation)
+        previous = self._conversation_items_by_key.get(key) if key else None
+        was_checked = False
+        previous_discovery_index: int | None = None
+        previous_tree_index: int | None = None
+        previous_discovery_order: int | None = None
+        previous_scope: QTreeWidgetItem | None = None
+        if previous is not None:
+            _previous_conversation, previous_item = previous
+            was_checked = previous_item.checkState(0) == Qt.CheckState.Checked
+            previous_scope = previous_item.parent()
+            previous_discovery_order = int(
+                previous_item.data(0, self._DISCOVERY_ORDER_ROLE) or 0
+            )
+            previous_discovery_index = self._conversation_items.index(previous)
+            if previous_scope is not None:
+                previous_tree_index = previous_scope.indexOfChild(previous_item)
+                previous_scope.takeChild(previous_tree_index)
+            self._conversation_items.pop(previous_discovery_index)
+            self._discovered = [
+                item
+                for item in self._discovered
+                if self._conversation_key(item) != key
+            ]
+        self._discovered.append(conversation)
+
+        path = external_project_path(conversation)
+        scope = self._scope_items.get(path)
+        if scope is None:
+            if path and self._projects_section is None:
+                self._projects_section = QTreeWidgetItem(self.browser, [t("Projects")])
+                self._projects_section.setData(0, self._ITEM_KIND_ROLE, "section")
+                self._projects_section.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                self._projects_section.setForeground(0, QColor(_HINT))
+                self._projects_section.setFont(0, _ui_font(9, QFont.Weight.Bold))
+                self._projects_section.setSizeHint(0, QSize(0, 34))
+                self._projects_section.setExpanded(True)
+            self._add_scope(
+                Path(path).name or t("Untitled project") if path else t("General conversations"),
+                path,
+                [conversation],
+                checked_by_default=True,
+                folder=bool(path),
+                parent=self._projects_section if path else None,
+            )
+            scope = self._scope_items[path]
+        else:
+            checked = (
+                was_checked
+                if previous is not None
+                else scope.checkState(0) != Qt.CheckState.Unchecked
+            )
+            self._insert_conversation_item(
+                scope,
+                conversation,
+                checked=checked,
+                tree_index=(
+                    previous_tree_index
+                    if previous_scope is scope
+                    else None
+                ),
+                discovery_index=previous_discovery_index,
+                discovery_order=previous_discovery_order,
+            )
+            self._update_scope_check_state(scope)
+        if previous_scope is not None and previous_scope is not scope:
+            self._update_scope_check_state(previous_scope)
+        self._sort_scope(scope)
+        self._sort_project_scopes()
+        self._filter_browser(self.search.text())
+        self._refresh_selection_summary()
+
+    def finish_scan(self, error: str = "") -> None:
+        """Mark a streaming scan complete without moving already-visible rows."""
+        self._scanning = False
+        self._scan_error = str(error or "")
+        self._refresh_selection_summary()
+
+    def _refresh_sort_order_options(self) -> None:
+        """Use order labels that match the selected sort field."""
+        order = getattr(self, "sort_order", None)
+        if order is None:
+            return
+        descending = bool(getattr(self, "_sort_descending", True))
+        sort_by = str(getattr(self, "_sort_by", "activity"))
+        labels = {
+            "title": ((t("Z–A"), True), (t("A–Z"), False)),
+            "discovered": ((t("Last found"), True), (t("First found"), False)),
+        }.get(sort_by, ((t("Newest first"), True), (t("Oldest first"), False)))
+        order.blockSignals(True)
+        order.clear()
+        for label, value in labels:
+            order.addItem(label, value)
+        order.setCurrentIndex(max(0, order.findData(descending)))
+        order.blockSignals(False)
+
+    def _on_sort_changed(self, _index: int) -> None:
+        self._sort_by = str(self.sort_by.currentData() or "activity")
+        self._refresh_sort_order_options()
+        self._sort_all_conversations()
+
+    def _on_sort_order_changed(self, _index: int) -> None:
+        self._sort_descending = bool(self.sort_order.currentData())
+        self._sort_all_conversations()
+
+    def _conversation_sort_value(self, conversation: dict, item: QTreeWidgetItem) -> object:
+        if self._sort_by == "title":
+            return str(conversation.get("title") or "").casefold()
+        if self._sort_by == "discovered":
+            return int(item.data(0, self._DISCOVERY_ORDER_ROLE) or 0)
+        timestamp = (
+            str(conversation.get("created_at") or "")
+            if self._sort_by == "created"
+            else self._activity_timestamp(conversation)
+        )
+        parsed = _parse_iso_datetime(timestamp)
+        return parsed.timestamp() if parsed is not None else 0.0
+
+    def _conversation_for_item(self, wanted: QTreeWidgetItem) -> dict:
+        return next(
+            (conversation for conversation, item in self._conversation_items if item is wanted),
+            {},
+        )
+
+    def _sort_scope(self, scope: QTreeWidgetItem) -> None:
+        """Keep one scope sorted immediately as streaming results arrive."""
+        children = [scope.takeChild(0) for _index in range(scope.childCount())]
+        children.sort(key=lambda item: int(item.data(0, self._DISCOVERY_ORDER_ROLE) or 0))
+        children.sort(
+            key=lambda item: self._conversation_sort_value(
+                self._conversation_for_item(item),
+                item,
+            ),
+            reverse=self._sort_descending,
+        )
+        scope.addChildren(children)
+
+    def _sort_project_scopes(self) -> None:
+        section = getattr(self, "_projects_section", None)
+        if section is None:
+            return
+        scopes = [section.takeChild(0) for _index in range(section.childCount())]
+        scopes.sort(key=lambda scope: scope.text(0).casefold())
+        if self._sort_by != "title":
+            scopes.sort(
+                key=lambda scope: (
+                    self._conversation_sort_value(
+                        self._conversation_for_item(scope.child(0)),
+                        scope.child(0),
+                    )
+                    if scope.childCount()
+                    else 0
+                ),
+                reverse=self._sort_descending,
+            )
+        elif self._sort_descending:
+            scopes.reverse()
+        section.addChildren(scopes)
+
+    def _sort_all_conversations(self) -> None:
+        for scope in self._scope_items.values():
+            self._sort_scope(scope)
+        self._sort_project_scopes()
+        self._filter_browser(self.search.text())
 
     @staticmethod
     def _scope_icon(*, folder: bool) -> QIcon:
@@ -1082,21 +1371,44 @@ class ExternalConversationImportDialog(QDialog):
             item.checkState(0) == Qt.CheckState.Checked
             for _conversation, item in self._conversation_items
         )
-        self.preview_label.setText(
-            t("Conversations to import: {count}").format(count=selected_count)
-            if selected_count
-            else t("No conversations match these choices.")
-        )
+        found_count = len(self._conversation_items)
+        if self._scan_error and found_count:
+            text = t(
+                "Scan stopped: {error} Found {found} conversation(s); {selected} selected can still be imported."
+            ).format(
+                error=self._scan_error,
+                found=found_count,
+                selected=selected_count,
+            )
+        elif self._scan_error:
+            text = t("Scan failed: {error}").format(error=self._scan_error)
+        elif self._scanning:
+            text = t(
+                "Scanning {provider}… Found {found} conversation(s); {selected} selected."
+            ).format(
+                provider=self._provider_name,
+                found=found_count,
+                selected=selected_count,
+            )
+        elif not found_count:
+            text = t("No local {provider} conversations were found.").format(
+                provider=self._provider_name
+            )
+        elif selected_count:
+            text = t("Conversations to import: {count}").format(count=selected_count)
+        else:
+            text = t("No conversations match these choices.")
+        self.preview_label.setText(text)
+        self.import_button.setText(t("Import selected") if self._scanning else t("Import"))
         self.import_button.setEnabled(selected_count > 0)
 
     def selected_conversations(self) -> list[dict]:
-        """Return the conversations checked in the browser, newest first."""
-        selected = [
+        """Return checked conversations in the order discovery presented them."""
+        return [
             conversation
             for conversation, item in self._conversation_items
             if item.checkState(0) == Qt.CheckState.Checked
         ]
-        return sorted(selected, key=self._scope_sort_key, reverse=True)
 
 
 class LocalWorkProgressDialog(QDialog):
@@ -1591,6 +1903,55 @@ class _PendingSidebarRows(list):
     __hash__ = None  # type: ignore[assignment]
 
 
+class _ComposerTextEdit(QTextEdit):
+    """Multiline composer that grows naturally and routes rich paste/drop as attachments."""
+
+    attachment_mime = Signal(object)
+
+    def __init__(self, *, minimum_height: int, maximum_height: int, parent=None) -> None:
+        super().__init__(parent)
+        self._minimum_composer_height = int(minimum_height)
+        self._maximum_composer_height = int(maximum_height)
+        self.setMinimumHeight(self._minimum_composer_height)
+        self.setMaximumHeight(self._maximum_composer_height)
+        self.setAcceptDrops(True)
+        self.textChanged.connect(self.sync_composer_height)
+        self.document().documentLayout().documentSizeChanged.connect(
+            lambda _size: QTimer.singleShot(0, self.sync_composer_height)
+        )
+
+    def canInsertFromMimeData(self, source) -> bool:  # noqa: N802 - Qt API
+        if source is not None and (source.hasImage() or source.hasUrls()):
+            return True
+        return super().canInsertFromMimeData(source)
+
+    def insertFromMimeData(self, source) -> None:  # noqa: N802 - Qt API
+        if source is not None and (source.hasImage() or source.hasUrls()):
+            self.attachment_mime.emit(source)
+            return
+        super().insertFromMimeData(source)
+
+    def sync_composer_height(self) -> None:
+        """Fit visible lines up to the cap, then enable an internal scrollbar."""
+        try:
+            document_height = float(self.document().documentLayout().documentSize().height())
+        except RuntimeError:
+            return
+        desired = max(self._minimum_composer_height, int(document_height + 14))
+        height = min(self._maximum_composer_height, desired)
+        if self.height() != height:
+            self.setFixedHeight(height)
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            if desired > self._maximum_composer_height
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+    def resizeEvent(self, event):  # noqa: N802 - Qt API
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self.sync_composer_height)
+
+
 class ChatWindow(QWidget):
     """Qt window for chat window."""
     def __init__(
@@ -1610,8 +1971,10 @@ class ChatWindow(QWidget):
         on_context_capture=None,
         on_addon_message_action=None,
         on_addon_settings=None,
+        on_addon_setting_change=None,
         on_model_settings=None,
         addon_message_actions: list[dict] | None = None,
+        window_state_path: Path | None = None,
     ):
         """
         Args:
@@ -1640,16 +2003,24 @@ class ChatWindow(QWidget):
                            an addon to process one stored chat message.
             on_addon_settings: Callable(addon_id) invoked by a message-level
                            shortcut to that addon's settings.
+            on_addon_setting_change: Callable(payload) invoked when a chat-level
+                           add-on preference is changed from the composer menu.
             on_model_settings: Callable invoked by the composer footer shortcut
                 to the application's model selection page.
             addon_message_actions: Enabled addon actions known before first
                            paint. Their presence selects the addon-owned chat UI.
+            window_state_path: Optional geometry-state file override, primarily
+                           for isolated tests and portable embeddings.
         """
         super().__init__()
-        self._addon_message_actions = _normalized_addon_message_actions(addon_message_actions)
-        self._formatted_replies_ui_enabled = _formatted_replies_ui_enabled(
-            self._addon_message_actions
-        )
+        # The polished workspace is the default Chat UI.  It must not depend on
+        # the retired formatted-replies addon being installed or enabled.
+        self._addon_message_actions = [
+            action
+            for action in _normalized_addon_message_actions(addon_message_actions)
+            if str(action.get("addon_id") or "") != _FORMATTED_REPLIES_ADDON_ID
+        ]
+        self._formatted_replies_ui_enabled = True
         self._pending_addon_ui_refresh = False
         _refresh_chat_palette(self._formatted_replies_ui_enabled)
         self._conversations = conversations  # live reference - NOT a copy
@@ -1662,6 +2033,7 @@ class ChatWindow(QWidget):
         self._on_context_capture = on_context_capture
         self._on_addon_message_action = on_addon_message_action
         self._on_addon_settings = on_addon_settings
+        self._on_addon_setting_change = on_addon_setting_change
         self._on_model_settings = on_model_settings
         self._projects = list(projects or [])
         if not any(p.get("id") == _GENERAL_PROJECT_ID for p in self._projects):
@@ -1678,12 +2050,22 @@ class ChatWindow(QWidget):
         # Their final text still lands via add_conversation.
         self._streaming_idx: int | None = None
         self._font_scale = max(0.7, min(float(getattr(config, "CHAT_FONT_SCALE", 1.0) or 1.0), 2.5))
+        self._enter_sends = bool(getattr(config, "CHAT_ENTER_SEND", True))
         self._font_scale_save_timer = QTimer(self)
         self._font_scale_save_timer.setSingleShot(True)
         self._font_scale_save_timer.setInterval(600)
         self._font_scale_save_timer.timeout.connect(
             lambda: config.set_chat_font_scale(self._font_scale)
         )
+        self._window_state_path = Path(window_state_path) if window_state_path else _CHAT_WINDOW_STATE_FILE
+        self._window_state_enabled = bool(
+            window_state_path is not None or not os.environ.get("PYTEST_CURRENT_TEST")
+        )
+        self._window_geometry_ready = False
+        self._window_geometry_save_timer = QTimer(self)
+        self._window_geometry_save_timer.setSingleShot(True)
+        self._window_geometry_save_timer.setInterval(_CHAT_WINDOW_GEOMETRY_SAVE_DELAY_MS)
+        self._window_geometry_save_timer.timeout.connect(self._save_window_state)
         self._current_ai_label: _MessageTextView | None = None
         self._current_ai_text = ""
         self._current_ai_reply_text = ""
@@ -1696,6 +2078,11 @@ class ChatWindow(QWidget):
         self._current_tool_context: dict = {}
         self._current_context_snippets: list[dict] = []
         self._current_harness: dict = {}
+        self._harness_activity_state: dict[str, object] = {
+            "skills": [],
+            "agents": {},
+        }
+        self._harness_inspector: QDialog | None = None
         self._current_local_work_dialog: LocalWorkProgressDialog | None = None
         self._current_local_work_notice: QLabel | None = None
         self._local_work_dialogs: list[LocalWorkProgressDialog] = []
@@ -1715,6 +2102,10 @@ class ChatWindow(QWidget):
         self._context_controls_updating = False
         self._context_preview_id = ""
         self._conversation_menu: QMenu | None = None
+        self._composer_menu: QMenu | None = None
+        self._stream_follow_enabled = True
+        self._stream_follow_idx: int | None = None
+        self._unseen_reply_idx: int | None = None
         self._middle_autoscroll: dict[str, object] | None = None
         self._middle_autoscroll_timer = QTimer(self)
         self._middle_autoscroll_timer.setInterval(_CHAT_AUTOSCROLL_INTERVAL_MS)
@@ -1722,6 +2113,8 @@ class ChatWindow(QWidget):
         self._external_sync_btns: dict[str, QPushButton] = {}
         self._external_sync_checkboxes: dict[str, QCheckBox] = {}
         self._external_sync_inflight: set[str] = set()
+        self._external_sync_dialogs: dict[str, ExternalConversationImportDialog] = {}
+        self._external_sync_reports: dict[str, object] = {}
         self._external_sync_state = load_external_sync_state()
         # History rows past the first screenful are queued here until the window
         # has painted; see _rebuild_sidebar and _fill_pending_sidebar_rows.
@@ -1746,7 +2139,7 @@ class ChatWindow(QWidget):
         self._signals.finished.connect(self._on_finished)
         self._signals.external_sync.connect(self._on_external_sync_finished)
 
-        self.setWindowTitle(t("Chat"))
+        self.setWindowTitle(t("OpenWand Chat"))
         self.setWindowFlags(Qt.WindowType.Window)
         enable_standard_window_controls(self)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -1760,7 +2153,7 @@ class ChatWindow(QWidget):
         self._external_sync_timer.timeout.connect(self._run_external_auto_sync)
         self._external_sync_timer.start()
         QTimer.singleShot(0, self._run_external_auto_sync)
-        self._center_on_screen()
+        self._restore_window_state()
         self._new_shortcut = QShortcut(QKeySequence.StandardKey.New, self)
         self._new_shortcut.activated.connect(self.start_new_conversation)
         self._history_search_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
@@ -1822,6 +2215,7 @@ class ChatWindow(QWidget):
         sidebar_width = 260 if self._formatted_replies_ui_enabled else 185
         splitter.setSizes([sidebar_width, _W - sidebar_width])
         root.addWidget(splitter, stretch=1)
+        self._refresh_chat_scoped_controls()
 
     def _apply_addon_ui_mode(self) -> None:
         """Repaint Chat after formatted-replies gains or loses ownership."""
@@ -1873,7 +2267,7 @@ class ChatWindow(QWidget):
         bar.setStyleSheet(f"background: {_TITLE_BG}; border-bottom: 1px solid {_BORDER};")
         h = QHBoxLayout(bar)
         h.setContentsMargins(14, 0, 8, 0)
-        title = QLabel(t("Chat"))
+        title = QLabel(t("OpenWand Chat"))
         title.setFont(_ui_font(10, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {_ACCENT}; background: transparent;")
         h.addWidget(title)
@@ -2044,14 +2438,8 @@ class ChatWindow(QWidget):
             f" border-right: 1px solid {_BORDER}; }}"
         )
         outer = QVBoxLayout(sidebar)
-        outer.setContentsMargins(8, 0, 8, 8)
+        outer.setContentsMargins(8, 8, 8, 8)
         outer.setSpacing(4)
-
-        brand = QLabel("●  OpenWand")
-        brand.setFixedHeight(46)
-        brand.setFont(_ui_font(11, QFont.Weight.Bold))
-        brand.setStyleSheet(f"color: {_TEXT}; background: transparent; padding-left: 8px;")
-        outer.addWidget(brand)
 
         new_chat = QPushButton(f"＋  {t('New chat')}")
         new_chat.setObjectName("formattedNewChat")
@@ -2068,7 +2456,43 @@ class ChatWindow(QWidget):
         self._new_chat_btn = new_chat
         outer.addWidget(new_chat)
 
+        project_selector = self._make_project_selector()
+        project_selector.setFixedHeight(34)
+        project_selector.setToolTip(t("Project for new chats"))
+        outer.addWidget(project_selector)
+
+        sources_toggle = QPushButton()
+        sources_toggle.setObjectName("formattedSourcesToggle")
+        sources_toggle.setCheckable(True)
+        sources_toggle.setChecked(bool(getattr(self, "_sources_expanded", True)))
+        sources_toggle.setFixedHeight(30)
+        sources_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        sources_toggle.setAccessibleName(t("Show or hide conversation sources"))
+        sources_toggle.setStyleSheet(
+            f"QPushButton {{ color: {_HINT}; background: transparent; border: none;"
+            " border-radius: 7px; text-align: left; padding: 0 10px; font-size: 8pt; }}"
+            f"QPushButton:hover {{ color: {_TEXT}; background: {_WHITE_BG_10}; }}"
+        )
+        outer.addWidget(sources_toggle)
+
+        sources_container = QWidget()
+        sources_container.setObjectName("formattedSourcesContainer")
+        sources_layout = QVBoxLayout(sources_container)
+        sources_layout.setContentsMargins(2, 0, 2, 2)
+        sources_layout.setSpacing(4)
+        for provider in ("codex", "claude"):
+            import_button = self._make_external_sync_button(provider)
+            import_button.setFixedHeight(32)
+            sources_layout.addWidget(import_button)
+            sources_layout.addWidget(self._make_external_auto_sync_checkbox(provider))
+        outer.addWidget(sources_container)
+        self._sources_toggle = sources_toggle
+        self._sources_container = sources_container
+        sources_toggle.toggled.connect(self._set_sources_expanded)
+        self._set_sources_expanded(sources_toggle.isChecked())
+
         self._sidebar_search = QLineEdit()
+        self._history_search = self._sidebar_search
         self._sidebar_search.setPlaceholderText(t("Search chats"))
         self._sidebar_search.setClearButtonEnabled(True)
         self._sidebar_search.setFixedHeight(36)
@@ -2077,7 +2501,7 @@ class ChatWindow(QWidget):
             f" border: 1px solid transparent; border-radius: 9px; padding: 0 10px; }}"
             f"QLineEdit:focus {{ border-color: {_BORDER}; background: {_AI_BG}; }}"
         )
-        self._sidebar_search.textChanged.connect(self._filter_formatted_sidebar)
+        self._sidebar_search.textChanged.connect(self._rebuild_sidebar)
         outer.addWidget(self._sidebar_search)
 
         history_label = QLabel(t("Chats"))
@@ -2101,22 +2525,29 @@ class ChatWindow(QWidget):
         self._sidebar_layout = QVBoxLayout(self._sidebar_items)
         self._sidebar_layout.setContentsMargins(0, 0, 0, 0)
         self._sidebar_layout.setSpacing(2)
-        self._sidebar_btns = []
+        self._sidebar_btns = _PendingSidebarRows(self)
         self._rebuild_sidebar()
         scroll.setWidget(self._sidebar_items)
         outer.addWidget(scroll, stretch=1)
 
-        for provider in ("codex", "claude"):
-            pull = self._make_external_sync_button(provider)
-            pull.setFixedHeight(34)
-            pull.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {_HINT}; border: none;"
-                " border-radius: 9px; text-align: left; padding: 0 10px; font-size: 8pt; }}"
-                f"QPushButton:hover {{ background: {_WHITE_BG_10}; color: {_TEXT}; }}"
-            )
-            outer.addWidget(pull)
-        outer.addWidget(self._make_delete_all_conversations_button())
         return sidebar
+
+    def _set_sources_expanded(self, expanded: bool) -> None:
+        """Show or hide the global transcript-import controls."""
+        self._sources_expanded = bool(expanded)
+        toggle = getattr(self, "_sources_toggle", None)
+        container = getattr(self, "_sources_container", None)
+        if toggle is not None:
+            toggle.setChecked(self._sources_expanded)
+            arrow = "▾" if self._sources_expanded else "▸"
+            toggle.setText(f"{arrow}  {t('Sources')}")
+            toggle.setToolTip(
+                t("Collapse conversation sources")
+                if self._sources_expanded
+                else t("Expand conversation sources")
+            )
+        if container is not None:
+            container.setVisible(self._sources_expanded)
 
     def _filter_formatted_sidebar(self, query: str) -> None:
         """Filter the approved-mode history list without changing its data."""
@@ -2129,17 +2560,10 @@ class ChatWindow(QWidget):
 
     def _sidebar_selection_order(self) -> list[int]:
         """Return selectable conversation indices in their current visual order."""
-        needle = ""
-        if self._formatted_replies_ui_enabled and hasattr(self, "_sidebar_search"):
-            needle = str(self._sidebar_search.text() or "").strip().casefold()
         order: list[int] = []
         for _project_id, _project_name, indices in self._grouped_sidebar_indices():
             for idx in indices:
                 if not self._conversation_matches_search(idx):
-                    continue
-                if needle and needle not in self._conversation_title(
-                    idx, self._conversations[idx]
-                ).casefold():
                     continue
                 order.append(idx)
         return order
@@ -2181,12 +2605,12 @@ class ChatWindow(QWidget):
         provider = str(provider or "").strip().lower()
         provider_name = _external_provider_display_name(provider)
         button = QPushButton(
-            t("Import {provider} conversation…").format(provider=provider_name)
+            t("Import local {provider} history…").format(provider=provider_name)
         )
         button.setObjectName(f"externalImport{provider.title()}")
         button.setFixedHeight(28)
         button.setToolTip(
-            t("Scan and choose which local {provider} conversations to import.").format(
+            t("Scan and choose which local {provider} transcript sessions to import.").format(
                 provider=provider_name
             )
         )
@@ -2205,17 +2629,18 @@ class ChatWindow(QWidget):
         provider = str(provider or "").strip().lower()
         provider_name = _external_provider_display_name(provider)
         checkbox = QCheckBox(
-            t("Automatically sync with {provider}").format(provider=provider_name)
+            t("Auto-import {provider}").format(provider=provider_name)
         )
         checkbox.setObjectName(f"externalAutoSync{provider.title()}")
         checkbox.setToolTip(
             t(
                 "Import new or updated local {provider} conversations while chat is open. "
+                "This is pull-only local transcript import, not two-way web-chat synchronization. "
                 "Older conversations are not imported automatically."
             ).format(provider=provider_name)
         )
         checkbox.setAccessibleName(
-            t("Automatically sync with {provider}").format(provider=provider_name)
+            t("Automatically import local {provider} history").format(provider=provider_name)
         )
         checkbox.setStyleSheet(
             f"QCheckBox {{ color: {_HINT}; padding: 1px 7px; font-size: 8pt; }}"
@@ -2298,6 +2723,23 @@ class ChatWindow(QWidget):
         if not automatic and button is not None:
             button.setEnabled(False)
             button.setText(t("Scanning {provider}…").format(provider=provider_name))
+        if not automatic:
+            picker = ExternalConversationImportDialog(
+                provider,
+                [],
+                self,
+                scanning=True,
+            )
+            self._external_sync_dialogs[provider] = picker
+            picker.accepted.connect(
+                lambda p=provider, dialog=picker: self._import_external_picker(p, dialog)
+            )
+            picker.rejected.connect(
+                lambda p=provider, dialog=picker: self._discard_external_picker(p, dialog)
+            )
+            # open() is non-blocking: the picker becomes visible before transcript
+            # parsing starts, then receives discoveries through the Qt signal below.
+            picker.open()
         since = str((self._external_sync_state.get(provider) or {}).get("since") or "")
         threading.Thread(
             target=self._external_sync_worker,
@@ -2309,10 +2751,29 @@ class ChatWindow(QWidget):
     def _external_sync_worker(self, provider: str, automatic: bool, since: str) -> None:
         """Read external transcript files away from the Qt UI thread."""
         try:
-            discovered, report = discover_external_conversations(provider=provider)
+            def publish_discovery(conversation: dict) -> None:
+                if automatic:
+                    return
+                try:
+                    self._signals.external_sync.emit(
+                        {
+                            "event": "discovered",
+                            "provider": provider,
+                            "automatic": False,
+                            "conversation": conversation,
+                        }
+                    )
+                except RuntimeError:
+                    pass
+
+            discovered, report = discover_external_conversations(
+                provider=provider,
+                on_discovered=publish_discovery if not automatic else None,
+            )
             if automatic:
                 discovered = external_conversations_since(discovered, since)
             payload = {
+                "event": "finished",
                 "provider": provider,
                 "automatic": automatic,
                 "discovered": discovered,
@@ -2326,9 +2787,15 @@ class ChatWindow(QWidget):
             pass
 
     def _on_external_sync_finished(self, payload: object) -> None:
-        """Merge a completed background pull and refresh the chat UI."""
+        """Route streamed discoveries and merge a completed background pull."""
         result = payload if isinstance(payload, dict) else {}
         provider = str(result.get("provider") or "").strip().lower()
+        if result.get("event") == "discovered":
+            picker = self._external_sync_dialogs.get(provider)
+            conversation = result.get("conversation")
+            if picker is not None and isinstance(conversation, dict):
+                picker.append_conversation(conversation)
+            return
         provider_name = _external_provider_display_name(provider)
         automatic = bool(result.get("automatic"))
         button = self._external_sync_btns.get(provider)
@@ -2359,25 +2826,66 @@ class ChatWindow(QWidget):
                     if self._conversations:
                         self._switch(min(self._active_idx, len(self._conversations) - 1))
                 return
-            if not discovered:
-                QMessageBox.information(
-                    self,
-                    t("External conversation import"),
-                    t("No local {provider} conversations were found.").format(
-                        provider=provider_name
-                    ),
+            picker = self._external_sync_dialogs.get(provider)
+            if picker is not None:
+                self._external_sync_reports[provider] = result.get("report")
+                picker.finish_scan()
+        except Exception as exc:
+            if automatic:
+                if checkbox is not None:
+                    checkbox.setToolTip(
+                        t("Automatic sync failed: {error}").format(error=exc)
+                    )
+                return
+            picker = self._external_sync_dialogs.get(provider)
+            if picker is not None:
+                picker.finish_scan(str(exc))
+            QMessageBox.warning(
+                self,
+                t("External conversation import failed"),
+                t("OpenWand could not scan local {provider} conversations: {error}").format(
+                    provider=provider_name,
+                    error=exc,
+                ),
+            )
+        finally:
+            self._external_sync_inflight.discard(provider)
+            if not automatic and button is not None:
+                button.setText(
+                    t("Import local {provider} history…").format(provider=provider_name)
                 )
-                return
-            picker = ExternalConversationImportDialog(provider, discovered, self)
-            if picker.exec() != QDialog.DialogCode.Accepted:
-                return
-            selected = picker.selected_conversations()
-            if not selected:
-                return
+                button.setEnabled(True)
+
+    def _discard_external_picker(
+        self,
+        provider: str,
+        picker: ExternalConversationImportDialog,
+    ) -> None:
+        """Forget a picker the user closed while its scan may still be running."""
+        if self._external_sync_dialogs.get(provider) is picker:
+            self._external_sync_dialogs.pop(provider, None)
+            self._external_sync_reports.pop(provider, None)
+        picker.deleteLater()
+
+    def _import_external_picker(
+        self,
+        provider: str,
+        picker: ExternalConversationImportDialog,
+    ) -> None:
+        """Apply choices from a completed streaming picker."""
+        if self._external_sync_dialogs.get(provider) is not picker:
+            return
+        self._external_sync_dialogs.pop(provider, None)
+        source_report = self._external_sync_reports.pop(provider, None)
+        selected = picker.selected_conversations()
+        picker.deleteLater()
+        if not selected:
+            return
+        try:
             report = apply_external_conversations(
                 self._conversations,
                 selected,
-                report=result.get("report"),
+                report=source_report,
             )
             if report.changed:
                 self._persist()
@@ -2396,27 +2904,14 @@ class ChatWindow(QWidget):
                 )
             QMessageBox.information(self, t("External conversation import"), summary)
         except Exception as exc:
-            if automatic:
-                if checkbox is not None:
-                    checkbox.setToolTip(
-                        t("Automatic sync failed: {error}").format(error=exc)
-                    )
-                return
             QMessageBox.warning(
                 self,
                 t("External conversation import failed"),
-                t("OpenWand could not scan local {provider} conversations: {error}").format(
-                    provider=provider_name,
+                t("OpenWand could not import local {provider} conversations: {error}").format(
+                    provider=_external_provider_display_name(provider),
                     error=exc,
                 ),
             )
-        finally:
-            self._external_sync_inflight.discard(provider)
-            if not automatic and button is not None:
-                button.setText(
-                    t("Import {provider} conversation…").format(provider=provider_name)
-                )
-                button.setEnabled(True)
 
     def _rebuild_sidebar(self):
         """Handle rebuild sidebar for chat window."""
@@ -2469,8 +2964,7 @@ class ChatWindow(QWidget):
         self._sidebar_layout.addStretch()
         if hasattr(self, "_delete_all_conversations_btn"):
             self._delete_all_conversations_btn.setEnabled(bool(self._conversations))
-        if self._formatted_replies_ui_enabled and hasattr(self, "_sidebar_search"):
-            self._filter_formatted_sidebar(self._sidebar_search.text())
+            self._delete_all_conversations_btn.setVisible(bool(self._conversations))
         if self._pending_sidebar_rows and self.isVisible():
             # Already on screen (a search, rename, or delete rebuilt the list), so
             # there is no first frame left to wait for. On the initial build the
@@ -2524,8 +3018,6 @@ class ChatWindow(QWidget):
 
     def _history_search_terms(self) -> list[str]:
         """Return case-insensitive terms from the current history query."""
-        if self._formatted_replies_ui_enabled:
-            return []
         search = getattr(self, "_history_search", None)
         if search is None:
             return []
@@ -2628,14 +3120,13 @@ class ChatWindow(QWidget):
             return override
         first_user = next((m for m in conv["messages"] if m["role"] == "user"), None)
         source = conv.get("external_source") if isinstance(conv.get("external_source"), dict) else {}
-        provider = _external_provider_display_name(source.get("provider"))
         raw = (
             conv.get("title")
-            if provider and conv.get("title")
+            if source and conv.get("title")
             else (first_user["content"] if first_user else f"{t('Conversation')} {idx+1}")
         )
         has_image = bool(first_user and _conversation_store.first_image_base64_from_message(first_user))
-        prefix = f"{provider} · " if provider else ""
+        prefix = ""
         if has_image:
             prefix += f"[{t('image')}] "
         return prefix + str(raw).strip().replace("\n", " ")
@@ -2649,11 +3140,10 @@ class ChatWindow(QWidget):
         title = self._conversation_title(idx, conv)
         if conv.get("pinned"):
             title = "📌 " + title
-        subtitle = (
-            ""
-            if self._formatted_replies_ui_enabled
-            else self._conversation_search_excerpt(conv) or self._conversation_timestamp(conv)
-        )
+        if self._formatted_replies_ui_enabled:
+            subtitle = self._conversation_search_excerpt(conv) if self._history_search_terms() else ""
+        else:
+            subtitle = self._conversation_search_excerpt(conv) or self._conversation_timestamp(conv)
         is_active = (idx == self._active_idx)
         is_selected = idx in self._selected_conversation_indices
 
@@ -2745,7 +3235,7 @@ class ChatWindow(QWidget):
         ):
             export_menu = menu.addMenu(t("Export as new conversation"))
             export_menu.addAction(
-                "ChatGPT",
+                "Codex",
                 lambda: self._export_conversation_as_new_session(idx, "codex"),
             )
             export_menu.addAction(
@@ -2795,7 +3285,7 @@ class ChatWindow(QWidget):
         return Path.cwd()
 
     def _export_conversation_as_new_session(self, idx: int, provider_key: str) -> None:
-        """Create and link a new ChatGPT or Claude session from a OpenWand-native chat."""
+        """Create a new local Codex or Claude Code transcript from an OpenWand chat."""
         if not (0 <= idx < len(self._conversations)):
             return
         conv = self._conversations[idx]
@@ -2819,6 +3309,7 @@ class ChatWindow(QWidget):
             )
             self._persist()
             self._rebuild_sidebar()
+            self._refresh_conversation_source_label()
             QMessageBox.information(
                 self,
                 t("Conversation exported"),
@@ -3002,7 +3493,7 @@ class ChatWindow(QWidget):
         if self._conversations:
             self._switch(min(self._active_idx, len(self._conversations) - 1))
         else:
-            self._input_frame.setEnabled(False)
+            self._refresh_chat_scoped_controls()
 
     def _delete_all_conversations(self) -> None:
         """Delete all OpenWand conversations after one explicit confirmation."""
@@ -3019,7 +3510,7 @@ class ChatWindow(QWidget):
         count = len(self._conversations)
         prompt = t(
             "Delete all {count} OpenWand conversations?\n\n"
-            "This cannot be undone. Imported ChatGPT and Claude source files will not be deleted."
+            "This cannot be undone. Imported Codex and Claude Code source files will not be deleted."
         ).format(count=count)
         answer = QMessageBox.question(
             self,
@@ -3050,7 +3541,7 @@ class ChatWindow(QWidget):
         self._selection_anchor_idx = None
         self._rebuild_stack()
         self._rebuild_sidebar()
-        self._input_frame.setEnabled(False)
+        self._refresh_chat_scoped_controls()
         if hasattr(self, "_conversation_header_label"):
             self._conversation_header_label.setText(self._current_conversation_header_text())
 
@@ -3110,7 +3601,7 @@ class ChatWindow(QWidget):
             self._ensure_page_built(idx)
             self._stack.setCurrentIndex(idx)
         self._update_selected_conversation_notice(idx)
-        self._input_frame.setEnabled(bool(self._conversations))
+        self._refresh_chat_scoped_controls()
         for real_idx, btn in self._sidebar_btns:
             is_active = real_idx == idx
             is_selected = real_idx in self._selected_conversation_indices
@@ -3129,6 +3620,7 @@ class ChatWindow(QWidget):
             self._on_select(idx)
         self._refresh_context_controls()
         self.request_context_preview()
+        self._update_jump_to_latest_visibility()
 
     def hideEvent(self, event):  # noqa: N802
         """Stop transient autoscroll whenever Chat leaves the screen."""
@@ -3138,6 +3630,8 @@ class ChatWindow(QWidget):
     def closeEvent(self, event):  # noqa: N802
         """Detach the application-wide filter before Qt deletes this window."""
         self._stop_middle_autoscroll()
+        self._window_geometry_save_timer.stop()
+        self._save_window_state()
         if self._application_event_filter_installed:
             from PySide6.QtWidgets import QApplication
 
@@ -3151,6 +3645,7 @@ class ChatWindow(QWidget):
         """Show which conversation the composer will continue."""
         if hasattr(self, "_conversation_header_label"):
             self._conversation_header_label.setText(self._current_conversation_header_text())
+        self._refresh_conversation_source_label()
         if self._formatted_replies_ui_enabled:
             self._past_notice.setVisible(False)
             return
@@ -3187,6 +3682,7 @@ class ChatWindow(QWidget):
             return
         self._streaming = True
         self._streaming_idx = idx
+        self._begin_stream_follow(idx)
         self._send_btn.setEnabled(False)
         self._new_chat_btn.setEnabled(False)
         self._current_ai_text = ""
@@ -3247,6 +3743,7 @@ class ChatWindow(QWidget):
         self._current_user_message = None
         self._streaming = False
         self._streaming_idx = None
+        self._update_jump_to_latest_visibility()
         self._send_btn.setEnabled(True)
         self._new_chat_btn.setEnabled(True)
         if wrapper is not None:
@@ -3290,6 +3787,26 @@ class ChatWindow(QWidget):
         self._stack.setCurrentIndex(self._active_idx)
         vl.addWidget(self._stack, stretch=1)
 
+        self._jump_to_latest_btn = QPushButton(t("↓  Jump to latest"))
+        self._jump_to_latest_btn.setObjectName("jumpToLatestButton")
+        self._jump_to_latest_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._jump_to_latest_btn.setAccessibleName(t("Jump to latest reply"))
+        self._jump_to_latest_btn.setToolTip(
+            t("A reply is continuing below. Jump to the newest content.")
+        )
+        self._jump_to_latest_btn.setStyleSheet(
+            f"QPushButton {{ background: {_TITLE_BG}; color: {_TEXT};"
+            f" border: 1px solid {_BORDER}; border-radius: 12px;"
+            " padding: 5px 12px; font-size: 8pt; font-weight: 700; }}"
+            f"QPushButton:hover {{ background: {_SEL_BG}; border-color: {_ACCENT}; }}"
+        )
+        self._jump_to_latest_btn.clicked.connect(self._jump_to_latest)
+        self._jump_to_latest_btn.hide()
+        vl.addWidget(
+            self._jump_to_latest_btn,
+            alignment=Qt.AlignmentFlag.AlignHCenter,
+        )
+
         self._past_notice = QLabel(t("  Selected conversation"))
         self._past_notice.setFixedHeight(26)
         self._past_notice.setStyleSheet(
@@ -3301,7 +3818,6 @@ class ChatWindow(QWidget):
             vl.addWidget(self._past_notice)
 
         self._input_frame = self._make_input_area()
-        self._input_frame.setEnabled(bool(self._conversations))
         vl.addWidget(self._input_frame)
         return panel
 
@@ -3324,19 +3840,33 @@ class ChatWindow(QWidget):
         self._conversation_header_label = title
         row.addWidget(title)
 
-        for provider in ("codex", "claude"):
-            row.addWidget(self._make_external_auto_sync_checkbox(provider))
+        activity_button = QPushButton(t("Agents"))
+        activity_button.setObjectName("harnessActivityButton")
+        activity_button.setFixedHeight(30)
+        activity_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        activity_button.setAccessibleName(t("Agent activity"))
+        activity_button.setToolTip(t("Show subagents and their current work"))
+        activity_button.setStyleSheet(
+            f"QPushButton {{ background: {_WHITE_BG_8}; color: {_HINT};"
+            f" border: 1px solid {_BORDER}; border-radius: 9px; padding: 4px 10px;"
+            " font-size: 8pt; font-weight: 700; }}"
+            f"QPushButton:hover {{ background: {_WHITE_BG_10}; color: {_TEXT}; border-color: {_ACCENT}; }}"
+        )
+        activity_button.clicked.connect(
+            lambda _checked=False, button=activity_button: self._toggle_harness_inspector(button)
+        )
+        self._harness_activity_button = activity_button
+        row.addWidget(activity_button)
 
-        menu_button = QPushButton(t("Conversation options"))
+        menu_button = QPushButton("⋮")
         menu_button.setObjectName("conversationOptionsButton")
-        menu_button.setFixedHeight(34)
-        menu_button.setMinimumWidth(132)
+        menu_button.setFixedSize(34, 34)
         menu_button.setCursor(Qt.CursorShape.PointingHandCursor)
         menu_button.setAccessibleName(t("Conversation options"))
         menu_button.setToolTip(t("Conversation options"))
         menu_button.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {_HINT}; border: none;"
-            " border-radius: 8px; padding: 0 10px; font-size: 9pt; }}"
+            " border-radius: 17px; padding: 0; font-size: 16pt; font-weight: 700; }}"
             f"QPushButton:hover {{ background: {_WHITE_BG_10}; color: {_TEXT}; }}"
         )
         menu_button.clicked.connect(
@@ -3345,21 +3875,292 @@ class ChatWindow(QWidget):
                 button,
             )
         )
+        self._conversation_options_button = menu_button
         row.addWidget(menu_button)
-
-        badge = QLabel(t("Formatted replies"))
-        badge.setStyleSheet(
-            f"color: {_HINT}; background: {_WHITE_BG_8}; border: 1px solid {_BORDER};"
-            " border-radius: 9px; padding: 5px 9px; font-size: 8pt;"
-        )
-        row.addWidget(badge)
         return bar
+
+    def _has_highlighted_conversation(self) -> bool:
+        """Return whether one valid chat is actively highlighted in history."""
+        conversations = getattr(self, "_conversations", [])
+        active_idx = int(getattr(self, "_active_idx", 0) or 0)
+        selected = getattr(self, "_selected_conversation_indices", set())
+        return (
+            0 <= active_idx < len(conversations)
+            and active_idx in selected
+        )
+
+    def _refresh_chat_scoped_controls(self) -> None:
+        """Hide controls whose actions require an actively highlighted chat."""
+        visible = self._has_highlighted_conversation()
+        input_frame = getattr(self, "_input_frame", None)
+        if input_frame is not None:
+            set_visible = getattr(input_frame, "setVisible", None)
+            if callable(set_visible):
+                set_visible(visible)
+            set_enabled = getattr(input_frame, "setEnabled", None)
+            if callable(set_enabled):
+                set_enabled(visible)
+        for name in ("_harness_activity_button", "_conversation_options_button"):
+            button = getattr(self, name, None)
+            if button is not None:
+                button.setVisible(visible)
+        header = getattr(self, "_conversation_header_label", None)
+        if header is not None:
+            header.setText(self._current_conversation_header_text())
+
+    def _toggle_harness_inspector(self, anchor: QWidget) -> None:
+        """Open the compact top-right Codex activity panel."""
+        if self._harness_inspector is not None and self._harness_inspector.isVisible():
+            self._harness_inspector.close()
+            return
+        dialog = QDialog(self, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        dialog.setObjectName("harnessActivityInspector")
+        dialog.setMinimumWidth(360)
+        dialog.setMaximumWidth(480)
+        dialog.setStyleSheet(
+            f"QDialog#harnessActivityInspector {{ background: {_TITLE_BG}; color: {_TEXT};"
+            f" border: 1px solid {_BORDER}; border-radius: 18px; }}"
+            f"QLabel {{ background: transparent; color: {_TEXT}; }}"
+            f"QPushButton {{ text-align: left; background: transparent; color: {_TEXT};"
+            " border: none; border-radius: 8px; padding: 8px 10px; }}"
+            f"QPushButton:hover {{ background: {_WHITE_BG_10}; }}"
+        )
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(5)
+        agents = dict(self._harness_activity_state.get("agents") or {})
+        heading = QLabel(t("Agent activity"))
+        heading.setFont(_ui_font(9, QFont.Weight.Bold))
+        heading.setStyleSheet(f"color: {_HINT};")
+        layout.addWidget(heading)
+        if agents:
+            for agent_id, raw in agents.items():
+                agent = raw if isinstance(raw, dict) else {}
+                status = str(agent.get("status") or agent.get("phase") or t("Working"))
+                prompt = str(agent.get("prompt") or agent.get("detail") or "").strip()
+                short_id = str(agent_id)[-8:]
+                label = f"●  {status}  ·  {short_id}"
+                if prompt:
+                    label += f"\n    {prompt[:100]}"
+                button = QPushButton(label, dialog)
+                button.setObjectName("harnessAgentRow")
+                button.setToolTip(prompt or str(agent_id))
+                button.clicked.connect(
+                    lambda _checked=False, data=dict(agent), key=str(agent_id): self._show_harness_detail(
+                        t("Subagent {agent}").format(agent=key[-8:]),
+                        data,
+                    )
+                )
+                layout.addWidget(button)
+        else:
+            empty = QLabel(t("No subagents in this turn."))
+            empty.setObjectName("harnessNoAgents")
+            empty.setStyleSheet(f"color: {_HINT}; padding: 8px 10px;")
+            layout.addWidget(empty)
+        dialog.adjustSize()
+        point = anchor.mapToGlobal(anchor.rect().bottomRight())
+        dialog.move(point.x() - dialog.width(), point.y() + 6)
+        dialog.finished.connect(lambda _result: setattr(self, "_harness_inspector", None))
+        self._harness_inspector = dialog
+        dialog.show()
+
+    def _show_harness_detail(self, title: str, data: dict) -> None:
+        """Show one agent's prompt and chronological activity."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumSize(560, 420)
+        outer = QVBoxLayout(dialog)
+        view = QTextBrowser(dialog)
+        lines: list[str] = []
+        prompt = str(data.get("prompt") or "").strip()
+        if prompt:
+            lines.extend([t("Assigned work"), prompt, ""])
+        lines.extend([
+            f"{t('Status')}: {data.get('status') or data.get('phase') or ''}",
+            f"{t('Thread')}: {data.get('agent_id') or data.get('receiver_thread_ids') or ''}",
+        ])
+        activity = data.get("activity") if isinstance(data.get("activity"), list) else []
+        if activity:
+            lines.extend(["", t("Latest activity")])
+            for item in activity:
+                if isinstance(item, dict):
+                    lines.append(
+                        f"• {item.get('phase') or ''} {item.get('activity_type') or item.get('tool') or ''}: "
+                        f"{item.get('detail') or item.get('status') or ''}"
+                    )
+        view.setPlainText("\n".join(lines))
+        outer.addWidget(view)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        outer.addWidget(buttons)
+        dialog.exec()
+
+    def _show_harness_list(
+        self,
+        title: str,
+        items: list,
+        key: str,
+        *,
+        use_skill: bool = False,
+    ) -> None:
+        """Show the native Codex skills or MCP inventory with descriptions."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumSize(620, 460)
+        outer = QVBoxLayout(dialog)
+        if use_skill:
+            hint = QLabel(t("Choose a skill to add its Codex $name marker to your message."), dialog)
+            hint.setWordWrap(True)
+            hint.setStyleSheet(f"color: {_HINT};")
+            outer.addWidget(hint)
+            scroll = QScrollArea(dialog)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            content = QWidget(scroll)
+            rows = QVBoxLayout(content)
+            rows.setContentsMargins(0, 0, 0, 0)
+            rows.setSpacing(5)
+            for raw in items:
+                item = raw if isinstance(raw, dict) else {}
+                name = str(item.get(key) or "").strip()
+                if not name:
+                    continue
+                description = str(item.get("description") or "").strip()
+                label = f"${name}"
+                if description:
+                    label += f"\n{description[:180]}"
+                button = QPushButton(label, content)
+                button.setObjectName("harnessSkillChoice")
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+                button.setToolTip(description)
+                button.setStyleSheet(
+                    f"QPushButton {{ text-align: left; color: {_TEXT}; background: {_TITLE_BG};"
+                    f" border: 1px solid {_BORDER}; border-radius: 8px; padding: 10px; }}"
+                    f"QPushButton:hover {{ background: {_WHITE_BG_10}; border-color: {_ACCENT}; }}"
+                )
+                button.clicked.connect(
+                    lambda _checked=False, skill=name, target=dialog: self._insert_skill_reference(
+                        skill,
+                        target,
+                    )
+                )
+                rows.addWidget(button)
+            rows.addStretch(1)
+            scroll.setWidget(content)
+            outer.addWidget(scroll, 1)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
+            buttons.rejected.connect(dialog.reject)
+            outer.addWidget(buttons)
+            dialog.exec()
+            return
+        view = QTextBrowser(dialog)
+        blocks: list[str] = []
+        for raw in items:
+            item = raw if isinstance(raw, dict) else {}
+            name = str(item.get(key) or t("Unnamed"))
+            description = str(item.get("description") or item.get("error") or "").strip()
+            scope = str(item.get("scope") or item.get("authStatus") or "").strip()
+            tools = item.get("tools") if isinstance(item.get("tools"), dict) else {}
+            suffix = f" · {scope}" if scope else ""
+            if tools:
+                suffix += t(" · {count} tools").format(count=len(tools))
+            blocks.append(f"{name}{suffix}\n{description}".rstrip())
+        view.setPlainText("\n\n".join(blocks) if blocks else t("Nothing discovered."))
+        outer.addWidget(view)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        outer.addWidget(buttons)
+        dialog.exec()
+
+    def _insert_skill_reference(self, name: str, dialog: QDialog | None = None) -> None:
+        """Insert the CLI-compatible ``$skill`` marker into the chat composer."""
+        marker = f"${str(name or '').strip()}"
+        if marker == "$":
+            return
+        cursor = self._input.textCursor()
+        prefix = "" if not self._input.toPlainText() or cursor.position() == 0 else " "
+        cursor.insertText(f"{prefix}{marker} ")
+        self._input.setTextCursor(cursor)
+        self._input.setFocus()
+        if dialog is not None:
+            dialog.accept()
+
+    def _on_harness_activity(self, event: dict) -> None:
+        """Merge capability data or subagent events into their respective UI state."""
+        event_type = str(event.get("type") or "")
+        if event_type == "capabilities":
+            self._harness_activity_state["skills"] = list(event.get("skills") or [])
+        elif event_type == "subagent":
+            agents = self._harness_activity_state.setdefault("agents", {})
+            if not isinstance(agents, dict):
+                agents = {}
+                self._harness_activity_state["agents"] = agents
+            item_id = str(event.get("item_id") or "")
+            agent_id = str(event.get("agent_id") or "")
+            key = agent_id or item_id or f"agent-{len(agents) + 1}"
+            previous = agents.pop(item_id, {}) if agent_id and item_id in agents and item_id != key else agents.get(key, {})
+            merged = dict(previous) if isinstance(previous, dict) else {}
+            activity = list(merged.get("activity") or [])
+            activity.append(dict(event))
+            merged.update(event)
+            merged["agent_id"] = agent_id or str(merged.get("agent_id") or key)
+            merged["activity"] = activity[-100:]
+            agents[key] = merged
+            for state_id, raw_state in dict(event.get("agent_states") or {}).items():
+                state = raw_state if isinstance(raw_state, dict) else {}
+                existing = agents.get(str(state_id), {})
+                updated = dict(existing) if isinstance(existing, dict) else {}
+                updated.update({"agent_id": str(state_id), **state})
+                updated.setdefault("prompt", str(event.get("prompt") or ""))
+                updated.setdefault("activity", list(activity))
+                agents[str(state_id)] = updated
+        button = getattr(self, "_harness_activity_button", None)
+        if button is not None:
+            count = len(dict(self._harness_activity_state.get("agents") or {}))
+            button.setText(t("Agents {count}").format(count=count) if count else t("Agents"))
+        inspector = self._harness_inspector
+        if inspector is not None and inspector.isVisible():
+            inspector.close()
+
+    def _make_conversation_source_label(self) -> QLabel:
+        """Create a compact, explicit local/imported conversation identity label."""
+        conversation = (
+            self._conversations[self._active_idx]
+            if 0 <= self._active_idx < len(self._conversations)
+            else None
+        )
+        text, detail = _conversation_source_status(conversation)
+        label = QLabel(text)
+        label.setObjectName("conversationSourceStatus")
+        label.setToolTip(detail)
+        label.setAccessibleName(text)
+        label.setStyleSheet(
+            f"color: {_HINT}; background: {_WHITE_BG_8}; border: 1px solid {_BORDER};"
+            " border-radius: 8px; padding: 4px 8px; font-size: 7pt;"
+        )
+        self._conversation_source_label = label
+        return label
+
+    def _refresh_conversation_source_label(self) -> None:
+        """Refresh source identity after switching or exporting a conversation."""
+        label = getattr(self, "_conversation_source_label", None)
+        if label is None:
+            return
+        conversation = (
+            self._conversations[self._active_idx]
+            if 0 <= self._active_idx < len(self._conversations)
+            else None
+        )
+        text, detail = _conversation_source_status(conversation)
+        label.setText(text)
+        label.setAccessibleName(text)
+        label.setToolTip(detail)
 
     def _current_conversation_header_text(self) -> str:
         """Return the selected title for the approved-mode top bar."""
-        if 0 <= self._active_idx < len(self._conversations):
+        if self._has_highlighted_conversation():
             return self._conversation_title(self._active_idx, self._conversations[self._active_idx])
-        return t("New chat")
+        return t("Select a chat")
 
     def start_new_conversation(self, auto_message: str | None = None):
         """Start new conversation."""
@@ -3426,10 +4227,11 @@ class ChatWindow(QWidget):
             added = True
         if not added:
             return
-        self._input_frame.setEnabled(True)
         self._rebuild_sidebar()
         if from_placeholder or select_new:
             self._switch(len(self._conversations) - 1)
+        else:
+            self._refresh_chat_scoped_controls()
 
     def _make_page_placeholder(self) -> QLabel:
         """Create page placeholder."""
@@ -3457,7 +4259,20 @@ class ChatWindow(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.verticalScrollBar().setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        transcript_bar = scroll.verticalScrollBar()
+        transcript_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        transcript_bar.sliderMoved.connect(
+            lambda _value, target=scroll: self._on_transcript_manual_scroll(target)
+        )
+        transcript_bar.sliderReleased.connect(
+            lambda target=scroll: self._on_transcript_manual_scroll(target)
+        )
+        transcript_bar.actionTriggered.connect(
+            lambda _action, target=scroll: QTimer.singleShot(
+                0,
+                lambda: self._on_transcript_manual_scroll(target),
+            )
+        )
         # Keep the conversation scrollbar easy to acquire with a mouse.  The
         # previous 9 px track also had 2 px margins, leaving only a roughly
         # 5 px draggable handle on Windows.
@@ -3677,6 +4492,65 @@ class ChatWindow(QWidget):
         )
         return lbl
 
+    def _make_attachment_preview(self) -> QFrame:
+        """Create the pending-attachment preview kept inside the composer block."""
+        frame = QFrame()
+        frame.setObjectName("pendingAttachmentPreview")
+        frame.setVisible(False)
+        frame.setStyleSheet(
+            f"QFrame#pendingAttachmentPreview {{ background: {_WHITE_BG_8};"
+            f" border: 1px solid {_BORDER}; border-radius: 9px; }}"
+        )
+        row = QHBoxLayout(frame)
+        row.setContentsMargins(7, 5, 5, 5)
+        row.setSpacing(7)
+
+        thumbnail = QLabel()
+        thumbnail.setObjectName("pendingAttachmentThumbnail")
+        thumbnail.setFixedSize(44, 44)
+        thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        thumbnail.setStyleSheet(
+            f"background: {_AI_BG}; border: none; border-radius: 6px; color: {_HINT};"
+        )
+        thumbnail.setVisible(False)
+        row.addWidget(thumbnail)
+
+        label = QLabel("")
+        label.setObjectName("pendingAttachmentNames")
+        label.setWordWrap(True)
+        label.setStyleSheet(
+            f"color: {_TEXT}; background: transparent; border: none; font-size: 8pt;"
+        )
+        row.addWidget(label, stretch=1)
+
+        clear_button = QPushButton("×")
+        clear_button.setObjectName("clearPendingAttachments")
+        clear_button.setFixedSize(26, 26)
+        clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_button.setToolTip(t("Remove pending attachments"))
+        clear_button.setAccessibleName(t("Remove pending attachments"))
+        clear_button.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {_HINT}; border: none;"
+            " border-radius: 13px; font-size: 14pt; }}"
+            f"QPushButton:hover {{ background: {_WHITE_BG_10}; color: {_TEXT}; }}"
+        )
+        clear_button.clicked.connect(self._clear_pending_attachments)
+        row.addWidget(clear_button)
+
+        self._attachment_preview = frame
+        self._attachment_thumbnail = thumbnail
+        self._attachment_label = label
+        return frame
+
+    def _clear_pending_attachments(self) -> None:
+        """Remove every unsent attachment from the composer preview."""
+        self._pending_attachment_context = ""
+        self._pending_attachment_image_b64 = None
+        self._pending_attachments = []
+        self._pending_attachment_labels = []
+        self._refresh_attachment_label()
+        self.request_context_preview()
+
     def _make_input_area(self) -> QWidget:
         """Create input area."""
         if self._formatted_replies_ui_enabled:
@@ -3689,24 +4563,15 @@ class ChatWindow(QWidget):
 
         outer.addWidget(self._make_context_policy_controls())
 
-        self._attachment_label = QLabel("")
-        self._attachment_label.setWordWrap(True)
-        self._attachment_label.setVisible(False)
-        self._attachment_label.setStyleSheet(
-            f"QLabel {{ color: {_HINT}; background-color: {_ACCENT_BG_12};"
-            f" border: 1px solid {_BORDER}; border-radius: 6px; padding: 4px;"
-            " font-size: 8pt; }"
-        )
-        outer.addWidget(self._attachment_label)
+        outer.addWidget(self._make_attachment_preview())
 
         h = QHBoxLayout()
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(8)
 
-        self._input = QTextEdit()
-        self._input.setAcceptDrops(False)
-        self._input.setFixedHeight(62)
-        self._input.setPlaceholderText(t("Message... (Enter to send, Shift+Enter for newline)"))
+        self._input = _ComposerTextEdit(minimum_height=62, maximum_height=180)
+        self._input.attachment_mime.connect(self._add_attachments_from_mime)
+        self._update_composer_send_hint()
         self._apply_input_font_scale()
         self._input.installEventFilter(self)
 
@@ -3763,11 +4628,14 @@ class ChatWindow(QWidget):
         card_layout.setContentsMargins(12, 8, 10, 8)
         card_layout.setSpacing(5)
 
-        self._input = QTextEdit()
+        self._context_policy_panel = self._make_context_policy_controls()
+        self._context_policy_panel.hide()
+        card_layout.addWidget(self._context_policy_panel)
+
+        self._input = _ComposerTextEdit(minimum_height=42, maximum_height=180)
         self._input.setObjectName("formattedComposerInput")
-        self._input.setAcceptDrops(False)
-        self._input.setFixedHeight(42)
-        self._input.setPlaceholderText(t("Message model"))
+        self._input.attachment_mime.connect(self._add_attachments_from_mime)
+        self._update_composer_send_hint()
         self._input.setStyleSheet(
             f"QTextEdit#formattedComposerInput {{ background: transparent; color: {_TEXT};"
             " border: none; padding: 3px 4px; font-size: 11pt; }}"
@@ -3775,14 +4643,7 @@ class ChatWindow(QWidget):
         self._input.installEventFilter(self)
         card_layout.addWidget(self._input)
 
-        self._attachment_label = QLabel("")
-        self._attachment_label.setWordWrap(True)
-        self._attachment_label.setVisible(False)
-        self._attachment_label.setStyleSheet(
-            f"QLabel {{ color: {_HINT}; background: {_WHITE_BG_8};"
-            f" border: 1px solid {_BORDER}; border-radius: 9px; padding: 5px 8px; font-size: 8pt; }}"
-        )
-        card_layout.addWidget(self._attachment_label)
+        card_layout.addWidget(self._make_attachment_preview())
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
@@ -3801,16 +4662,13 @@ class ChatWindow(QWidget):
         self._attach_btn.clicked.connect(self._choose_attachments)
         actions.addWidget(self._attach_btn)
 
-        exact_model = self._configured_chat_model()
-        model_label = QLabel(exact_model)
-        model_label.setObjectName("chatExactModel")
-        model_label.setToolTip(
-            t("Exact model used for this chat: {model}").format(model=exact_model)
-        )
-        model_label.setStyleSheet(
+        self._model_label = QLabel()
+        self._model_label.setObjectName("chatExactModel")
+        self._model_label.setStyleSheet(
             f"color: {_HINT}; background: transparent; font-size: 7pt;"
         )
-        actions.addWidget(model_label)
+        self.refresh_model_label()
+        actions.addWidget(self._model_label)
         if callable(self._on_model_settings):
             change_model = QPushButton(t("Change model"))
             change_model.setObjectName("chatModelSettings")
@@ -3826,6 +4684,23 @@ class ChatWindow(QWidget):
             actions.addWidget(change_model)
 
         actions.addStretch()
+
+        composer_menu_btn = QPushButton("⋮")
+        composer_menu_btn.setObjectName("formattedComposerMenuButton")
+        composer_menu_btn.setFixedSize(34, 34)
+        composer_menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        composer_menu_btn.setAccessibleName(t("Chat options"))
+        composer_menu_btn.setToolTip(t("Chat options"))
+        composer_menu_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {_HINT}; border: none;"
+            " border-radius: 17px; font-size: 16pt; font-weight: 700; padding: 0; }}"
+            f"QPushButton:hover {{ background: {_WHITE_BG_10}; color: {_TEXT}; }}"
+        )
+        composer_menu_btn.clicked.connect(
+            lambda _checked=False, button=composer_menu_btn: self._open_composer_menu(button)
+        )
+        self._composer_menu_btn = composer_menu_btn
+        actions.addWidget(composer_menu_btn)
 
         self._send_btn = QPushButton("↑")
         self._send_btn.setObjectName("formattedSendButton")
@@ -3851,17 +4726,130 @@ class ChatWindow(QWidget):
         outer.addLayout(composer_row)
         return footer
 
+    def _formatted_reply_action(self) -> dict | None:
+        """Return the formatted-replies action that controls automatic presentation."""
+        return next(
+            (
+                item
+                for item in self._addon_message_actions
+                if str(item.get("addon_id") or "") == _FORMATTED_REPLIES_ADDON_ID
+                and str(item.get("id") or "") == "format-reply"
+            ),
+            None,
+        )
+
+    def _open_composer_menu(self, anchor: QWidget) -> None:
+        """Open chat-level options from inside the bottom composer card."""
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {_TITLE_BG}; color: {_TEXT}; border: 1px solid {_BORDER}; }}"
+            f"QMenu::item:selected {{ background: {_SEL_BG}; }}"
+        )
+        enter_send = menu.addAction(t("Enter sends message"))
+        enter_send.setCheckable(True)
+        enter_send.setChecked(self._enter_sends)
+        enter_send.toggled.connect(self._set_enter_send)
+
+        context_controls = menu.addAction(t("Context controls"))
+        context_controls.setCheckable(True)
+        context_controls.setChecked(bool(self._context_policy_panel.isVisible()))
+        context_controls.toggled.connect(self._context_policy_panel.setVisible)
+
+        skills = list(self._harness_activity_state.get("skills") or [])
+        if skills:
+            skills_action = menu.addAction(
+                t("Skills…"),
+                lambda items=list(skills): self._show_harness_list(
+                    t("Codex skills"),
+                    items,
+                    "name",
+                    use_skill=True,
+                ),
+            )
+            skills_action.setToolTip(
+                t("Choose from {count} Codex skills").format(count=len(skills))
+            )
+
+        menu.addSeparator()
+        for provider in ("codex", "claude"):
+            provider_name = _external_provider_display_name(provider)
+            auto_import = menu.addAction(
+                t("Keep {provider} imports updated").format(provider=provider_name)
+            )
+            auto_import.setCheckable(True)
+            auto_import.setChecked(
+                bool((self._external_sync_state.get(provider) or {}).get("enabled"))
+            )
+            auto_import.toggled.connect(
+                lambda enabled, source=provider: self._set_external_auto_sync(source, enabled)
+            )
+        menu.addAction(
+            t("Import from Codex…"),
+            lambda: self._pull_external_conversations("codex"),
+        )
+        menu.addAction(
+            t("Import from Claude Code…"),
+            lambda: self._pull_external_conversations("claude"),
+        )
+        menu.addSeparator()
+        delete_all = menu.addAction(t("Delete all chats…"), self._delete_all_conversations)
+        delete_all.setEnabled(bool(self._conversations))
+
+        self._composer_menu = menu
+        menu.aboutToHide.connect(lambda: setattr(self, "_composer_menu", None))
+        menu.popup(anchor.mapToGlobal(anchor.rect().topRight()))
+
+    def _set_auto_format_enabled(self, enabled: bool) -> None:
+        """Apply the quick auto-format preference immediately and persist it via the host."""
+        action = self._formatted_reply_action()
+        if action is None:
+            return
+        action["auto"] = bool(enabled)
+        if callable(self._on_addon_setting_change):
+            self._on_addon_setting_change(
+                {
+                    "addon_id": _FORMATTED_REPLIES_ADDON_ID,
+                    "key": "auto_format",
+                    "value": bool(enabled),
+                }
+            )
+
+    def _set_enter_send(self, enabled: bool) -> None:
+        """Choose between Enter-to-send and Ctrl+Enter-to-send composer behavior."""
+        self._enter_sends = bool(enabled)
+        config.set_chat_enter_send(self._enter_sends)
+        self._update_composer_send_hint()
+
+    def _update_composer_send_hint(self) -> None:
+        """Keep the visible composer hint aligned with the active keyboard behavior."""
+        if not hasattr(self, "_input"):
+            return
+        self._input.setPlaceholderText(
+            t("Message… (Enter sends; Shift+Enter adds a line)")
+            if self._enter_sends
+            else t("Message… (Ctrl+Enter sends; Enter adds a line)")
+        )
+
+    def _open_addon_settings(self, addon_id: str) -> None:
+        """Open an add-on's detailed settings when the runtime exposes that surface."""
+        if callable(self._on_addon_settings):
+            self._on_addon_settings(addon_id)
+
     @staticmethod
     def _configured_chat_model() -> str:
-        """Return the exact configured model for the active conversation route."""
-        mode = str(
-            getattr(config, "CHAT_EXECUTION_MODE", "openwand") or "openwand"
-        ).strip().lower()
-        if mode == "codex":
-            return str(getattr(config, "OPENWAND_CODEX_MODEL", "") or t("Default")).strip()
-        if mode == "claude":
-            return str(getattr(config, "OPENWAND_CLAUDE_MODEL", "") or t("Default")).strip()
+        """Return the visible Chat model route used for ordinary chat turns."""
         return str(getattr(config, "CHAT_LLM_MODEL", "") or t("Default")).strip()
+
+    def refresh_model_label(self) -> None:
+        """Keep the composer badge aligned with the route used by the next turn."""
+        label = getattr(self, "_model_label", None)
+        if label is None:
+            return
+        exact_model = self._configured_chat_model()
+        label.setText(exact_model)
+        label.setToolTip(
+            t("Exact model used for this chat: {model}").format(model=exact_model)
+        )
 
     def _make_context_policy_controls(self) -> QWidget:
         """Create per-conversation context/tool controls above the chat input."""
@@ -4168,15 +5156,14 @@ class ChatWindow(QWidget):
 
     def update_addon_message_actions(self, actions: list[dict] | None = None) -> None:
         """Install enabled actions and switch addon-owned Chat UI when needed."""
-        normalized = _normalized_addon_message_actions(actions)
+        normalized = [
+            action
+            for action in _normalized_addon_message_actions(actions)
+            if str(action.get("addon_id") or "") != _FORMATTED_REPLIES_ADDON_ID
+        ]
         actions_changed = normalized != self._addon_message_actions
-        enabled = _formatted_replies_ui_enabled(normalized)
-        mode_changed = enabled != self._formatted_replies_ui_enabled
         self._addon_message_actions = normalized
-        self._formatted_replies_ui_enabled = enabled
-        if mode_changed:
-            self._apply_addon_ui_mode()
-            return
+        self._formatted_replies_ui_enabled = True
         # The host refreshes addon discovery whenever Chat is shown.  Most of
         # those responses repeat the action list already used for first paint.
         # Replacing the active page in that case needlessly destroys and
@@ -4196,6 +5183,8 @@ class ChatWindow(QWidget):
         action_id: str,
     ) -> None:
         """Mark a message busy and hand its canonical text to the addon host."""
+        if str(addon_id or "") == _FORMATTED_REPLIES_ADDON_ID:
+            return
         if not callable(self._on_addon_message_action):
             return
         if not (0 <= conversation_index < len(self._conversations)):
@@ -4269,6 +5258,8 @@ class ChatWindow(QWidget):
         result: dict | None = None,
     ) -> dict:
         """Persist a completed addon presentation without changing canonical text."""
+        if str(addon_id or "") == _FORMATTED_REPLIES_ADDON_ID:
+            return {"updated": False, "reason": "retired_addon"}
         payload = result if isinstance(result, dict) else {}
         for conversation_index, conv in enumerate(self._conversations):
             if conversation_id and str(conv.get("id") or "") != str(conversation_id):
@@ -4591,6 +5582,8 @@ class ChatWindow(QWidget):
             presentations = message.get("addon_presentations")
             if isinstance(presentations, dict):
                 for addon_id, item in presentations.items():
+                    if str(addon_id or "") == _FORMATTED_REPLIES_ADDON_ID:
+                        continue
                     if not isinstance(item, dict) or not str(item.get("html") or "").strip():
                         continue
                     try:
@@ -5004,7 +5997,6 @@ class ChatWindow(QWidget):
             self._has_placeholder = False
         idx = len(self._conversations) - 1
         self._stack.addWidget(self._make_page(idx, branch))
-        self._input_frame.setEnabled(True)
         self._rebuild_sidebar()
         self._switch(idx)
         self._persist()
@@ -5049,13 +6041,92 @@ class ChatWindow(QWidget):
         page = self._stack.widget(active_idx)
         return page if isinstance(page, QScrollArea) else None
 
-    def _scroll_bottom(self):
-        """Handle scroll bottom for chat window."""
+    def _is_near_transcript_bottom(self, scroll: QScrollArea | None = None) -> bool:
+        """Return whether the transcript is close enough to safely keep following."""
+        target = scroll or self._active_scroll()
+        if target is None:
+            return True
+        try:
+            bar = target.verticalScrollBar()
+            return bar.maximum() - bar.value() <= _CHAT_FOLLOW_BOTTOM_THRESHOLD_PX
+        except RuntimeError:
+            return True
+
+    def _begin_stream_follow(self, conversation_index: int) -> None:
+        """Start a reply in follow mode; a later manual scroll can latch it off."""
+        self._stream_follow_enabled = True
+        self._stream_follow_idx = conversation_index
+        if self._unseen_reply_idx == conversation_index:
+            self._unseen_reply_idx = None
+        self._update_jump_to_latest_visibility()
+
+    def _on_transcript_manual_scroll(self, scroll: QScrollArea) -> None:
+        """Latch streaming follow off when the reader deliberately moves upward."""
+        if scroll is not self._active_scroll():
+            return
+        at_bottom = self._is_near_transcript_bottom(scroll)
+        if at_bottom:
+            if self._streaming and self._stream_follow_idx == self._active_idx:
+                self._stream_follow_enabled = True
+            if self._unseen_reply_idx == self._active_idx:
+                self._unseen_reply_idx = None
+        elif self._streaming and self._stream_follow_idx == self._active_idx:
+            self._stream_follow_enabled = False
+            self._unseen_reply_idx = self._active_idx
+        self._update_jump_to_latest_visibility()
+
+    def _update_jump_to_latest_visibility(self) -> None:
+        """Show a compact recovery control while newer reply content is below."""
+        button = getattr(self, "_jump_to_latest_btn", None)
+        if button is None:
+            return
+        visible = (
+            self._unseen_reply_idx == self._active_idx
+            and not self._is_near_transcript_bottom()
+        )
+        button.setVisible(visible)
+
+    def _jump_to_latest(self) -> None:
+        """Resume following and reveal the newest reply content."""
+        self._stream_follow_enabled = True
+        self._stream_follow_idx = self._active_idx
+        if self._unseen_reply_idx == self._active_idx:
+            self._unseen_reply_idx = None
+        self._scroll_bottom(force=True)
+
+    def _scroll_bottom(self, *, force: bool = False):
+        """Follow the newest content unless the reader intentionally scrolled away."""
         scroll = self._active_scroll()
-        if scroll:
-            QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(
-                scroll.verticalScrollBar().maximum()
-            ))
+        if scroll is None:
+            return
+        following_active_stream = (
+            self._streaming and self._stream_follow_idx == self._active_idx
+        )
+        if following_active_stream and not self._stream_follow_enabled and not force:
+            self._unseen_reply_idx = self._active_idx
+            self._update_jump_to_latest_visibility()
+            return
+
+        def scroll_if_still_following(target=scroll, forced=force) -> None:
+            try:
+                if (
+                    not forced
+                    and self._streaming
+                    and self._stream_follow_idx == self._active_idx
+                    and not self._stream_follow_enabled
+                ):
+                    self._unseen_reply_idx = self._active_idx
+                    self._update_jump_to_latest_visibility()
+                    return
+                bar = target.verticalScrollBar()
+                bar.setValue(bar.maximum())
+                if target is self._active_scroll() and self._unseen_reply_idx == self._active_idx:
+                    self._unseen_reply_idx = None
+                self._update_jump_to_latest_visibility()
+            except RuntimeError:
+                return
+
+        QTimer.singleShot(0, scroll_if_still_following)
 
     # ------------------------------------------------------------------ Drops
 
@@ -5209,20 +6280,53 @@ class ChatWindow(QWidget):
             return "\n\n".join(lines)
 
     def _refresh_attachment_label(self) -> None:
-        """Update the pending attachment chip above the composer."""
+        """Update names and an image thumbnail before the pending turn is submitted."""
         if self._attachment_label is None:
             return
+        preview_frame = getattr(self, "_attachment_preview", None)
+        thumbnail = getattr(self, "_attachment_thumbnail", None)
         if not self._pending_attachment_labels:
-            self._attachment_label.setVisible(False)
             self._attachment_label.setText("")
             self._attachment_label.setToolTip("")
+            if thumbnail is not None:
+                thumbnail.clear()
+                thumbnail.hide()
+            if preview_frame is not None:
+                preview_frame.hide()
             return
         names = ", ".join(self._pending_attachment_labels[:4])
         if len(self._pending_attachment_labels) > 4:
             names += f", +{len(self._pending_attachment_labels) - 4}"
         self._attachment_label.setText(f"{t('Attached')} · {html.escape(names)}")
         self._attachment_label.setToolTip("\n".join(self._pending_attachment_labels))
-        self._attachment_label.setVisible(True)
+        self._attachment_label.show()
+
+        image_b64 = self._pending_attachment_image_b64
+        if not image_b64:
+            for ref in self._pending_attachments:
+                if str(ref.get("kind") or "").lower() != "image":
+                    continue
+                image_b64 = _conversation_store.attachment_image_base64(ref)
+                if image_b64:
+                    break
+        if thumbnail is not None:
+            preview = self._image_thumbnail_label(image_b64, "user")
+            pixmap = preview.pixmap() if preview is not None else QPixmap()
+            if not pixmap.isNull():
+                thumbnail.setPixmap(
+                    pixmap.scaled(
+                        40,
+                        40,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+                thumbnail.show()
+            else:
+                thumbnail.clear()
+                thumbnail.hide()
+        if preview_frame is not None:
+            preview_frame.show()
 
     def _consume_pending_attachments(self) -> tuple[str, str | None, list[str], list[dict]]:
         """Return and clear pending context/image attachments."""
@@ -5252,10 +6356,15 @@ class ChatWindow(QWidget):
         """Send the chat window workflow."""
         if self._streaming or not self._conversations:
             return
+        self.refresh_model_label()
         if self._on_select and 0 <= self._active_idx < len(self._conversations):
             self._on_select(self._active_idx)
         self._streaming = True
         self._streaming_idx = self._active_idx
+        self._harness_activity_state["agents"] = {}
+        if hasattr(self, "_harness_activity_button"):
+            self._harness_activity_button.setText(t("Agents"))
+        self._begin_stream_follow(self._active_idx)
         self._send_btn.setEnabled(False)
         self._new_chat_btn.setEnabled(False)
 
@@ -5330,22 +6439,32 @@ class ChatWindow(QWidget):
         self._current_ai_label = self._bubble(layout, "...", "assistant", created_at=_now_iso()) if layout else None
         self._scroll_bottom()
 
-        # Keep legacy/global context in the system prompt, while message-scoped
-        # attachments ride next to the user turns that mention them.
+        # Keep the system/tool prefix stable. Legacy conversation context and
+        # message-scoped attachments ride with the volatile user turn.
         ctx = _context_not_anchored_to_messages(conv.get("context", ""), conv["messages"])
-        sys_content = config.get_system_prompt()
-        if tool_modes.context_mode(context_policy, "browser") == "model":
-            sys_content += (
-                "\n\nWhen the user's request depends on a URL they supplied, retrieve and read that "
-                "page before answering. Summarize or extract only the relevant information; do not "
-                "dump the retrieved page text into the reply unless they explicitly request it."
-            )
+        from core.llm_clients.prompt_guidance import with_browser_retrieval_note
+
+        sys_content = with_browser_retrieval_note(
+            config.get_system_prompt(),
+            tool_modes.context_mode(context_policy, "browser") == "model",
+        )
+        dynamic_context: list[str] = []
         if ctx:
-            sys_content += f"\n\n---\n{ctx}"
+            dynamic_context.append(f"[Conversation Context]\n{ctx}")
         file_ctx = _file_context_text(conv.get("file_context") or [])
         if file_ctx:
-            sys_content += f"\n\n---\n{file_ctx}"
+            dynamic_context.append(file_ctx)
         messages = [{"role": "system", "content": sys_content}] + _chat_model_messages(conv["messages"])
+        if dynamic_context:
+            from core.llm_clients.messages import build_contextual_user_text
+
+            for message in reversed(messages):
+                if message.get("role") == "user":
+                    message["content"] = build_contextual_user_text(
+                        str(message.get("content") or ""),
+                        ambient_context="\n\n".join(dynamic_context),
+                    )
+                    break
 
         def _stream():
             """Stream the chat window workflow."""
@@ -5377,6 +6496,11 @@ class ChatWindow(QWidget):
     def _on_chunk(self, chunk: object):
         """Handle chunk events."""
         if isinstance(chunk, dict):
+            harness_activity = chunk.get("harness_activity")
+            if isinstance(harness_activity, dict) and harness_activity:
+                self._on_harness_activity(harness_activity)
+                if not str(chunk.get("text") or ""):
+                    return
             local_work = chunk.get("local_work")
             if isinstance(local_work, dict) and local_work:
                 self._on_local_work_activity(local_work)
@@ -5818,6 +6942,7 @@ class ChatWindow(QWidget):
         self._current_user_message = None
         self._streaming = False
         self._streaming_idx = None
+        self._update_jump_to_latest_visibility()
         self._send_btn.setEnabled(True)
         self._new_chat_btn.setEnabled(True)
         if self._pending_addon_ui_refresh:
@@ -5946,10 +7071,18 @@ class ChatWindow(QWidget):
             event.accept()
             return True
         if obj is self._input and event.type() == QEvent.Type.KeyPress:
-            if (event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
-                    and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier)):
-                self._on_send_clicked()
-                return True
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                modifiers = event.modifiers()
+                should_send = (
+                    self._enter_sends
+                    and not (modifiers & Qt.KeyboardModifier.ShiftModifier)
+                ) or (
+                    not self._enter_sends
+                    and bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+                )
+                if should_send:
+                    self._on_send_clicked()
+                    return True
         return super().eventFilter(obj, event)
 
     def _active_transcript_for_target(self, obj: object) -> QScrollArea | None:
@@ -5978,6 +7111,7 @@ class ChatWindow(QWidget):
             delta = round((angle_delta / 120.0) * _CHAT_WHEEL_STEP)
         bar = scroll.verticalScrollBar()
         bar.setValue(bar.value() - delta)
+        self._on_transcript_manual_scroll(scroll)
         event.accept()
         return True
 
@@ -6022,6 +7156,7 @@ class ChatWindow(QWidget):
                 speed = -speed
             bar = scroll.verticalScrollBar()
             bar.setValue(bar.value() + speed)
+            self._on_transcript_manual_scroll(scroll)
         except RuntimeError:
             self._stop_middle_autoscroll()
 
@@ -6086,8 +7221,87 @@ class ChatWindow(QWidget):
     # ------------------------------------------------------------------ Helpers
 
     def _center_on_screen(self):
-        """Handle center on screen for chat window."""
+        """Place a first-run or invalid saved window safely on the active screen."""
         fit_window_to_screen(self, preferred_width=_W, preferred_height=_H)
+
+    def _restore_window_state(self) -> None:
+        """Restore the last normal geometry once, falling back safely across monitors."""
+        state: dict = {}
+        if self._window_state_enabled:
+            try:
+                loaded = json.loads(self._window_state_path.read_text(encoding="utf-8"))
+                state = loaded if isinstance(loaded, dict) else {}
+            except (OSError, json.JSONDecodeError, TypeError):
+                state = {}
+        try:
+            rect = QRect(
+                int(state.get("x")),
+                int(state.get("y")),
+                int(state.get("width")),
+                int(state.get("height")),
+            )
+        except (TypeError, ValueError):
+            rect = QRect()
+
+        screens = QApplication.screens()
+        usable = (
+            rect.width() >= self.minimumWidth()
+            and rect.height() >= self.minimumHeight()
+            and any(screen.availableGeometry().intersects(rect) for screen in screens)
+        )
+        if usable:
+            screen = QApplication.screenAt(rect.center()) or QApplication.primaryScreen()
+            if screen is not None:
+                bounds = screen.availableGeometry()
+                width = min(max(rect.width(), self.minimumWidth()), bounds.width())
+                height = min(max(rect.height(), self.minimumHeight()), bounds.height())
+                x = min(max(rect.x(), bounds.left()), bounds.right() - width + 1)
+                y = min(max(rect.y(), bounds.top()), bounds.bottom() - height + 1)
+                self.setGeometry(x, y, width, height)
+        else:
+            self._center_on_screen()
+
+        self._window_geometry_ready = True
+        if bool(state.get("maximized")):
+            QTimer.singleShot(0, self.showMaximized)
+
+    def _schedule_window_state_save(self) -> None:
+        """Debounce move/resize persistence while the user manipulates the window."""
+        if self._window_state_enabled and self._window_geometry_ready and not self.isMinimized():
+            self._window_geometry_save_timer.start()
+
+    def _save_window_state(self) -> None:
+        """Persist the normal rectangle and maximized state atomically."""
+        if not self._window_state_enabled or not self._window_geometry_ready:
+            return
+        rect = self.normalGeometry() if self.isMaximized() else self.geometry()
+        state = {
+            "x": rect.x(),
+            "y": rect.y(),
+            "width": rect.width(),
+            "height": rect.height(),
+            "maximized": self.isMaximized(),
+        }
+        temporary = self._window_state_path.with_suffix(self._window_state_path.suffix + ".tmp")
+        try:
+            self._window_state_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            os.replace(temporary, self._window_state_path)
+        except OSError:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def moveEvent(self, event):  # noqa: N802 - Qt API
+        """Remember the user's normal window position without fighting native movement."""
+        super().moveEvent(event)
+        self._schedule_window_state_save()
+
+    def resizeEvent(self, event):  # noqa: N802 - Qt API
+        """Remember natural resize, snapped, restored, and maximized geometry."""
+        super().resizeEvent(event)
+        self._schedule_window_state_save()
 
     def paintEvent(self, event):  # noqa: N802 - Qt override
         """Fill in the rest of the history once the window has actually drawn.
@@ -6101,6 +7315,5 @@ class ChatWindow(QWidget):
             self._schedule_sidebar_fill()
 
     def showEvent(self, event):  # noqa: N802
-        """Show event."""
+        """Show without recentering; restored or user-moved geometry remains authoritative."""
         super().showEvent(event)
-        self._center_on_screen()

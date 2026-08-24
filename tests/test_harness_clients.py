@@ -27,6 +27,7 @@ def _bare_codex_client(events: list[HarnessEvent], approval=True) -> _Client:
     client._reply_parts = []
     client._attachments = []
     client._model_thinking_announced = False
+    client._active_thread_id = "root-thread"
     client.sent = []
     client.send = client.sent.append
     return client
@@ -90,23 +91,36 @@ def test_codex_session_auth_and_provider_rejections_are_controlled(
         codex.run_codex("hello", cwd=tmp_path)
 
 
-def test_codex_environment_isolates_state_without_mutating_parent(
+def test_codex_environment_uses_native_cli_profile_by_default(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     personal_home = tmp_path / "personal-codex"
-    openwand_home = tmp_path / "openwand-codex"
     monkeypatch.setenv("CODEX_HOME", str(personal_home))
     monkeypatch.setenv("CODEX_SQLITE_HOME", str(personal_home / "sqlite"))
+    monkeypatch.delenv("OPENWAND_CODEX_HOME", raising=False)
+
+    environment = codex._codex_environment()
+
+    assert environment["CODEX_HOME"] == str(personal_home)
+    assert environment["CODEX_SQLITE_HOME"] == str(personal_home / "sqlite")
+    assert os.environ["CODEX_HOME"] == str(personal_home)
+    assert os.environ["CODEX_SQLITE_HOME"] == str(personal_home / "sqlite")
+
+
+def test_codex_environment_honors_explicit_profile_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    openwand_home = tmp_path / "openwand-codex"
     monkeypatch.setenv("OPENWAND_CODEX_HOME", str(openwand_home))
 
     environment = codex._codex_environment()
 
     assert environment["CODEX_HOME"] == str(openwand_home.resolve())
     assert environment["CODEX_SQLITE_HOME"] == str(openwand_home.resolve())
-    assert os.environ["CODEX_HOME"] == str(personal_home)
-    assert os.environ["CODEX_SQLITE_HOME"] == str(personal_home / "sqlite")
-    assert (openwand_home / "config.toml").read_text(encoding="utf-8") == 'history.persistence = "none"\n'
+    assert openwand_home.is_dir()
+    assert not (openwand_home / "config.toml").exists()
 
 
 def test_codex_app_server_receives_isolated_environment(
@@ -212,6 +226,173 @@ def test_codex_forwards_command_approval(approved: bool, decision: str) -> None:
     })
 
     assert client.sent == [{"id": 17, "result": {"decision": decision}}]
+
+
+def test_codex_forwards_request_user_input_answers() -> None:
+    events: list[HarnessEvent] = []
+    client = _bare_codex_client(events)
+    client.approval_callback = lambda request: {
+        "approved": True,
+        "answers": {"scope": {"answers": ["Project only"]}},
+    }
+
+    client.handle({
+        "id": 18,
+        "method": "item/tool/requestUserInput",
+        "params": {
+            "threadId": "root-thread",
+            "turnId": "turn-1",
+            "itemId": "question-1",
+            "questions": [{
+                "id": "scope",
+                "header": "Scope",
+                "question": "Where should this apply?",
+                "isOther": True,
+                "isSecret": False,
+                "options": [{"label": "Project only", "description": "Current project"}],
+            }],
+            "autoResolutionMs": None,
+        },
+    })
+
+    assert client.sent == [{
+        "id": 18,
+        "result": {"answers": {"scope": {"answers": ["Project only"]}}},
+    }]
+
+
+def test_codex_forwards_mcp_form_elicitation() -> None:
+    client = _bare_codex_client([])
+    seen = []
+    client.approval_callback = lambda request: seen.append(request) or {
+        "approved": True,
+        "action": "accept",
+        "content": {"workspace": "alpha"},
+        "_meta": {"source": "test"},
+    }
+
+    client.handle({
+        "id": 19,
+        "method": "mcpServer/elicitation/request",
+        "params": {
+            "threadId": "root-thread",
+            "turnId": "turn-1",
+            "serverName": "example",
+            "mode": "form",
+            "message": "Choose a workspace",
+            "requestedSchema": {"type": "object", "properties": {"workspace": {"type": "string"}}},
+            "_meta": None,
+        },
+    })
+
+    assert seen[0]["kind"] == "mcp_elicitation"
+    assert seen[0]["requested_schema"]["properties"]["workspace"]["type"] == "string"
+    assert client.sent == [{
+        "id": 19,
+        "result": {
+            "action": "accept",
+            "content": {"workspace": "alpha"},
+            "_meta": {"source": "test"},
+        },
+    }]
+
+
+def test_codex_permission_approval_includes_required_scope() -> None:
+    client = _bare_codex_client([])
+    client.approval_callback = lambda _request: {"approved": True, "scope": "session"}
+
+    client.handle({
+        "id": 20,
+        "method": "item/permissions/requestApproval",
+        "params": {"cwd": "/repo", "permissions": {"network": {"enabled": True}}},
+    })
+
+    assert client.sent == [{
+        "id": 20,
+        "result": {"permissions": {"network": {"enabled": True}}, "scope": "session"},
+    }]
+
+
+def test_codex_emits_subagent_prompt_and_child_activity() -> None:
+    events: list[HarnessEvent] = []
+    client = _bare_codex_client(events)
+
+    client.handle({
+        "method": "item/started",
+        "params": {
+            "threadId": "root-thread",
+            "item": {
+                "id": "spawn-1",
+                "type": "collabAgentToolCall",
+                "tool": "spawnAgent",
+                "status": "inProgress",
+                "senderThreadId": "root-thread",
+                "receiverThreadIds": ["child-thread"],
+                "prompt": "Inspect the test suite",
+                "agentsStates": {"child-thread": {"status": "running", "message": None}},
+            },
+        },
+    })
+    client.handle({
+        "method": "item/started",
+        "params": {
+            "threadId": "child-thread",
+            "item": {
+                "id": "child-command",
+                "type": "commandExecution",
+                "command": "pytest -q",
+                "status": "inProgress",
+            },
+        },
+    })
+
+    activity = [event for event in events if event.kind == "activity"]
+    assert activity[0].attachment["prompt"] == "Inspect the test suite"
+    assert activity[0].attachment["agent_id"] == "child-thread"
+    assert activity[1].attachment["activity_type"] == "commandExecution"
+    assert activity[1].attachment["detail"] == "pytest -q"
+
+
+def test_codex_capability_snapshot_uses_native_app_server_inventory(tmp_path: Path) -> None:
+    events: list[HarnessEvent] = []
+    calls = []
+
+    class Client:
+        on_event = events.append
+
+        def request(self, method, params):
+            calls.append((method, deepcopy(params)))
+            if method == "skills/list":
+                return {
+                    "data": [{
+                        "cwd": str(tmp_path),
+                        "skills": [{"name": "openai-docs", "path": "/skills/openai-docs", "scope": "system"}],
+                        "errors": [],
+                    }]
+                }
+            if method == "mcpServerStatus/list":
+                return {"data": [{"name": "github", "tools": {"get_file": {}}}], "nextCursor": None}
+            raise AssertionError(method)
+
+    codex._capability_snapshot(Client(), "thread-1", tmp_path)
+
+    assert calls == [
+        ("skills/list", {"cwds": [str(tmp_path)]}),
+        ("mcpServerStatus/list", {"detail": "toolsAndAuthOnly", "threadId": "thread-1"}),
+    ]
+    assert events == [
+        HarnessEvent(
+            kind="activity",
+            text="1 skills · 1 MCP servers",
+            attachment={
+                "type": "capabilities",
+                "skills": [{"name": "openai-docs", "path": "/skills/openai-docs", "scope": "system"}],
+                "skill_errors": [],
+                "mcp_servers": [{"name": "github", "tools": {"get_file": {}}}],
+                "cwd": str(tmp_path),
+            },
+        )
+    ]
 
 
 def test_codex_uses_completed_agent_message_when_no_delta_arrived() -> None:
@@ -600,13 +781,24 @@ def test_codex_prewarm_and_repeated_turns_reuse_one_app_server(monkeypatch, tmp_
     assert methods.count("thread/start") == 1
     assert methods.count("thread/resume") == 1
     assert methods.count("turn/start") == 2
+    initialize_params = next(params for method, params in instances[0].requests if method == "initialize")
+    assert initialize_params["capabilities"] == {
+        "experimentalApi": True,
+        "mcpServerOpenaiFormElicitation": True,
+    }
     expected_statuses = [
         HarnessEvent("status", "Opening conversation in ChatGPT..."),
         HarnessEvent("status", "Preparing ChatGPT turn..."),
         HarnessEvent("status", "Model is thinking..."),
     ]
-    assert first_events == expected_statuses
-    assert second_events == expected_statuses
+    assert [event for event in first_events if event.kind == "status"] == expected_statuses
+    assert [event for event in second_events if event.kind == "status"] == expected_statuses
+    assert any(
+        event.kind == "activity"
+        and isinstance(event.attachment, dict)
+        and event.attachment.get("type") == "capabilities"
+        for event in first_events
+    )
     starts = [params for method, params in instances[0].requests if method == "thread/start"]
     assert starts == [{"cwd": str(tmp_path), "developerInstructions": "ChatGPT-only rules."}]
     resumes = [params for method, params in instances[0].requests if method == "thread/resume"]

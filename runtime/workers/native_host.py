@@ -2535,12 +2535,43 @@ def _win_edit_capture_focus() -> int:
     _focus_cache["token"] = _focus_seq
     _focus_cache["kind"] = "win-edit"
     geometry_range = _win_uia_focused_geometry_range(str(snapshot.get("selected_text") or ""))
+    caret_rect = _win_caret_screen_rect(int(snapshot.get("root_hwnd") or 0))
+    pointer_rect = _win_cursor_screen_rect()
     if geometry_range is not None:
-        geometry_rect = _win_uia_selection_screen_rect(geometry_range)
+        anchor_affinity, anchor_edge = _win_uia_anchor_details(
+            geometry_range,
+            caret_rect=caret_rect,
+            pointer_rect=pointer_rect,
+        )
+        if anchor_affinity:
+            _focus_cache["anchor_affinity"] = anchor_affinity
+        if anchor_edge:
+            _focus_cache["anchor_edge"] = anchor_edge
+        geometry_rect = _win_uia_anchor_screen_rect(geometry_range, anchor_affinity)
         if geometry_rect:
             _focus_cache["geometry_range"] = geometry_range
             _focus_cache["selection_rect"] = geometry_rect
             _focus_cache["selection_rect_source"] = "uia"
+            _focus_cache["last_selection_rect"] = dict(geometry_rect)
+    elif caret_rect:
+        # Standard Edit controls expose both selection offsets and the active
+        # caret. Compare the endpoints once, while the source still owns focus,
+        # so a backwards Shift/drag selection remains backwards later.
+        document_units = len(
+            str(snapshot.get("document_text") or "").encode(
+                "utf-16-le", errors="surrogatepass"
+            )
+        ) // 2
+        start_rect = _win_edit_selection_screen_rect(
+            int(snapshot.get("input_hwnd") or 0),
+            class_name=str(snapshot.get("class_name") or ""),
+            selection_end=int(snapshot.get("selection_start") or 0),
+            document_units=document_units,
+        )
+        end_rect = dict(snapshot.get("selection_rect") or {})
+        affinity = _win_endpoint_affinity(caret_rect, start_rect, end_rect, strict=False)
+        if affinity:
+            _focus_cache["anchor_affinity"] = affinity
     _plog(
         f"native edit capture token={_focus_seq} class={snapshot.get('class_name')!r} "
         f"selection={snapshot.get('selection_start')}:{snapshot.get('selection_end')}"
@@ -2651,7 +2682,19 @@ def _win_uia_capture_focus(
         _focus_cache["selected_text"] = str(candidate["selected_text"])
         _focus_cache.update(_win_uia_range_context(text_pattern, text_range))
         _focus_cache.update(_win_capture_background_input_target(element))
-        selection_rect = _win_uia_selection_screen_rect(text_range)
+        caret_rect = _win_caret_screen_rect(
+            int(_focus_cache.get("root_hwnd") or source_window_id or 0)
+        )
+        anchor_affinity, anchor_edge = _win_uia_anchor_details(
+            text_range,
+            caret_rect=caret_rect,
+            pointer_rect=_win_cursor_screen_rect(),
+        )
+        if anchor_affinity:
+            _focus_cache["anchor_affinity"] = anchor_affinity
+        if anchor_edge:
+            _focus_cache["anchor_edge"] = anchor_edge
+        selection_rect = _win_uia_anchor_screen_rect(text_range, anchor_affinity)
         if selection_rect:
             _focus_cache["selection_rect"] = selection_rect
             _focus_cache["last_selection_rect"] = dict(selection_rect)
@@ -2947,30 +2990,152 @@ def _win_uia_editor_client_point(text_range: Any, root_hwnd: int) -> dict[str, f
         return {}
 
 
-def _win_uia_selection_screen_rect(text_range: Any) -> dict[str, float]:
-    """Return the last visible UIA selection rectangle in screen coordinates."""
+def _win_uia_visible_rectangles(text_range: Any) -> list[dict[str, float]]:
+    """Return visible UIA text-line rectangles in native screen coordinates."""
     if not IS_WIN:
-        return {}
+        return []
     try:
         values = list(text_range.GetBoundingRectangles() or [])
         if len(values) < 4:
             clone = text_range.Clone()
             clone.ExpandToEnclosingUnit(0)  # TextUnit_Character
             values = list(clone.GetBoundingRectangles() or [])
-        rectangles: list[tuple[float, float, float, float]] = []
+        rectangles: list[dict[str, float]] = []
         for index in range(0, len(values) - 3, 4):
             left, top, width, height = (float(values[index + offset]) for offset in range(4))
             # Chromium clips an offscreen Monaco selection to a 1-2 px sliver
             # at the viewport edge. It is not a visible text line and must not
             # keep the popup pinned to the editor border while the user scrolls.
             if width > 0 and height >= 4.0:
-                rectangles.append((left, top, width, height))
-        if not rectangles:
-            return {}
-        left, top, width, height = rectangles[-1]
-        return {"left": left, "top": top, "width": width, "height": height}
+                rectangles.append(
+                    {"left": left, "top": top, "width": width, "height": height}
+                )
+        return rectangles
     except Exception:
-        return {}
+        return []
+
+
+def _win_uia_selection_screen_rect(text_range: Any) -> dict[str, float]:
+    """Return the document-end line of a visible UIA selection."""
+    rectangles = _win_uia_visible_rectangles(text_range)
+    return dict(rectangles[-1]) if rectangles else {}
+
+
+def _win_uia_anchor_screen_rect(text_range: Any, affinity: str = "") -> dict[str, float]:
+    """Return the visible text line containing the captured active endpoint."""
+    if str(affinity or "").casefold() != "start":
+        # Keep the established helper as the default path. Besides retaining
+        # compatibility with accessibility-provider shims, this is the normal
+        # document-order endpoint when no trustworthy caret signal exists.
+        return _win_uia_selection_screen_rect(text_range)
+    rectangles = _win_uia_visible_rectangles(text_range)
+    return dict(rectangles[0]) if rectangles else {}
+
+
+def _win_endpoint_affinity(
+    point_rect: dict[str, Any] | None,
+    start_rect: dict[str, Any] | None,
+    end_rect: dict[str, Any] | None,
+    *,
+    strict: bool,
+) -> str:
+    """Identify which selection endpoint owns a captured caret/pointer."""
+    return _win_endpoint_details(
+        point_rect,
+        start_rect,
+        end_rect,
+        strict=strict,
+    )[0]
+
+
+def _win_endpoint_details(
+    point_rect: dict[str, Any] | None,
+    start_rect: dict[str, Any] | None,
+    end_rect: dict[str, Any] | None,
+    *,
+    strict: bool,
+) -> tuple[str, str]:
+    """Return the active document line and visual edge nearest a caret."""
+    try:
+        px = float((point_rect or {}).get("left"))
+        py = float((point_rect or {}).get("top")) + float(
+            (point_rect or {}).get("height")
+        ) / 2.0
+        start_left = float((start_rect or {}).get("left"))
+        start_right = start_left + float((start_rect or {}).get("width"))
+        start_y = float((start_rect or {}).get("top")) + float(
+            (start_rect or {}).get("height")
+        ) / 2.0
+        end_left = float((end_rect or {}).get("left"))
+        end_right = end_left + float((end_rect or {}).get("width"))
+        end_y = float((end_rect or {}).get("top")) + float(
+            (end_rect or {}).get("height")
+        ) / 2.0
+    except (TypeError, ValueError, OverflowError):
+        return "", ""
+    values = (px, py, start_left, start_right, start_y, end_left, end_right, end_y)
+    if not all(math.isfinite(value) for value in values):
+        return "", ""
+    candidates = (
+        (math.hypot(px - start_left, py - start_y), "start", "left"),
+        (math.hypot(px - start_right, py - start_y), "start", "right"),
+        (math.hypot(px - end_left, py - end_y), "end", "left"),
+        (math.hypot(px - end_right, py - end_y), "end", "right"),
+    )
+    distance, affinity, edge = min(candidates)
+    if strict:
+        line_height = max(
+            4.0,
+            float((start_rect or {}).get("height") or 0),
+            float((end_rect or {}).get("height") or 0),
+        )
+        # A mouse pointer is useful only when it is visibly at an endpoint.
+        # This rejects an unrelated pointer left elsewhere by keyboard users.
+        if distance > max(24.0, line_height * 1.75):
+            return "", ""
+    return affinity, edge
+
+
+def _win_uia_anchor_affinity(
+    text_range: Any,
+    *,
+    caret_rect: dict[str, Any] | None = None,
+    pointer_rect: dict[str, Any] | None = None,
+) -> str:
+    """Resolve forward/backward selection direction at hotkey-capture time."""
+    return _win_uia_anchor_details(
+        text_range,
+        caret_rect=caret_rect,
+        pointer_rect=pointer_rect,
+    )[0]
+
+
+def _win_uia_anchor_details(
+    text_range: Any,
+    *,
+    caret_rect: dict[str, Any] | None = None,
+    pointer_rect: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """Resolve the captured selection's document line and visual caret edge."""
+    rectangles = _win_uia_visible_rectangles(text_range)
+    if not rectangles:
+        return "", ""
+    start_rect = rectangles[0]
+    end_rect = rectangles[-1]
+    details = _win_endpoint_details(
+        caret_rect,
+        start_rect,
+        end_rect,
+        strict=False,
+    )
+    if details[0]:
+        return details
+    return _win_endpoint_details(
+        pointer_rect,
+        start_rect,
+        end_rect,
+        strict=True,
+    )
 
 
 def _win_cursor_screen_rect() -> dict[str, float]:
@@ -3114,7 +3279,10 @@ def selection_anchor_resolve(
             class_name = str(state.get("class_name") or "")
             if geometry_range is not None:
                 exact_source = "uia"
-                exact_rect = _win_uia_selection_screen_rect(geometry_range)
+                exact_rect = _win_uia_anchor_screen_rect(
+                    geometry_range,
+                    str(state.get("anchor_affinity") or ""),
+                )
             elif not class_name.casefold().startswith("richedit"):
                 # Standard Edit returns packed coordinates by value. RichEdit's
                 # pointer-based EM_POSFROMCHAR does not marshal reliably across
@@ -3125,7 +3293,14 @@ def selection_anchor_resolve(
                 exact_rect = _win_edit_selection_screen_rect(
                     int(state.get("input_hwnd") or 0),
                     class_name=class_name,
-                    selection_end=int(state.get("selection_end") or 0),
+                    selection_end=int(
+                        (
+                            state.get("selection_start")
+                            if state.get("anchor_affinity") == "start"
+                            else state.get("selection_end")
+                        )
+                        or 0
+                    ),
                     document_units=document_units,
                 )
         elif kind == "win-uia":
@@ -3140,7 +3315,10 @@ def selection_anchor_resolve(
                 # rectangle instead of letting a later selection B move it.
                 exact_rect = dict(state.get("last_selection_rect") or {})
             else:
-                exact_rect = _win_uia_selection_screen_rect(state.get("range"))
+                exact_rect = _win_uia_anchor_screen_rect(
+                    state.get("range"),
+                    str(state.get("anchor_affinity") or ""),
+                )
                 if exact_rect:
                     state["last_selection_rect"] = dict(exact_rect)
         if exact_source:
@@ -3169,12 +3347,22 @@ def selection_anchor_resolve(
         )
         if rect:
             # Rectangles from text providers do not all mean the same thing.
-            # UIA/app-native rectangles cover the final selected text run, so
-            # its endpoint is the trailing edge. Native Edit/caret/mouse
-            # rectangles are already positioned at the endpoint. Preserve an
-            # explicit point so the UI never infers the wrong one from width.
+            # UIA/app-native rectangles cover a selected text run; the cached
+            # visual edge identifies its actual caret side even for backwards
+            # or bidirectional text. Native Edit/caret/mouse rectangles are
+            # already positioned at the endpoint. Preserve an explicit point
+            # so the UI never has to infer one from rectangle width.
             rect = dict(rect)
-            if source in {"native-edit", "os-caret", "mouse"}:
+            if source in {"native-edit", "os-caret", "mouse"} or (
+                source in {"uia", "app-native"}
+                and (
+                    str(state.get("anchor_edge") or "") == "left"
+                    or (
+                        not state.get("anchor_edge")
+                        and str(state.get("anchor_affinity") or "") == "start"
+                    )
+                )
+            ):
                 endpoint_x = float(rect["left"])
             else:
                 endpoint_x = float(rect["left"]) + float(rect["width"])

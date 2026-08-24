@@ -24,6 +24,55 @@ def test_overlay_amplitude_is_clamped_and_emitted() -> None:
     assert values == [1.0, 0.0]
 
 
+def test_suppressed_prompt_presentation_skips_only_reply_bubble() -> None:
+    from runtime.workers.ui_host import QtProtocolHost
+
+    class Bubble:
+        def __init__(self) -> None:
+            self.hidden = 0
+            self.cleared = 0
+
+        def hide(self) -> None:
+            self.hidden += 1
+
+        def clear(self) -> None:
+            self.cleared += 1
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    bubble = Bubble()
+    host._bubble = bubble
+    host._ensure_bubble = lambda: bubble  # type: ignore[method-assign]
+
+    assert host._reply_presentation(suppress_bubble=True)["suppress_bubble"] is True
+    assert host._reply_reset()["suppressed"] is True
+    assert bubble.hidden == 1
+    assert bubble.cleared == 0
+    assert host._reply_thinking()["suppressed"] is True
+    assert host._reply_chunk(text="answer")["suppressed"] is True
+    assert host._reply_image(attachments=[])["suppressed"] is True
+    assert host._reply_done()["suppressed"] is True
+
+    host._reply_presentation(suppress_bubble=False)
+    assert host._reply_reset() == {"reset": True}
+    assert bubble.cleared == 1
+
+
+def test_begin_overlay_conversation_targets_the_persisted_chat() -> None:
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    host._active_conversation_idx = None
+    host._active_project_id = "general"
+    host._all_conversations = []
+    host._chat = None
+    host._persist_conversations = lambda: None  # type: ignore[method-assign]
+
+    result = host._chat_begin_conversation(user="show me the answer")
+
+    assert result["conversation_index"] == 0
+    assert host._external_reply_stream["conversation_index"] == 0
+
+
 def test_rewrite_anchor_refreshes_emit_one_summary_on_remove(caplog) -> None:
     from runtime.workers.ui_host import QtProtocolHost
 
@@ -1269,6 +1318,27 @@ def test_overlay_reply_chunks_restore_when_chat_opens_mid_reply() -> None:
         0,
         {"text": " continues", "is_progress": False, "is_thought": False, "local_work": {}},
     )
+
+
+def test_chat_chunk_preserves_structured_harness_activity() -> None:
+    """The UI stream carries agent data without mixing it into assistant prose."""
+    import queue
+    import threading
+
+    from runtime.workers.ui_host import QtProtocolHost
+
+    host = QtProtocolHost.__new__(QtProtocolHost)
+    stream: queue.Queue = queue.Queue()
+    host._chat_streams = {"chat-1": stream}
+    host._chat_streams_lock = threading.Lock()
+    activity = {"type": "subagent", "agent_id": "child", "prompt": "Inspect tests"}
+
+    assert host._chat_chunk(request_id="chat-1", harness_activity=activity)["queued"] is True
+
+    kind, payload = stream.get_nowait()
+    assert kind == "chunk"
+    assert payload["text"] == ""
+    assert payload["harness_activity"] == activity
 
 
 def test_chat_request_reuses_active_conversation_tool_context() -> None:

@@ -26,6 +26,235 @@ def _close_overlay_if_valid(overlay, app) -> None:
         app.processEvents()
 
 
+def test_intent_overlay_tools_tab_uses_execution_snapshot_and_t_shortcut(qapp, monkeypatch):
+    """Tools are a sibling view whose statuses come from the execution layer."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    config.CALLER_ROWS[:] = [{"intents": [], "custom_key": "s"}]
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    overlay = intent_overlay.IntentOverlay(
+        caller_idx=0,
+        context_items=[{"id": "browser", "key": "2", "label": "Browser", "state": "on"}],
+        tool_snapshot={
+            "execution": "Codex / gpt-test",
+            "count": 2,
+            "items": [
+                {
+                    "name": "Read files",
+                    "status": "ready",
+                    "description": "Read workspace files.",
+                    "tools": ["read_file"],
+                    "toggleable": True,
+                },
+                {
+                    "name": "Run commands",
+                    "status": "ask",
+                    "description": "May request approval.",
+                    "tools": ["run_command"],
+                    "toggleable": True,
+                },
+                {"name": "Network", "status": "unavailable"},
+            ],
+        },
+    )
+    try:
+        overlay.show()
+        qapp.processEvents()
+
+        assert overlay._active_panel == "context"
+        assert overlay.tool_snapshot()["count"] == 2
+        assert [item["status"] for item in overlay.tool_snapshot()["items"]] == [
+            "ready",
+            "ask",
+            "unavailable",
+        ]
+
+        QTest.keyClick(overlay, Qt.Key.Key_T)
+        qapp.processEvents()
+
+        assert overlay._active_panel == "tools"
+        assert overlay._context_preview_height() == 0
+
+        first_tool_rect, _index = overlay._tool_row_rects[0]
+        QTest.mouseClick(overlay, Qt.MouseButton.LeftButton, pos=first_tool_rect.center())
+        qapp.processEvents()
+        assert overlay.tool_snapshot()["count"] == 1
+        assert overlay.tool_choices()[0] == {
+            "id": "Read files",
+            "tools": ["read_file"],
+            "enabled": False,
+            "toggleable": True,
+        }
+
+        # Numeric source shortcuts retain their original behavior and return
+        # to Context so the changed state is visible.
+        QTest.keyClick(overlay, Qt.Key.Key_2)
+        qapp.processEvents()
+        assert overlay._active_panel == "context"
+        assert overlay.context_choices()[0]["state"] == "off"
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_intent_overlay_does_not_steal_configured_t_intent(qapp, monkeypatch):
+    """A caller-owned T command wins when the optional Tools shortcut conflicts."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    import config
+    import ui.intent_overlay as intent_overlay
+
+    old_rows = list(config.CALLER_ROWS)
+    config.CALLER_ROWS[:] = [{
+        "intents": [{"key": "t", "label": "Translate", "hint": "", "prompt": "Translate this."}],
+        "custom_key": "s",
+    }]
+    monkeypatch.setattr(intent_overlay, "_IS_WIN", False)
+    chosen: list[tuple[str, str]] = []
+    overlay = intent_overlay.IntentOverlay(caller_idx=0, tool_snapshot={"count": 1, "items": []})
+    overlay.intent_chosen.connect(lambda glyph, prompt: chosen.append((glyph, prompt)))
+    try:
+        overlay.show()
+        qapp.processEvents()
+        assert overlay._tools_shortcut_available() is False
+
+        QTest.keyClick(overlay, Qt.Key.Key_T)
+        QTest.qWait(120)
+        qapp.processEvents()
+
+        assert chosen == [("T", "Translate this.")]
+    finally:
+        config.CALLER_ROWS[:] = old_rows
+        _close_overlay_if_valid(overlay, qapp)
+
+
+def test_intent_tool_inventory_groups_real_schemas_and_file_approval(tmp_path):
+    from runtime.supervisor.tool_inventory import build_openwand_inventory
+
+    snapshot = build_openwand_inventory(
+        provider="anthropic",
+        model="claude-test",
+        allowed_tools=[
+            "list_files", "read_file", "create_file", "edit_file", "write_file",
+            "web_search", "retrieve_website", "mcp_slack_search",
+        ],
+        file_access_mode="ask",
+        tool_descriptions={"mcp_slack_search": "[MCP:slack] Search messages."},
+        file_roots=[str(tmp_path)],
+    )
+
+    by_name = {item["name"]: item for item in snapshot["items"]}
+    assert snapshot["execution"] == "anthropic / claude-test"
+    assert snapshot["count"] == 8
+    assert by_name["Read files"]["status"] == "ready"
+    assert by_name["Read files"]["toggleable"] is True
+    assert by_name["Read files"]["tools"] == ["list_files", "read_file"]
+    assert by_name["Edit files"]["status"] == "ask"
+    assert by_name["Web search"]["count"] == 2
+    assert by_name["Connected apps"]["count"] == 1
+
+
+def test_intent_tool_inventory_marks_known_unsupported_route_unavailable(tmp_path):
+    from runtime.supervisor.tool_inventory import build_openwand_inventory
+
+    snapshot = build_openwand_inventory(
+        provider="copilot",
+        model="gpt-test",
+        allowed_tools=["read_file", "web_search"],
+        file_access_mode="read",
+        file_roots=[str(tmp_path)],
+    )
+
+    assert snapshot["count"] == 0
+    assert {item["status"] for item in snapshot["items"]} == {"unavailable"}
+    assert not any(item["toggleable"] for item in snapshot["items"])
+
+
+def test_intent_tool_inventory_reflects_native_harness_policies():
+    from runtime.supervisor.tool_inventory import build_harness_inventory
+
+    ask = build_harness_inventory(
+        execution_mode="codex",
+        model="gpt-test",
+        approval_mode="ask",
+    )
+    assert {item["name"]: item["status"] for item in ask["items"]} == {
+        "Read files": "ready",
+        "Edit files": "ask",
+        "Run commands": "ask",
+        "Network": "ask",
+    }
+    assert ask["count"] == 4
+    assert not any(item["toggleable"] for item in ask["items"])
+
+    read_only = build_harness_inventory(
+        execution_mode="codex",
+        model="gpt-test",
+        approval_mode="read_only",
+    )
+    assert read_only["count"] == 1
+    assert [item["status"] for item in read_only["items"]] == [
+        "ready", "unavailable", "unavailable", "unavailable",
+    ]
+
+    claude = build_harness_inventory(
+        execution_mode="claude",
+        model="claude-test",
+        approval_mode="full_access",
+    )
+    assert claude["count"] == 3
+    assert [item["name"] for item in claude["items"]] == [
+        "Read files", "Find files", "Search files",
+    ]
+
+
+def test_intent_tool_choices_only_remove_selected_tools_for_one_prompt():
+    from runtime.supervisor.flows import FlowController
+    from runtime.supervisor.tool_modes import allowed_model_tools
+
+    caller = {
+        "tools": {"memory_save": "on"},
+        "file_access": "ask",
+    }
+    updated = FlowController._apply_intent_tool_choices(
+        caller,
+        [
+            {
+                "tools": ["read_file", "list_files"],
+                "enabled": False,
+                "toggleable": True,
+            },
+            {
+                "tools": ["memory_save"],
+                "enabled": True,
+                "toggleable": True,
+            },
+            {
+                "tools": ["cannot_be_disabled_from_ui"],
+                "enabled": False,
+                "toggleable": False,
+            },
+        ],
+    )
+
+    assert updated is not caller
+    assert updated["tools"] == {
+        "memory_save": "on",
+        "read_file": "off",
+        "list_files": "off",
+    }
+    assert caller["tools"] == {"memory_save": "on"}
+    assert "read_file" not in allowed_model_tools(updated)
+    assert "list_files" not in allowed_model_tools(updated)
+    assert "edit_file" in allowed_model_tools(updated)
+
+
 def test_addon_intent_rows_render_and_run_from_the_visible_picker(qapp, monkeypatch):
     """A contributed prompt row is visible and emits its exact action on keypress."""
     from types import SimpleNamespace
@@ -375,7 +604,21 @@ def test_ui_host_emits_provider_routing_with_chosen_intent(qapp, monkeypatch):
         }],
     }
     try:
-        host._show_intent(caller_idx=0, action_provider=provider)
+        host._show_intent(
+            caller_idx=0,
+            action_provider=provider,
+            tool_snapshot={
+                "count": 1,
+                "items": [{
+                    "id": "web",
+                    "name": "Web search",
+                    "status": "ready",
+                    "tools": ["web_search"],
+                    "toggleable": True,
+                }],
+            },
+        )
+        host._intent._tool_items[0]["enabled"] = False
         host._intent._selection_pending_idx = 0
         host._intent._fire(0)
         qapp.processEvents()
@@ -392,6 +635,12 @@ def test_ui_host_emits_provider_routing_with_chosen_intent(qapp, monkeypatch):
             "provider_id": "libreoffice_calc",
             "app": "libreoffice_calc",
         }
+        assert payload["tool_choices"] == [{
+            "id": "web",
+            "tools": ["web_search"],
+            "enabled": False,
+            "toggleable": True,
+        }]
     finally:
         if host._intent is not None:
             _close_overlay_if_valid(host._intent, qapp)

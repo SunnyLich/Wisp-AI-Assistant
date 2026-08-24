@@ -451,6 +451,151 @@ def test_chat_window_is_not_always_on_top():
         assert not (window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
     finally:
         window.close()
+    app.processEvents()
+
+
+def test_chat_header_inspector_shows_only_subagent_work() -> None:
+    """The top-right panel is agent-only; skills live in the composer menu."""
+    from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow(
+        [{"messages": [{"role": "user", "content": "hello"}]}],
+        lambda _messages: iter(()),
+    )
+    try:
+        activity_button = window.findChild(QPushButton, "harnessActivityButton")
+        assert activity_button is not None
+        window._on_chunk({
+            "harness_activity": {
+                "type": "capabilities",
+                "skills": [{"name": "openai-docs", "description": "Official documentation", "scope": "system"}],
+                "mcp_servers": [{"name": "github", "tools": {"get_file": {}}, "authStatus": "authenticated"}],
+            }
+        })
+        window._on_chunk({
+            "harness_activity": {
+                "type": "subagent",
+                "phase": "started",
+                "item_id": "spawn-1",
+                "agent_id": "child-thread-12345678",
+                "status": "running",
+                "prompt": "Inspect the test suite and report gaps",
+                "activity_type": "collabAgentToolCall",
+            }
+        })
+
+        assert activity_button.text() == "Agents 1"
+        window._toggle_harness_inspector(activity_button)
+        app.processEvents()
+        inspector = window.findChild(QDialog, "harnessActivityInspector")
+        assert inspector is not None and inspector.isVisible()
+        agent_row = inspector.findChild(QPushButton, "harnessAgentRow")
+        assert agent_row is not None
+        assert "Inspect the test suite and report gaps" in agent_row.toolTip()
+        assert inspector.findChild(QPushButton, "harnessSkillsRow") is None
+        assert inspector.findChild(QPushButton, "harnessMcpRow") is None
+        assert all(label.text() != "Codex capabilities" for label in inspector.findChildren(QLabel))
+        inspector.close()
+        window._open_composer_menu(window._composer_menu_btn)
+        app.processEvents()
+        assert "Skills…" in [action.text() for action in window._composer_menu.actions()]
+        window._insert_skill_reference("openai-docs")
+        assert window._input.toPlainText() == "$openai-docs "
+    finally:
+        if window._harness_inspector is not None:
+            window._harness_inspector.close()
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_empty_chat_hides_chat_scoped_buttons_but_keeps_import_and_sync() -> None:
+    """Global history sources remain usable while inactive chat actions disappear."""
+    from PySide6.QtWidgets import QApplication, QCheckBox, QPushButton
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow([], lambda _messages: iter(()))
+    try:
+        window.show()
+        app.processEvents()
+        for name in ("externalImportCodex", "externalImportClaude"):
+            button = window.findChild(QPushButton, name)
+            assert button is not None
+            assert button.isHidden() is False
+            assert button.isEnabled() is True
+        for name in ("externalAutoSyncCodex", "externalAutoSyncClaude"):
+            checkbox = window.findChild(QCheckBox, name)
+            assert checkbox is not None
+            assert checkbox.isHidden() is False
+            assert checkbox.isEnabled() is True
+        assert window.findChild(QPushButton, "harnessActivityButton").isHidden() is True
+        assert window.findChild(QPushButton, "conversationOptionsButton").isHidden() is True
+        assert window._input_frame.isHidden() is True
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_formatted_sidebar_uses_window_title_and_collapsible_sources() -> None:
+    """The sidebar has no duplicate brand row and Sources acts as a disclosure."""
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow([], lambda _messages: iter(()))
+    try:
+        window.show()
+        app.processEvents()
+        assert window.windowTitle() == "OpenWand Chat"
+        assert all(label.text() != "●  OpenWand" for label in window.findChildren(QLabel))
+
+        toggle = window.findChild(QPushButton, "formattedSourcesToggle")
+        container = window.findChild(QWidget, "formattedSourcesContainer")
+        assert toggle is not None
+        assert container is not None
+        assert toggle.text() == "▾  Sources"
+        assert container.isHidden() is False
+
+        toggle.click()
+        app.processEvents()
+        assert toggle.text() == "▸  Sources"
+        assert container.isHidden() is True
+        assert window.findChild(QPushButton, "externalImportCodex").isVisible() is False
+
+        toggle.click()
+        app.processEvents()
+        assert toggle.text() == "▾  Sources"
+        assert container.isHidden() is False
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_deselecting_active_chat_hides_only_chat_scoped_controls() -> None:
+    """No highlighted row means no composer/agent/options controls."""
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = ChatWindow(
+        [{"messages": [{"role": "user", "content": "hello"}]}],
+        lambda _messages: iter(()),
+    )
+    try:
+        window.show()
+        app.processEvents()
+        assert window._input_frame.isHidden() is False
+        window._selected_conversation_indices.clear()
+        window._refresh_chat_scoped_controls()
+        app.processEvents()
+        assert window._input_frame.isHidden() is True
+        assert window.findChild(QPushButton, "harnessActivityButton").isHidden() is True
+        assert window.findChild(QPushButton, "conversationOptionsButton").isHidden() is True
+        assert window.findChild(QPushButton, "externalImportCodex").isHidden() is False
+    finally:
+        window.close()
+        window.deleteLater()
         app.processEvents()
 
 

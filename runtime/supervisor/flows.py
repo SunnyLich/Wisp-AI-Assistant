@@ -20,7 +20,7 @@ from core.actions.progress import ActionProgress, ActionProgressStage, ActionPro
 from core.actions.telemetry import ActionTrace
 from core.attachment_source import DOCUMENT_SUFFIXES
 from core.system.env_utils import mcp_server_id_from_tool, mcp_server_override_key
-from runtime.supervisor import flow_context, flow_estimates, flow_utils, tool_modes
+from runtime.supervisor import flow_context, flow_estimates, flow_utils, tool_inventory, tool_modes
 from runtime.supervisor.runtime_log import RuntimeEventLog, normalize_severity
 from ui.i18n import t
 
@@ -132,6 +132,7 @@ _HARNESS_CONFIG_KEYS = {
     "OPENWAND_CLAUDE_SYSTEM_PROMPT",
     "OPENWAND_CLAUDE_WORKSPACE",
     "OPENWAND_CODEX_CLI",
+    "OPENWAND_CODEX_HOME",
     "OPENWAND_CODEX_SYSTEM_PROMPT",
     "OPENWAND_CODEX_WORKSPACE",
 }
@@ -216,6 +217,8 @@ class PendingInvocation:
     is_snip: bool = False
     # (item_id, source_id) pairs removed via the intent picker's per-row X.
     removed_context_sources: set = field(default_factory=set)
+    # Per-prompt tool switches selected in the intent overlay.
+    tool_choices: list[dict[str, Any]] = field(default_factory=list)
     context_ready: threading.Event = field(default_factory=threading.Event)
     invoked_at_unix_ns: int = 0
     initial_context_at_unix_ns: int = 0
@@ -509,6 +512,9 @@ class FlowController:
                 log.exception("intent prewarm did not start")
             self._prewarm_privacy()
             self._prewarm_harness()
+            default_caller = self._caller(0) or _all_context_off_policy()
+            self._prewarm_llm_prefix(default_caller, route_kind="query")
+            self._prewarm_llm_prefix(default_caller, route_kind="chat")
             try:
                 self.audio.call("audio.prewarm", timeout=30.0, wait=False)
             except Exception:
@@ -604,6 +610,7 @@ class FlowController:
         """Handle intent chosen events."""
         prompt = str((data or {}).get("custom") or (data or {}).get("prompt") or "").strip()
         choices = list((data or {}).get("context_choices") or [])
+        tool_choices = list((data or {}).get("tool_choices") or [])
         routing = (
             dict((data or {}).get("intent_routing") or {})
             if isinstance((data or {}).get("intent_routing"), dict)
@@ -614,7 +621,14 @@ class FlowController:
             if isinstance((data or {}).get("conversation_choice"), dict)
             else {}
         )
-        self._schedule(self.intent_chosen, prompt, choices, routing, conversation_choice)
+        self._schedule(
+            self.intent_chosen,
+            prompt,
+            choices,
+            routing,
+            conversation_choice,
+            tool_choices,
+        )
 
     def _on_intent_cancelled(self, _data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle intent cancelled events."""
@@ -701,8 +715,9 @@ class FlowController:
     def _on_intent_snip_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle screenshot-chip snip requests from an open intent picker."""
         choices = list((data or {}).get("context_choices") or [])
+        tool_choices = list((data or {}).get("tool_choices") or [])
         custom_text = str((data or {}).get("custom_text") or "")
-        self._schedule(self.intent_snip_requested, choices, custom_text)
+        self._schedule(self.intent_snip_requested, choices, custom_text, tool_choices)
 
     def _on_intent_snip_region(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle a selected screenshot-chip snip region."""
@@ -715,8 +730,9 @@ class FlowController:
     def _on_intent_selection_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle selection capture requests from an open intent picker."""
         choices = list((data or {}).get("context_choices") or [])
+        tool_choices = list((data or {}).get("tool_choices") or [])
         custom_text = str((data or {}).get("custom_text") or "")
-        self._schedule(self.intent_selection_capture_requested, choices, custom_text)
+        self._schedule(self.intent_selection_capture_requested, choices, custom_text, tool_choices)
 
     def _on_intent_context_remove(self, data: dict[str, Any], _req_id: Any = None) -> None:
         """Handle per-row context removals from an open intent picker."""
@@ -1460,6 +1476,7 @@ class FlowController:
         if caller.get("paste_back"):
             self.begin_rewrite_annotation(caller_idx, caller)
             return
+        self._prewarm_llm_prefix(caller, route_kind="query")
         generation = self._new_generation()
         # Silence any in-progress speech, but don't block the picker waiting for
         # it - audio.stop just flips a flag in the audio worker.
@@ -1523,6 +1540,10 @@ class FlowController:
                 "caller_idx": caller_idx,
                 "target_hwnd": target_id,
                 "context_items": self._intent_context_items(pending),
+                "tool_snapshot": self._intent_tool_snapshot(
+                    pending.caller,
+                    pending.tool_choices,
+                ),
                 "action_provider": pending.action_provider_context,
                 "defer_focus": True,
             },
@@ -2557,6 +2578,7 @@ class FlowController:
             {
                 "caller_idx": 0,
                 "context_items": self._intent_context_items(pending) if pending else [],
+                "tool_snapshot": self._intent_tool_snapshot(pending.caller) if pending else {},
             },
             timeout=30.0,
         )
@@ -2565,6 +2587,7 @@ class FlowController:
         self,
         context_choices: list[dict[str, Any]] | None = None,
         custom_text: str = "",
+        tool_choices: list[dict[str, Any]] | None = None,
     ) -> None:
         """Mark the current intent as waiting for a user-selected screenshot."""
         with self._lock:
@@ -2575,6 +2598,11 @@ class FlowController:
                 pending.caller,
                 context_choices or [],
             )
+            pending.tool_choices = [
+                dict(item)
+                for item in (tool_choices or [])
+                if isinstance(item, dict)
+            ]
             pending.caller["context_screenshot"] = "auto"
             pending.caller["_context_screenshot_enabled"] = True
             has_screenshot = bool(pending.screenshot_b64)
@@ -2643,6 +2671,7 @@ class FlowController:
         self,
         context_choices: list[dict[str, Any]] | None = None,
         custom_text: str = "",
+        tool_choices: list[dict[str, Any]] | None = None,
     ) -> None:
         """Capture selected text or paths for intent after the next user selection."""
         with self._lock:
@@ -2653,6 +2682,11 @@ class FlowController:
                 pending.caller,
                 context_choices or [],
             )
+            pending.tool_choices = [
+                dict(item)
+                for item in (tool_choices or [])
+                if isinstance(item, dict)
+            ]
             pending.caller["_context_selection_enabled"] = False
             self._pending = pending
             self._pending_context_capture = {
@@ -2868,6 +2902,7 @@ class FlowController:
         context_choices: list[dict[str, Any]] | None = None,
         intent_routing: dict[str, Any] | None = None,
         conversation_choice: dict[str, Any] | None = None,
+        tool_choices: list[dict[str, Any]] | None = None,
     ) -> None:
         """Handle intent chosen for flow controller."""
         import config
@@ -2894,6 +2929,11 @@ class FlowController:
                 for item in choices
             ]
         pending.caller = self._apply_intent_context_choices(pending.caller, choices)
+        effective_tool_choices = tool_choices if tool_choices is not None else pending.tool_choices
+        pending.caller = self._apply_intent_tool_choices(
+            pending.caller,
+            effective_tool_choices or [],
+        )
         context = pending.context if isinstance(pending.context, dict) else {}
         if (
             str(context.get("platform") or "").strip().lower().startswith("linux")
@@ -4954,6 +4994,10 @@ class FlowController:
                 "caller_idx": pending.caller_idx,
                 "target_hwnd": pending.intent_target_pid,
                 "context_items": context_items,
+                "tool_snapshot": self._intent_tool_snapshot(
+                    pending.caller,
+                    pending.tool_choices,
+                ),
                 "initial_custom_text": custom_text,
                 "focus_overlay": True,
                 "action_provider": pending.action_provider_context,
@@ -4975,6 +5019,10 @@ class FlowController:
                 "caller_idx": pending.caller_idx,
                 "target_hwnd": pending.intent_target_pid,
                 "context_items": context_items or self._intent_context_items(pending),
+                "tool_snapshot": self._intent_tool_snapshot(
+                    pending.caller,
+                    pending.tool_choices,
+                ),
                 "initial_custom_text": str(custom_text or ""),
                 "focus_overlay": True,
                 "action_provider": pending.action_provider_context,
@@ -5141,6 +5189,7 @@ class FlowController:
                         "caller_idx": 0,
                         "target_hwnd": 0,
                         "context_items": self._intent_context_items(pending),
+                        "tool_snapshot": self._intent_tool_snapshot(pending.caller),
                         "initial_custom_text": text,
                         "focus_overlay": True,
                         "action_provider": pending.action_provider_context,
@@ -5370,7 +5419,12 @@ class FlowController:
         config.reload()
         self._config_mtime = self._current_config_mtime()
         log.info("supervisor config reloaded")
-        self._safe_call(self.brain, "brain.config.reload", timeout=30.0)
+        self._safe_call(
+            self.brain,
+            "brain.config.reload",
+            {"changed_keys": list(changed_keys) if changed_keys is not None else None},
+            timeout=30.0,
+        )
         privacy_changed = changed_keys is None or any(
             key in _PRIVACY_CONFIG_KEYS for key in changed_keys
         )
@@ -5381,6 +5435,9 @@ class FlowController:
         )
         if harness_changed:
             self._prewarm_harness()
+        default_caller = self._caller(0) or _all_context_off_policy()
+        self._prewarm_llm_prefix(default_caller, route_kind="query")
+        self._prewarm_llm_prefix(default_caller, route_kind="chat")
         # The audio worker owns the live TTS path and is long-lived, so it must
         # reload config + drop cached TTS connections here - prewarm alone leaves
         # the old provider/voice in effect until restart.
@@ -5414,6 +5471,39 @@ class FlowController:
             self.brain.call("brain.harness.prewarm", timeout=120.0, wait=False)
         except Exception:
             log.exception("agent harness prewarm did not start")
+
+    def _prewarm_llm_prefix(self, caller: dict[str, Any], *, route_kind: str) -> None:
+        """Queue the caller's stable OpenWand prefix while the UI is idle."""
+        try:
+            allowed_tools, pinned_tools, file_access_mode = self._chat_tool_policy(caller)
+            allow_screenshot_tool = False
+            if route_kind == "query":
+                allow_screenshot_tool = self._screenshot_tool_allowed(caller)
+            elif self._screenshot_tool_allowed(caller) and "capture_screen" not in allowed_tools:
+                # Mirror the current chat request policy exactly.  The history
+                # route treats this as an allowed general tool rather than the
+                # one-shot route's dedicated screenshot-tool flag.
+                allowed_tools.append("capture_screen")
+                if "capture_screen" not in pinned_tools:
+                    pinned_tools.append("capture_screen")
+            self.brain.call(
+                "brain.llm.prefix.prewarm",
+                {
+                    "route_kind": route_kind,
+                    "allowed_tools": allowed_tools,
+                    "pinned_tools": pinned_tools,
+                    "file_access_mode": file_access_mode,
+                    "allow_screenshot_tool": allow_screenshot_tool,
+                    "browser_retrieval": (
+                        route_kind == "chat"
+                        and self._context_mode(caller, "browser") == "model"
+                    ),
+                },
+                timeout=30.0,
+                wait=False,
+            )
+        except Exception:
+            log.exception("Ollama static-prefix prewarm did not start")
 
     def _on_health_requested(self, data: dict[str, Any], _req_id: Any = None) -> None:
         from core.setup_check import run_setup_check
@@ -5491,6 +5581,16 @@ class FlowController:
                     {
                         "request_id": request_id,
                         "local_work": dict(payload or {}),
+                    },
+                    timeout=30.0,
+                )
+            elif event == "harness.activity":
+                self._safe_call(
+                    self.ui,
+                    "ui.chat.chunk",
+                    {
+                        "request_id": request_id,
+                        "harness_activity": dict(payload or {}),
                     },
                     timeout=30.0,
                 )
@@ -5643,6 +5743,7 @@ class FlowController:
         except (TypeError, ValueError):
             caller_idx = 0
         caller = _normalized_context_policy(data.get("context_policy")) or self._caller(caller_idx) or _all_context_off_policy()
+        self._prewarm_llm_prefix(caller, route_kind="chat")
         try:
             context = self._context_snapshot(
                 caller,
@@ -5812,6 +5913,13 @@ class FlowController:
 
     def _apply_addon_change(self, snapshot: dict[str, Any]) -> None:
         """Apply a pushed enabled/disabled/installed addon snapshot immediately."""
+        try:
+            self.brain.call("brain.llm.prefix.invalidate", timeout=30.0, wait=False)
+        except Exception:
+            log.exception("Ollama static-prefix invalidation did not start")
+        default_caller = self._caller(0) or _all_context_off_policy()
+        self._prewarm_llm_prefix(default_caller, route_kind="query")
+        self._prewarm_llm_prefix(default_caller, route_kind="chat")
         actions = self._load_addon_tray_actions(snapshot)
         changed = self._publish_addon_tray_actions(actions)
         if changed:
@@ -6464,11 +6572,29 @@ class FlowController:
         self._reload_supervisor_config_if_changed()
         query_started = time.monotonic()
         gen = self._new_generation()
+        auto_open_chat = bool(getattr(config, "CHAT_OPEN_ON_PROMPT", False))
+        suppress_reply_bubble = bool(
+            auto_open_chat
+            and getattr(config, "CHAT_OPEN_ON_PROMPT_HIDE_BUBBLE", False)
+        )
         self._safe_call(self.audio, "audio.stop", timeout=5.0)
         self._safe_call(self.ui, "ui.overlay.state", {"state": "thinking"}, timeout=30.0)
         if not preserve_reply_bubble:
+            self._safe_call(
+                self.ui,
+                "ui.reply.presentation",
+                {"suppress_bubble": suppress_reply_bubble},
+                timeout=30.0,
+            )
             self._safe_call(self.ui, "ui.reply.reset", timeout=30.0)
             self._safe_call(self.ui, "ui.reply.thinking", timeout=30.0)
+        if auto_open_chat:
+            self._safe_call(
+                self.ui,
+                "ui.show_chat",
+                {"new": False},
+                timeout=30.0,
+            )
         response_activity = threading.Event()
         slow_notice_timer = self._start_slow_response_notice(
             gen,
@@ -6607,6 +6733,17 @@ class FlowController:
                         {
                             "conversation_index": early_chat_index,
                             "local_work": dict(payload or {}),
+                        },
+                        timeout=30.0,
+                    )
+            elif event == "harness.activity":
+                if early_chat_index is not None:
+                    self._safe_call(
+                        self.ui,
+                        "ui.chat.chunk",
+                        {
+                            "conversation_index": early_chat_index,
+                            "harness_activity": dict(payload or {}),
                         },
                         timeout=30.0,
                     )
@@ -6771,7 +6908,12 @@ class FlowController:
                 },
                 timeout=30.0,
             )
-        if text and not bubble_cancelled and "".join(streamed_reply_parts) != text:
+        if (
+            text
+            and not bubble_cancelled
+            and not suppress_reply_bubble
+            and "".join(streamed_reply_parts) != text
+        ):
             self._replace_reply_text(text)
         if tts_segmenter is not None and not bubble_cancelled:
             for tts_segment in tts_segmenter.finish():
@@ -7548,10 +7690,21 @@ class FlowController:
         ) or {}
         approved = bool(result.get("approved")) if isinstance(result, dict) else False
         feedback = str(result.get("feedback") or "").strip() if isinstance(result, dict) else ""
+        response = dict(result) if isinstance(result, dict) else {}
+        response.pop("approved", None)
+        response.pop("feedback", None)
+        response.pop("surface", None)
+        response_params = {
+            "approval_id": approval_id,
+            "approved": approved,
+            "feedback": feedback,
+        }
+        if response:
+            response_params["response"] = response
         self._fire(
             self.brain,
             "brain.live_file.approval.respond",
-            {"approval_id": approval_id, "approved": approved, "feedback": feedback},
+            response_params,
         )
 
     def _handle_privacy_review_request(self, payload: Any) -> None:
@@ -8592,6 +8745,73 @@ class FlowController:
                 allowed.append(name)
         return allowed
 
+    def _intent_tool_snapshot(
+        self,
+        caller: dict[str, Any],
+        choices: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Return the capability inventory for the exact route used after submit."""
+        import config
+
+        execution_mode = str(
+            getattr(config, "CHAT_EXECUTION_MODE", "openwand") or "openwand"
+        ).strip().lower()
+        if execution_mode in {"codex", "claude"}:
+            prefix = "OPENWAND_CODEX" if execution_mode == "codex" else "OPENWAND_CLAUDE"
+            snapshot = tool_inventory.build_harness_inventory(
+                execution_mode=execution_mode,
+                model=str(getattr(config, f"{prefix}_MODEL", "") or ""),
+                approval_mode=str(
+                    getattr(config, f"{prefix}_APPROVAL_MODE", "ask") or "ask"
+                ),
+            )
+            return snapshot
+
+        addon_tools = self._addon_model_tool_payloads()
+        descriptions = {
+            str(item.get("name") or ""): str(item.get("description") or "")
+            for item in addon_tools
+        }
+        # Avoid a second brain round-trip: _allowed_model_tools only adds the
+        # same enabled addon payloads gathered immediately above.
+        allowed = tool_modes.allowed_model_tools(caller)
+        overrides = tool_modes.tool_overrides(caller)
+        for item in addon_tools:
+            name = str(item.get("name") or "")
+            server_id = mcp_server_id_from_tool(name, item.get("description", ""))
+            group_mode = overrides.get(mcp_server_override_key(server_id)) if server_id else None
+            if name and overrides.get(name, group_mode or "on") != "off" and name not in allowed:
+                allowed.append(name)
+        snapshot = tool_inventory.build_openwand_inventory(
+            provider=str(getattr(config, "CHAT_LLM_PROVIDER", "") or ""),
+            model=str(getattr(config, "CHAT_LLM_MODEL", "") or ""),
+            allowed_tools=allowed,
+            file_access_mode=tool_modes.local_file_access_mode(caller),
+            tool_descriptions=descriptions,
+            file_roots=[str(root) for root in (getattr(config, "TOOL_FILE_ROOTS", []) or [])],
+        )
+        disabled_tools = {
+            str(name)
+            for item in (choices or [])
+            if (
+                isinstance(item, dict)
+                and bool(item.get("toggleable"))
+                and not bool(item.get("enabled", True))
+            )
+            for name in (item.get("tools") or [])
+            if str(name)
+        }
+        if disabled_tools:
+            for item in snapshot.get("items") or []:
+                if set(item.get("tools") or []) & disabled_tools:
+                    item["enabled"] = False
+            snapshot["count"] = sum(
+                int(item.get("count") or 1)
+                for item in snapshot.get("items") or []
+                if item.get("enabled") and item.get("status") != "unavailable"
+            )
+        return snapshot
+
     def _pinned_model_tools(self, caller: dict[str, Any]) -> list[str]:
         """Tools explicitly pinned by caller policy.
 
@@ -8759,19 +8979,23 @@ class FlowController:
         caller: dict[str, Any],
         parts: list[tuple[str, str, str]] | None = None,
     ) -> list:
-        """Attach selected chat context as hidden system text."""
+        """Attach selected chat context to the volatile latest user turn."""
         if parts is None:
             parts = self._chat_context_parts(caller)
         context_text = "\n\n".join(block for _label, block, _src in parts if block.strip())
         if not context_text:
             return messages
         out = [dict(m) for m in messages]
-        block = f"[Current Chat Context]\n{context_text}"
-        for msg in out:
-            if str(msg.get("role") or "").lower() == "system":
-                msg["content"] = f"{str(msg.get('content') or '').rstrip()}\n\n---\n{block}"
+        from core.llm_clients.messages import build_contextual_user_text
+
+        for msg in reversed(out):
+            if str(msg.get("role") or "").lower() == "user":
+                msg["content"] = build_contextual_user_text(
+                    str(msg.get("content") or ""),
+                    ambient_context=f"[Current Chat Context]\n{context_text}",
+                )
                 return out
-        return [{"role": "system", "content": block}] + out
+        return out
 
     def _chat_context_text(self, caller: dict[str, Any]) -> str:
         """Joined prompt text for the frontloaded chat context (model-facing)."""
@@ -9429,6 +9653,26 @@ class FlowController:
                     updated["file_access"] = "off"
                 elif tool_modes.local_file_access_mode(updated) == "off":
                     updated["file_access"] = "ask"
+        return updated
+
+    @staticmethod
+    def _apply_intent_tool_choices(
+        caller: dict[str, Any],
+        choices: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Apply only restrictive per-prompt tool switches to a caller copy."""
+        updated = dict(caller or {})
+        overrides = dict(updated.get("tools") or {})
+        for item in choices or []:
+            if not isinstance(item, dict) or not bool(item.get("toggleable")):
+                continue
+            if bool(item.get("enabled", True)):
+                continue
+            for raw_name in item.get("tools") or []:
+                name = str(raw_name or "").strip()
+                if name:
+                    overrides[name] = "off"
+        updated["tools"] = overrides
         return updated
 
     def _consume_context_extras(self) -> tuple[list[str], list[dict[str, Any]]]:

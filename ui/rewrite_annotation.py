@@ -41,6 +41,76 @@ _FOCUS_STABLE_SAMPLES = 3
 _BALLOON_SVG = Path(ASSETS_DIR) / "ui" / "rewrite-speech-bubble.svg"
 
 
+def _native_screen_rect_to_qt(
+    value: dict[str, float] | None,
+    *,
+    screens: list | None = None,
+) -> dict[str, float] | None:
+    """Convert native Windows physical screen pixels to Qt logical coordinates.
+
+    UI Automation, GetCaretPos, and GetCursorPos report physical desktop pixels.
+    Qt top-level widgets use device-independent coordinates. On a mixed-DPI
+    desktop, screen origins remain in the virtual desktop coordinate system but
+    offsets inside each screen must be divided by that screen's DPR.
+    """
+    if not isinstance(value, dict) or sys.platform != "win32":
+        return dict(value) if isinstance(value, dict) else value
+    try:
+        left = float(value["left"])
+        top = float(value["top"])
+        width = float(value["width"])
+        height = float(value["height"])
+        has_explicit_endpoint = (
+            value.get("endpoint_x") is not None and value.get("endpoint_y") is not None
+        )
+        endpoint_x = float(value.get("endpoint_x", left + width))
+        endpoint_y = float(value.get("endpoint_y", top + height / 2.0))
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return dict(value)
+    candidate_screens = list(screens if screens is not None else QApplication.screens() or [])
+    if not candidate_screens:
+        return dict(value)
+
+    def native_geometry(screen) -> tuple[float, float, float, float, float]:
+        geometry = screen.geometry()
+        dpr = max(0.1, float(screen.devicePixelRatio() or 1.0))
+        return (
+            float(geometry.left()),
+            float(geometry.top()),
+            float(geometry.width()) * dpr,
+            float(geometry.height()) * dpr,
+            dpr,
+        )
+
+    def distance_to_screen(screen) -> float:
+        origin_x, origin_y, native_width, native_height, _dpr = native_geometry(screen)
+        right = origin_x + native_width
+        bottom = origin_y + native_height
+        dx = max(origin_x - endpoint_x, 0.0, endpoint_x - right)
+        dy = max(origin_y - endpoint_y, 0.0, endpoint_y - bottom)
+        return dx * dx + dy * dy
+
+    screen = min(candidate_screens, key=distance_to_screen)
+    origin_x, origin_y, _native_width, _native_height, dpr = native_geometry(screen)
+    converted = dict(value)
+    converted.update(
+        {
+            "left": origin_x + (left - origin_x) / dpr,
+            "top": origin_y + (top - origin_y) / dpr,
+            "width": width / dpr,
+            "height": height / dpr,
+        }
+    )
+    if has_explicit_endpoint:
+        converted.update(
+            {
+                "endpoint_x": origin_x + (endpoint_x - origin_x) / dpr,
+                "endpoint_y": origin_y + (endpoint_y - origin_y) / dpr,
+            }
+        )
+    return converted
+
+
 def _word_tokens(value: str) -> list[str]:
     """Split text while retaining whitespace and punctuation for inline diffs."""
     return re.findall(r"\s+|[\w]+|[^\w\s]", str(value or ""), flags=re.UNICODE)
@@ -142,15 +212,22 @@ class _SubmitEdit(QPlainTextEdit):
         super().keyPressEvent(event)
 
 
-class _SpeechBubbleButton(QPushButton):
-    """Clickable, theme-coloured speech bubble rendered from an SVG asset."""
+class FeatureBalloonButton(QPushButton):
+    """Reusable feature monogram with an inline annotation number.
+
+    The monogram communicates which feature owns the work (``R`` for Rewrite),
+    followed by the selection/comment number as a normal inline mark. A future
+    feature can reuse the same vector balloon with its own letter.
+    """
 
     def __init__(
         self,
         *,
         fill: str,
         hover_fill: str,
-        number_color: str,
+        monogram_color: str,
+        feature_letter: str,
+        feature_label: str,
         display_number: int,
         parent=None,
     ) -> None:
@@ -158,22 +235,25 @@ class _SpeechBubbleButton(QPushButton):
         self._vector_source_path = _BALLOON_SVG
         self._renderer = self._renderer_for_color(fill)
         self._hover_renderer = self._renderer_for_color(hover_fill)
-        self._number_color = str(number_color)
+        self._monogram_color = str(monogram_color)
+        self._feature_letter = self._normalized_feature_letter(feature_letter)
+        self._feature_label = str(feature_label or self._feature_letter)
         self._display_number = max(1, int(display_number or 1))
         self._tail_direction = "left"
         self.setStyleSheet(
             "QPushButton { background:transparent; border:none; padding:0; outline:none; }"
         )
-        self._number_label = QLabel(str(self._display_number), self)
-        self._number_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._number_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        # Centre the independent text layer on the SVG's circular head. The
-        # tail deliberately sits outside these bounds and cannot shift it.
-        self._number_label.setGeometry(5, 5, 34, 34)
-        self._number_label.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        self._number_label.setStyleSheet(
-            f"QLabel {{ background:transparent; color:{self._number_color}; border:none; }}"
+
+        self._monogram_label = QLabel("", self)
+        self._monogram_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._monogram_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        # The feature letter and comment number are one ordinary inline mark
+        # (R3, S2, ...), centred inside a silhouette that never changes.
+        self._monogram_label.setGeometry(6, 5, 36, 33)
+        self._monogram_label.setStyleSheet(
+            f"QLabel {{ background:transparent; color:{self._monogram_color}; border:none; }}"
         )
+        self._refresh_mark()
 
     @property
     def uses_vector_source(self) -> bool:
@@ -185,7 +265,35 @@ class _SpeechBubbleButton(QPushButton):
 
     def set_display_number(self, value: int) -> None:
         self._display_number = max(1, int(value or 1))
-        self._number_label.setText(str(self._display_number))
+        self._refresh_mark()
+
+    @property
+    def feature_letter_text(self) -> str:
+        return self._feature_letter
+
+    def set_feature_letter(self, value: str) -> None:
+        self._feature_letter = self._normalized_feature_letter(value)
+        self._refresh_mark()
+
+    @staticmethod
+    def _normalized_feature_letter(value: str) -> str:
+        for character in str(value or "").strip():
+            if character.isalnum():
+                return character.upper()
+        return "?"
+
+    def _refresh_mark(self) -> None:
+        number = str(self._display_number)
+        mark = f"{self._feature_letter}{number}"
+        self._monogram_label.setText(mark)
+        point_size = 15 if len(mark) <= 2 else 13 if len(mark) == 3 else 11
+        self._monogram_label.setFont(QFont("Segoe UI", point_size, QFont.Weight.Bold))
+        self._refresh_accessible_text()
+
+    def _refresh_accessible_text(self) -> None:
+        description = f"{self._feature_label} comment {self._display_number} is processing"
+        self.setAccessibleName(description)
+        self.setToolTip(description)
 
     @property
     def tail_direction(self) -> str:
@@ -209,12 +317,12 @@ class _SpeechBubbleButton(QPushButton):
             "down": QPoint(22, 43),
         }[self._tail_direction]
 
-    def _renderer_for_color(self, color: str) -> QSvgRenderer:
+    def _renderer_for_color(self, fill: str) -> QSvgRenderer:
         try:
             source = self._vector_source_path.read_text(encoding="utf-8")
         except OSError:
             source = ""
-        source = source.replace("#ffffff", str(color or "#ffffff"))
+        source = source.replace("#ffffff", str(fill or "#ffffff"))
         return QSvgRenderer(QByteArray(source.encode("utf-8")), self)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API override
@@ -264,9 +372,10 @@ class RewriteAnnotationPopup(QWidget):
         self.source_window_id = int(source_window_id or 0)
         self.source_pid = int(source_pid or 0)
         self.source_label = str(source_label or "")
-        self.selection_rect = self._normalized_rect(selection_rect)
+        qt_selection_rect = _native_screen_rect_to_qt(selection_rect)
+        self.selection_rect = self._normalized_rect(qt_selection_rect)
         self.selection_endpoint = self._normalized_endpoint(
-            selection_rect,
+            qt_selection_rect,
             self.selection_rect,
         )
         self._position_endpoint: QPoint | None = None
@@ -449,16 +558,17 @@ class RewriteAnnotationPopup(QWidget):
         shell.setFixedSize(_BALLOON_SIZE, _BALLOON_SIZE)
         layout = QVBoxLayout(shell)
         layout.setContentsMargins(0, 0, 0, 0)
-        button = _SpeechBubbleButton(
+        button = FeatureBalloonButton(
             fill=accent_fill,
             hover_fill=c["accent_fill_hover"],
-            number_color=c["on_accent"],
+            monogram_color=c["on_accent"],
+            feature_letter="R",
+            feature_label=t("Rewrite"),
             display_number=self.display_number,
         )
         button.setObjectName("processingBalloon")
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setFixedSize(_BALLOON_SIZE, _BALLOON_SIZE)
-        button.setToolTip(t("Rewrite is processing"))
         button.clicked.connect(self._open_processing)
         layout.addWidget(button)
         self._balloon_button = button
@@ -772,11 +882,17 @@ class RewriteAnnotationPopup(QWidget):
             self._anchor_visible = False
             self.hide()
             return
-        rect = self._normalized_rect(selection_rect)
+        qt_selection_rect = _native_screen_rect_to_qt(selection_rect)
+        rect = self._normalized_rect(qt_selection_rect)
         if rect is None:
             return
         self.selection_rect = rect
-        self.selection_endpoint = self._normalized_endpoint(selection_rect, rect)
+        self.selection_endpoint = self._normalized_endpoint(qt_selection_rect, rect)
+        # A refresh rectangle is already absolute screen geometry. Reset the
+        # window-relative baseline so the next source-window poll cannot apply
+        # the same move a second time.
+        _source_active, source_rect = self._source_window_state()
+        self._source_origin_rect = QRect(source_rect) if source_rect is not None else None
         self._anchor_visible = True
         self._sync_to_source_window()
 
@@ -826,11 +942,16 @@ class RewriteAnnotationPopup(QWidget):
         width = self.width()
         height = self.height()
         if source_rect and selection_anchor:
-            if self._selection_anchor_side is None:
-                right_x = source_rect.x() + source_rect.width() + 10
-                self._selection_anchor_side = (
-                    "right" if right_x + _POPUP_WIDTH <= available.right() else "left"
-                )
+            right_x = source_rect.x() + source_rect.width() + 10
+            left_x = source_rect.left() - _POPUP_WIDTH - 10
+            right_fits = right_x + _POPUP_WIDTH - 1 <= available.right()
+            left_fits = left_x >= available.left()
+            if self._selection_anchor_side is None or (
+                self._selection_anchor_side == "right" and not right_fits and left_fits
+            ) or (
+                self._selection_anchor_side == "left" and not left_fits and right_fits
+            ):
+                self._selection_anchor_side = "right" if right_fits or not left_fits else "left"
             if self._stack.currentWidget() is self._balloon:
                 # Native selection geometry is the final visible text-line
                 # rectangle. Its trailing edge is therefore the endpoint of
@@ -849,17 +970,50 @@ class RewriteAnnotationPopup(QWidget):
                     ("up", endpoint.x() - 22, endpoint.y() - 1),
                     ("right", endpoint.x() - 43, endpoint.y() - 22),
                 )
-                direction, x, y = next(
-                    (
-                        (candidate_direction, candidate_x, candidate_y)
-                        for candidate_direction, candidate_x, candidate_y in candidates
-                        if candidate_x >= available.left()
-                        and candidate_y >= available.top()
-                        and candidate_x + _BALLOON_SIZE - 1 <= available.right()
-                        and candidate_y + _BALLOON_SIZE - 1 <= available.bottom()
-                    ),
-                    candidates[-1],
-                )
+                fitting = [
+                    candidate
+                    for candidate in candidates
+                    if candidate[1] >= available.left()
+                    and candidate[2] >= available.top()
+                    and candidate[1] + _BALLOON_SIZE - 1 <= available.right()
+                    and candidate[2] + _BALLOON_SIZE - 1 <= available.bottom()
+                ]
+                if fitting:
+                    direction, x, y = fitting[0]
+                else:
+                    # At a physical screen corner no fixed centre-tail shape can
+                    # be both fully visible and land its tip on the very last
+                    # pixel. Choose the orientation whose clamped tip stays
+                    # nearest the caret, instead of an arbitrary far corner.
+                    tail_tips = {
+                        "left": QPoint(1, 22),
+                        "right": QPoint(43, 22),
+                        "up": QPoint(22, 1),
+                        "down": QPoint(22, 43),
+                    }
+
+                    def clamped_candidate(candidate):
+                        candidate_direction, candidate_x, candidate_y = candidate
+                        clamped_x = max(
+                            available.left(),
+                            min(candidate_x, available.right() - _BALLOON_SIZE + 1),
+                        )
+                        clamped_y = max(
+                            available.top(),
+                            min(candidate_y, available.bottom() - _BALLOON_SIZE + 1),
+                        )
+                        tip = QPoint(clamped_x, clamped_y) + tail_tips[candidate_direction]
+                        delta = tip - endpoint
+                        return (
+                            delta.x() * delta.x() + delta.y() * delta.y(),
+                            candidate_direction,
+                            clamped_x,
+                            clamped_y,
+                        )
+
+                    _distance, direction, x, y = min(
+                        clamped_candidate(candidate) for candidate in candidates
+                    )
                 self._balloon_button.set_tail_direction(direction)
             else:
                 # QRect.right() is inclusive; x + width is the first pixel
@@ -952,11 +1106,15 @@ class RewriteAnnotationPopup(QWidget):
             rect = wintypes.RECT()
             if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
                 return source_is_active, None
-            source_rect = QRect(
-                int(rect.left),
-                int(rect.top),
-                max(1, int(rect.right - rect.left)),
-                max(1, int(rect.bottom - rect.top)),
+            source_rect = self._normalized_rect(
+                _native_screen_rect_to_qt(
+                    {
+                        "left": float(rect.left),
+                        "top": float(rect.top),
+                        "width": float(max(1, int(rect.right - rect.left))),
+                        "height": float(max(1, int(rect.bottom - rect.top))),
+                    }
+                )
             )
             return source_is_active, source_rect
         except Exception:

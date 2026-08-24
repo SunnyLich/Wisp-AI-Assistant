@@ -264,8 +264,22 @@ def ping(value: Any = None) -> dict[str, Any]:
     return {"pong": True, "value": value, "pid": os.getpid()}
 
 
+_LLM_PREFIX_CONFIG_KEYS = {
+    "LLM_PROVIDER",
+    "LLM_MODEL",
+    "CHAT_LLM_PROVIDER",
+    "CHAT_LLM_MODEL",
+    "SYSTEM_PROMPT_UTILITY",
+    "USER_PROFILE_NAME",
+    "ASSISTANT_LANGUAGE",
+    "TOOL_PLUGIN_DIR",
+    "TOOL_FILE_ROOTS",
+    "TOOL_FILE_MODE",
+}
+
+
 @handler("brain.config.reload")
-def brain_config_reload() -> dict[str, Any]:
+def brain_config_reload(changed_keys: list[str] | None = None) -> dict[str, Any]:
     """Reload .env-backed Python config after the native Settings panel saves."""
     import config
 
@@ -276,12 +290,62 @@ def brain_config_reload() -> dict[str, Any]:
         importlib.import_module("core.tts").reset_connections()
     except Exception:  # noqa: BLE001 — best effort; never block a config reload
         pass
+    try:
+        llm_client = importlib.import_module("core.llm_clients.client")
+        llm_client.reset_clients()
+        if changed_keys is None or any(str(key) in _LLM_PREFIX_CONFIG_KEYS for key in changed_keys):
+            llm_client.invalidate_ollama_prefix_cache()
+    except Exception:  # noqa: BLE001 — the next real request can rebuild clients
+        pass
     return {
         "ok": True,
         "llm_provider": getattr(config, "LLM_PROVIDER", ""),
         "llm_model": getattr(config, "LLM_MODEL", ""),
         "tts_provider": getattr(config, "TTS_PROVIDER", ""),
     }
+
+
+@handler("brain.llm.prefix.prewarm")
+def brain_llm_prefix_prewarm(
+    route_kind: str = "query",
+    allowed_tools: list[str] | None = None,
+    pinned_tools: list[str] | None = None,
+    file_access_mode: str = "",
+    allow_screenshot_tool: bool = False,
+    browser_retrieval: bool = False,
+) -> dict[str, Any]:
+    """Queue exact OpenWand system/tool prefix prefill for a local Ollama route."""
+    import config
+
+    route_kind = str(route_kind or "query").strip().lower()
+    if route_kind == "chat":
+        harness = str(getattr(config, "CHAT_EXECUTION_MODE", "openwand") or "openwand").strip().lower()
+        if harness != "openwand":
+            return {
+                "ready": False,
+                "scheduled": False,
+                "skipped": True,
+                "reason": "chat_harness_selected",
+                "harness": harness,
+            }
+    from core.llm_clients import client as llm_client
+
+    return llm_client.schedule_ollama_prefix_prewarm(
+        route_kind=route_kind,
+        allowed_tools=list(allowed_tools or []),
+        pinned_tools=list(pinned_tools or []),
+        file_access_mode=str(file_access_mode or ""),
+        allow_screenshot_tool=bool(allow_screenshot_tool),
+        browser_retrieval=bool(browser_retrieval),
+    )
+
+
+@handler("brain.llm.prefix.invalidate")
+def brain_llm_prefix_invalidate() -> dict[str, Any]:
+    """Invalidate client-side prefix identities after tool-registry changes."""
+    from core.llm_clients import client as llm_client
+
+    return llm_client.invalidate_ollama_prefix_cache()
 
 
 @handler("brain.privacy.prewarm")
@@ -1909,6 +1973,7 @@ def _run_live_harness(
     privacy_session: Any = None,
     privacy_report: dict[str, Any] | None = None,
     images: Sequence[str] = (),
+    model: str = "",
 ) -> dict[str, Any]:
     """Run an external harness turn and map its events onto OpenWand's live stream."""
     from core.harness_clients import run_harness
@@ -1954,6 +2019,10 @@ def _run_live_harness(
         text = str(getattr(event, "text", "") or "")
         kind = str(getattr(event, "kind", "reply") or "reply")
         attachment = getattr(event, "attachment", None)
+        if kind == "activity" and isinstance(attachment, dict):
+            if not ctx.cancelled:
+                ctx.emit("harness.activity", dict(attachment))
+            return
         if kind == "image" and isinstance(attachment, dict):
             candidate = dict(attachment)
             key = (str(candidate.get("path") or ""), str(candidate.get("name") or ""))
@@ -2003,6 +2072,7 @@ def _run_live_harness(
     result = run_harness(
         provider,
         prompt,
+        model=model,
         session_id=session_id,
         cwd=stored_cwd or requested_cwd or None,
         on_event=on_harness_event,
@@ -2203,6 +2273,14 @@ def brain_query(
         harness_images = _write_harness_images(
             [str(getattr(built, "screenshot_b64", "") or "")]
         )
+        route_model = str(
+            getattr(
+                config,
+                "VISION_LLM_MODEL" if harness_images else "CHAT_LLM_MODEL",
+                "",
+            )
+            or ""
+        ).strip()
         try:
             return _run_live_harness(
                 ctx,
@@ -2214,6 +2292,7 @@ def brain_query(
                 privacy_session=privacy_session,
                 privacy_report=getattr(built, "privacy_report", None),
                 images=harness_images,
+                model=route_model,
             )
         finally:
             _delete_harness_images(harness_images)
@@ -2904,6 +2983,14 @@ def brain_chat(
             "",
         )
         harness_images = _write_harness_images([newest_image])
+        route_model = str(
+            getattr(
+                config,
+                "VISION_LLM_MODEL" if harness_images else "CHAT_LLM_MODEL",
+                "",
+            )
+            or ""
+        ).strip()
         try:
             return _run_live_harness(
                 ctx,
@@ -2915,6 +3002,7 @@ def brain_chat(
                 privacy_session=privacy_session,
                 privacy_report=privacy_report,
                 images=harness_images,
+                model=route_model,
             )
         finally:
             _delete_harness_images(harness_images)
@@ -3408,7 +3496,12 @@ def _live_file_approval_callback(ctx: StreamContext) -> Callable[[dict], dict[st
         """Ask the supervisor/UI to resolve one live file approval."""
         approval_id = uuid.uuid4().hex
         event = threading.Event()
-        state: dict[str, Any] = {"event": event, "approved": False, "feedback": ""}
+        state: dict[str, Any] = {
+            "event": event,
+            "approved": False,
+            "feedback": "",
+            "response": {},
+        }
         with _LIVE_FILE_APPROVALS_LOCK:
             _LIVE_FILE_APPROVALS[approval_id] = state
 
@@ -3420,10 +3513,14 @@ def _live_file_approval_callback(ctx: StreamContext) -> Callable[[dict], dict[st
             while not event.wait(0.1):
                 if ctx.cancelled:
                     return {"approved": False, "feedback": ""}
-            return {
+            result = {
                 "approved": bool(state["approved"]),
                 "feedback": str(state.get("feedback") or ""),
             }
+            response = state.get("response")
+            if isinstance(response, dict):
+                result.update(response)
+            return result
         finally:
             with _LIVE_FILE_APPROVALS_LOCK:
                 _LIVE_FILE_APPROVALS.pop(approval_id, None)
@@ -3541,6 +3638,7 @@ def brain_live_file_approval_respond(
     approval_id: str = "",
     approved: bool = False,
     feedback: str = "",
+    response: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve one pending live model file-edit approval prompt."""
     cleaned = approval_id.strip()
@@ -3554,6 +3652,7 @@ def brain_live_file_approval_respond(
 
     state["approved"] = bool(approved)
     state["feedback"] = str(feedback or "").strip()
+    state["response"] = dict(response or {})
     event = state.get("event")
     if isinstance(event, threading.Event):
         event.set()

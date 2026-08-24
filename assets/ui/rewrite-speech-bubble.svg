@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44">
-  <title>Rewrite comment bubble</title>
-  <desc>A circular comment bubble with a short tail pointing left.</desc>
-  <circle cx="22" cy="22" r="17" fill="#ffffff"/>
-  <path d="M9 15 L1 22 L9 29 Z" fill="#ffffff"/>
+  <title>Feature comment balloon</title>
+  <desc>A flat, conventional comment balloon with a short tail pointing left.</desc>
+  <rect x="6" y="5" width="36" height="33" rx="8" fill="#ffffff"/>
+  <path d="M8 16 L1 22 L8 28 Z" fill="#ffffff"/>
 </svg>
